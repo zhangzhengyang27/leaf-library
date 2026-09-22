@@ -20,8 +20,8 @@ import {
 } from '@shared/assetTypes'
 import { prefRepository } from '../db/repos/PrefRepository'
 import type { PrefRepository } from '../db/repos/PrefRepository'
-import { photoRepository } from '../db/repos/PhotoRepository'
-import type { PhotoRepository } from '../db/repos/PhotoRepository'
+import { photoStore } from '../stores'
+import type { PhotoDataStore } from '../stores/PhotoDataStore'
 import { getAssetProcessingRef } from './assetProcessingRef'
 import { NotificationService } from './NotificationService'
 
@@ -55,7 +55,7 @@ export class WatchedFoldersService {
 
   constructor(
     private readonly prefs: Pick<PrefRepository, 'get' | 'set'> = prefRepository,
-    private readonly photos: Pick<PhotoRepository, 'addPhotos'> = photoRepository
+    private readonly photos: Pick<PhotoDataStore, 'addPhotos'> = photoStore
   ) {}
 
   list(): string[] {

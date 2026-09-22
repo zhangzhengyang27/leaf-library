@@ -98,11 +98,20 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   )
   console.log('wp-e2e: imported =', JSON.stringify(imported?.added ?? imported))
 
-  const pRow = await page.evaluate(async (p) => await window.api.photos.getByPath(p), portrait)
-  expect(pRow?.filePath).toBe(portrait)
+  // D-020：入库即拷贝，素材指的是库内那份副本（这条以前断言 filePath === 原路径）
+  const rowOf = (name) => imported.find((x) => x.fileName === name)
+  const pRow = rowOf('portrait.png')
+  expect(pRow.filePath, '素材指向库内副本').not.toBe(portrait)
+  expect(pRow.filePath.startsWith(assetDir), '副本不在素材临时目录里').toBe(false)
+  expect(existsSync(pRow.filePath), '库内副本确实在盘上').toBe(true)
+  expect(pRow.sourcePath, '原件路径记在 source_path').toBe(portrait)
+  expect(existsSync(portrait), '原件仍在原处').toBe(true)
 
-  const pFit = await page.evaluate(async (p) => await window.api.assessWallpaper(p), portrait)
-  const wFit = await page.evaluate(async (p) => await window.api.assessWallpaper(p), wide)
+  const pFit = await page.evaluate(async (fp) => await window.api.assessWallpaper(fp), pRow.filePath)
+  const wFit = await page.evaluate(
+    async (fp) => await window.api.assessWallpaper(fp),
+    rowOf('wide.png').filePath
+  )
   console.log('wp-e2e: portrait fit =', JSON.stringify(pFit))
   console.log('wp-e2e: wide fit =', JSON.stringify(wFit?.assessments?.[0] ?? wFit))
   expect(pFit.ok).toBe(true)
@@ -240,9 +249,13 @@ test('真设桌面：派生 JPEG 落盘 + 缓存命中 + 还原原壁纸', async
     .png()
     .toFile(cutout)
 
-  await page.evaluate(async (paths) => await window.api.photos.addMultiple(paths), [portrait, cutout])
-  const portraitRow = await page.evaluate(async (p) => await window.api.photos.getByPath(p), portrait)
-  const cutoutRow = await page.evaluate(async (p) => await window.api.photos.getByPath(p), cutout)
+  const added = await page.evaluate(
+    async (paths) => await window.api.photos.addMultiple(paths),
+    [portrait, cutout]
+  )
+  // D-020：入库即拷贝，后面所有对素材的操作都用库内那份副本的路径
+  const portraitRow = added.find((x) => x.fileName === 'set-portrait.png')
+  const cutoutRow = added.find((x) => x.fileName === 'set-cutout.png')
   expect(portraitRow?.id).toBeTruthy()
 
   const px = await app.evaluate(({ screen }) =>
@@ -263,7 +276,7 @@ test('真设桌面：派生 JPEG 落盘 + 缓存命中 + 还原原壁纸', async
     // ① 强制 cover：竖图铺满横屏，底部白条必被裁掉
     const cover = await page.evaluate(
       async (p) => await window.api.setWallpaper(p, 'main', { mode: 'cover' }),
-      portrait
+      portraitRow.filePath
     )
     console.log('wp-e2e: cover =', JSON.stringify(cover))
     expect(cover.ok).toBe(true)
@@ -284,16 +297,16 @@ test('真设桌面：派生 JPEG 落盘 + 缓存命中 + 还原原壁纸', async
     // ② 再设一次：缓存命中，文件不得被重写
     const mtime1 = statSync(coverFile).mtimeMs
     const again = await page.evaluate(
-      async (p) => await window.api.setWallpaper(p, 'main', { mode: 'cover' }),
-      portrait
+      async (fp) => await window.api.setWallpaper(fp, 'main', { mode: 'cover' }),
+      portraitRow.filePath
     )
     expect(again.ok).toBe(true)
     expect(statSync(coverFile).mtimeMs).toBe(mtime1)
 
     // ③ 强制模糊底：同一目标另一张派生图，完整画面（含底部白条）保留
     const blurred = await page.evaluate(
-      async (p) => await window.api.setWallpaper(p, 'main', { mode: 'blurred' }),
-      portrait
+      async (fp) => await window.api.setWallpaper(fp, 'main', { mode: 'blurred' }),
+      portraitRow.filePath
     )
     expect(blurred.ok).toBe(true)
     const blurredFile = join(userDataDir, 'wallpaper', portraitRow.id, `${tag}-blurred.jpg`)
@@ -302,8 +315,8 @@ test('真设桌面：派生 JPEG 落盘 + 缓存命中 + 还原原壁纸', async
 
     // ④ 透明抠图走 auto → 判定为模糊底，输出不再有 alpha（否则系统给一块黑底）
     const auto = await page.evaluate(
-      async (p) => await window.api.setWallpaper(p, 'main', { mode: 'auto' }),
-      cutout
+      async (fp) => await window.api.setWallpaper(fp, 'main', { mode: 'auto' }),
+      cutoutRow.filePath
     )
     console.log('wp-e2e: cutout auto =', JSON.stringify(auto))
     expect(auto.adapt.strategy).toBe('blurred')

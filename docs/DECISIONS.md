@@ -385,3 +385,47 @@ Eagle 的右栏是固定宽度，所以「加宽」本来就不是对齐目标�
 （`opacity-0 group-hover:opacity-100`），带内空白仍走「点背景关框」；首/末张那侧的带整个不渲染。
 探针复验：三组外框静止 2.9s 后 opacity 全为 0、指针停在顶栏 2.9s 仍为 1、在注释框里打字 3s 不收、
 失焦后再静止归 0、hover 边缘带 opacity 0→1 且点击确实换图（1/27 → 2/27）、点带内空白预览关闭。
+
+## Decision-020 · 入库即拷贝进资源库，撤掉「引用原文件」那一档
+
+**背景**：F11 做过一个库级开关 `library:storage-mode`，两档 `reference | copy`，**默认是引用**。
+它从未真正生效过一次：默认库登记为 `legacy`（根就是 userData，没有 `images/`），
+而 `activeRoot()` 对 legacy 返回 null，`copyIntoLibrary()` 直接返回 null——选了拷贝模式
+也是静默引用。设置页那段说明文字（「会复制到资源库 images/ 目录，Eagle 行为」）因此一直是假的。
+实测唯一那个库 5,178 条活跃素材里 `source_path` **0 行有值**，5,152 条 `file_path`
+直指 `~/Desktop`（含从 Eagle 包里引用出来的 11 条）。
+
+于是「改写磁盘」类动作与引用模式叠加出三处真风险：`replaceFile` 复制新字节后**无条件
+`unlinkSync(旧路径)`**（引用模式下就是删用户桌面上的原件）；`renameFiles` 直接 `renameSync`
+用户目录里的文件；旋转/翻转有 `materializeIntoLibrary` 保护，但在 legacy 库一律抛错不可用。
+（对照：图片旋转那条从一开始就写明了「就地改写等于动用户自己的东西」——同一个道理没推全。）
+
+**决定**：向 Eagle 的模型收敛，**导入即拷贝**，撤掉开关。
+
+1. `activeRoot()` 不再对 legacy 返回 null（legacy 的库根就是 userData，`images/` 与
+   `thumbs/` 等一样平铺在其下）；`migrateIntoLibrary` / `materializeIntoLibrary` 的
+   「旧版库布局不支持」抛错分支随之删除——它们曾经是这条路真正的堵点。
+2. 副本落 `<库根>/images/YYMM/<原名>`，重名走 `uniqueFilePath`（`名 2.ext`）。
+   **刻意不加 uuid 前缀**：`file_name` 就是卡片/检查器显示的那一行，旧实现
+   `<uuid8>_原名` 会让每个导入项都顶着乱码前缀。Eagle 也是保原名（`images/<id>.info/原名.ext`）。
+3. 重复导入按 `source_path` 认旧行（迁移 025 给它加索引）：副本名不再唯一稳定，
+   按 `file_path` 去重认不出「这就是刚才那个文件」，不查就会拷第二份、建第二行。
+4. `storage:getMode` / `setMode` 两条通道 + preload 桥 + 设置页那颗两档按钮全删；
+   设置页那段说明改为陈述事实，「迁移引用文件入库」不再被 `storageMode !== 'copy'` 禁用
+   （恢复前那个按钮在任何情况下都是灰的）。
+5. 监控文件夹与 F8 剪贴板监听原来注入的是 `photoRepository.addPhotos`（绕过拷贝，
+   也绕过 `assertImportablePath` 与敏感文件黑名单）→ 改注入 `photoStore.addPhotos`。
+6. 清空回收站从此**删库内副本**（Eagle 也是这一步才真删字节），但 `isInsideLibrary()`
+   为假的行一律不碰磁盘——旧数据里那些指向桌面的原件，删掉它们是毁用户数据。
+7. `replaceFile` 改成：新字节 `copyIntoLibrary` 进库 → 换绑 → 仅当旧文件在库内才 unlink。
+
+**取舍**：库里从此自持一份字节（实测这个库的全部素材 104.8 MB，磁盘剩 48 GB，代价可忽略），
+换来的是编辑/删除/重命名终于可以对用户自己的文件零副作用。引用模式不是被"禁用"而是被删除——
+保留它就保留一套「按钮点了不生效 + 三个动作会改磁盘原件」的组合，那是负资产。
+
+**验证**：`e2e/storage-copy.spec.mjs`（真 app + 真临时库）钉住：副本进 `images/`、
+**原名不变**、`source_path` 有值、原件字节不动、同名不同文件落成「名 2.ext」且不互相覆盖、
+重复导入不产生第二份、dryRun 数出 candidate 且不动文件、真迁移后原文件仍在原处、
+清空回收站后库内副本消失而库外文件清单逐字节不变。判别性：临时把拷贝分支短路成
+旧行为 → 停在第一条「副本落在库内」。`e2e/import-chain.spec.mjs` 与 533 条单测同时绿，
+`typecheck:node` 干净。

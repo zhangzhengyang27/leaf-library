@@ -386,6 +386,18 @@ export class PhotoRepository {
     return rows.length ? this.fromRow(rows[0], this.getTags(rows[0].id)) : undefined
   }
 
+  /**
+   * 按「导入时的原始路径」查已入库素材，含回收站软删行。
+   * 拷贝式入库的重复导入判定只能走这条：入库后 file_path 是库内那个副本路径，
+   * 与用户再选一次的原路径对不上，光按 file_path 去重会拷出两份、建出两行。
+   */
+  getPhotoBySourcePathIncludingDeleted(sourcePath: string): Photo | undefined {
+    const rows = this.db
+      .prepare(`${PHOTO_SELECT} WHERE source_path = ? LIMIT 1`)
+      .all(sourcePath) as PhotoRow[]
+    return rows.length ? this.fromRow(rows[0], this.getTags(rows[0].id)) : undefined
+  }
+
   /** 把回收站里的同路径素材恢复为活跃行（重新导入已软删路径时避免双行并存） */
   private restoreDeletedByPath(filePath: string): Photo | undefined {
     const row = this.db

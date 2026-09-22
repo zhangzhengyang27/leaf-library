@@ -306,32 +306,10 @@ async function toggleWatchedEnabled(on: boolean): Promise<void> {
   }
 }
 
-// ── F10/F11：资源库存储（引用 / 导入时拷贝入库）+ 丢失文件扫描迁移 ──
-const storageMode = ref<'reference' | 'copy'>('reference')
+// ── D-020：资源库存储（入库即拷贝）+ 丢失文件扫描迁移 ──
 const storageMsg = ref('')
 const scanningMissing = ref(false)
 const migrating = ref(false)
-
-async function loadStorageMode(): Promise<void> {
-  try {
-    storageMode.value = await window.api.storage.getMode()
-  } catch {
-    storageMode.value = 'reference'
-  }
-}
-
-async function setStorageMode(mode: 'reference' | 'copy'): Promise<void> {
-  if (storageMode.value === mode) return
-  const prev = storageMode.value
-  storageMode.value = mode
-  try {
-    storageMode.value = await window.api.storage.setMode(mode)
-    useToast().success(mode === 'copy' ? '已切换为拷贝入库' : '已切换为引用原文件')
-  } catch (error) {
-    storageMode.value = prev
-    useToast().error('切换失败', { description: (error as Error).message })
-  }
-}
 
 async function onScanMissing(): Promise<void> {
   scanningMissing.value = true
@@ -959,7 +937,6 @@ async function loadInitialData(): Promise<void> {
   void loadOcrStatus()
   void loadDocTextStatus()
   void loadBackupConfig()
-  void loadStorageMode()
   void loadScreenshotSettings()
   try {
     appVersion.value = await window.api.update.getCurrentVersion()
@@ -1134,38 +1111,13 @@ onBeforeUnmount(() => {
               </div>
             </section>
 
-            <!-- F11：资源库存储（Eagle「导入时拷贝入资源库」） -->
+            <!-- D-020：资源库存储（入库即拷贝，对齐 Eagle「拷贝进资源库」模型） -->
             <section class="mb-4 rounded-lg border border-line-subtle bg-surface-2 p-4">
               <h3 class="text-xs font-medium text-fg-primary">资源库存储</h3>
-              <div class="mt-3 flex items-center gap-2">
-                <button
-                  type="button"
-                  class="rounded-md border px-3 py-1 text-xs transition-colors"
-                  :class="
-                    storageMode === 'reference'
-                      ? 'border-brand-500 bg-brand-500/10 text-brand-600'
-                      : 'border-line-subtle bg-surface-1 text-fg-secondary hover:border-brand-400'
-                  "
-                  @click="setStorageMode('reference')"
-                >
-                  引用原文件（默认）
-                </button>
-                <button
-                  type="button"
-                  class="rounded-md border px-3 py-1 text-xs transition-colors"
-                  :class="
-                    storageMode === 'copy'
-                      ? 'border-brand-500 bg-brand-500/10 text-brand-600'
-                      : 'border-line-subtle bg-surface-1 text-fg-secondary hover:border-brand-400'
-                  "
-                  @click="setStorageMode('copy')"
-                >
-                  导入时拷贝入库
-                </button>
-              </div>
               <p class="mt-2 text-[11px] leading-5 text-fg-tertiary">
-                拷贝模式：新导入的文件会复制到资源库 images/ 目录（Eagle
-                行为），原文件不动；已有素材可用下方「迁移」批量拷入。
+                导入即复制一份进资源库 images/ 目录，原文件不动；此后编辑、重命名、
+                清空回收站都只作用于库内副本。更早以「引用」方式入库的素材可用下方
+                「迁移引用文件入库…」批量拷入（会先给出条数与体积）。
               </p>
               <div class="mt-3 flex items-center gap-2">
                 <UButton
@@ -1183,8 +1135,6 @@ onBeforeUnmount(() => {
                   size="sm"
                   variant="secondary"
                   :loading="migrating"
-                  :disabled="storageMode !== 'copy'"
-                  :title="storageMode !== 'copy' ? '先切换到拷贝模式' : ''"
                   @click="onMigrateConfirm"
                 >
                   迁移引用文件入库…
@@ -1739,7 +1689,9 @@ onBeforeUnmount(() => {
             <!-- G1：图文向量档（中文文搜图 + 找相似第二档） -->
             <section class="mb-4 rounded-lg border border-line-subtle bg-surface-2 p-4">
               <div class="flex items-center gap-2">
-                <h3 class="text-xs font-medium text-fg-primary">图文向量检索（中文文搜图 + 视觉相似）</h3>
+                <h3 class="text-xs font-medium text-fg-primary">
+                  图文向量检索（中文文搜图 + 视觉相似）
+                </h3>
                 <UBadge v-if="vecStatus?.ready" variant="success">
                   模型就绪 · 已索引 {{ vecStatus.indexed }}
                 </UBadge>

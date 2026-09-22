@@ -36,8 +36,6 @@ const api: API = {
   },
   // 阶段 4.4 监控文件夹自动导入
   storage: {
-    getMode: () => ipcRenderer.invoke('storage:getMode'),
-    setMode: (mode) => ipcRenderer.invoke('storage:setMode', mode),
     scanMissing: () => ipcRenderer.invoke('storage:scanMissing'),
     relinkPhoto: (id) => ipcRenderer.invoke('storage:relinkPhoto', id),
     migrateIntoLibrary: (dryRun) => ipcRenderer.invoke('storage:migrateIntoLibrary', dryRun),

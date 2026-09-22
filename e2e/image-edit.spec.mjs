@@ -2,9 +2,9 @@
  * P1 · 图片就地编辑真机验收（收库内副本 + 派生数据重算）
  *
  * 这条测的是单测碰不到的那一半：materialize 与"改完之后一切是否跟着变"。
- * 两者都依赖真库布局，所以 e2e 里预置一个**非 legacy** 的 libraries.json——
- * 用户当前那个库是 legacy（素材直接指向桌面原文件），而 legacy 下 materialize
- * 必须明确抛错而不是就地改他的文件，这条也一并断言。
+ * 两者都依赖真库布局，所以 e2e 里预置一个**非 legacy** 的 libraries.json；
+ * 另一条用默认（legacy）布局：D-020 之前它断言的是「materialize 明确拒绝」，
+ * 现在导入那一刻就已经是库内副本，所以改成断言「拷进 userData/images 且原件不动」。
  *
  * 用法：pnpm build && pnpm exec playwright test e2e/image-edit.spec.mjs
  */
@@ -20,7 +20,7 @@ import {
   statSync,
   writeFileSync
 } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 import sharp from 'sharp'
@@ -146,8 +146,9 @@ test('非 legacy 库：旋转先收副本，原文件不动，派生数据全部
       id
     )
     expect([before.width, before.height]).toEqual([60, 20])
-    // 导入是"引用"：素材此刻还指着 assets 目录里的原文件
-    expect(before.filePath).toBe(src)
+    // D-020：导入那一刻就已经是库内副本，所以旋转无需再 materialize 一次
+    expect(before.filePath, '素材已在库内').not.toBe(src)
+    expect(before.filePath.startsWith(libraryDir)).toBe(true)
 
     const r = await page.evaluate(async (pid) => await window.api.edit.rotate(pid, 90), id)
     expect(r.ok).toBe(true)
@@ -196,7 +197,7 @@ test('非 legacy 库：旋转先收副本，原文件不动，派生数据全部
   }
 })
 
-test('legacy 库（素材直接指向用户桌面原文件）：明确拒绝，绝不就地改', async () => {
+test('legacy 库（D-020 后）：导入即已拷进 userData/images，编辑落在副本上、原件不动', async () => {
   test.setTimeout(180_000)
   const page = await launch('legacy')
   try {
@@ -212,19 +213,19 @@ test('legacy 库（素材直接指向用户桌面原文件）：明确拒绝，�
         { timeout: 40_000, intervals: [1000] }
       )
       .toBe(1)
-    const id = await page.evaluate(() =>
-      window.api.photos.getByDateSection().then((s) => s.flatMap((x) => x.photos)[0].id)
+    const imported = await page.evaluate(() =>
+      window.api.photos.getByDateSection().then((s) => s.flatMap((x) => x.photos)[0])
     )
-    const r = await page.evaluate(async (pid) => await window.api.edit.rotate(pid, 90), id)
-    expect(r.ok).toBe(false)
-    expect(r.error).toMatch(/旧版库布局|不支持/)
-    // 关键断言：失败必须是"什么都没发生"，原文件与素材指向都不变
+    // 旧断言是「legacy 里 materialize 明确抛错」——用户在自己的默认库根本转不了图；
+    // D-020 起 legacy 也有库根（userData），导入那一刻就已经是库内副本
+    expect(imported.filePath, '素材落在库内的 images/<YYMM>/ 下').not.toBe(src)
+    expect(basename(dirname(imported.filePath))).toMatch(/^\d{4}$/)
+    expect(imported.sourcePath, '出处记在 source_path 上').toBe(src)
+    expect(existsSync(imported.filePath), true)
+    const r = await page.evaluate(async (pid) => await window.api.edit.rotate(pid, 90), imported.id)
+    expect(r.ok, r.error ?? '').toBe(true)
+    // 关键断言：编辑成功也不能碰用户磁盘上那个原件
     expect(readFileSync(src).equals(srcBefore)).toBe(true)
-    const still = await page.evaluate(
-      async (pid) => window.api.photos.getById(pid).then((p) => p.filePath),
-      id
-    )
-    expect(still).toBe(src)
   } finally {
     await closeApp()
   }

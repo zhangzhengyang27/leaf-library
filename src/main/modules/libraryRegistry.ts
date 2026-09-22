@@ -162,10 +162,10 @@ export function activeSubdir(
   return lib.legacy ? join(app.getPath('userData'), name) : join(lib.path, name)
 }
 
-/** F11：当前库根目录（copy 模式素材落 images/YYMM）；legacy 库不支持 copy 模式，返回 null */
-export function activeRoot(): string | null {
-  const lib = getActiveLibrary()
-  return lib.legacy ? null : lib.path
+/** D-020：当前库根目录（素材拷贝落 images/YYMM）。legacy 库的根就是 userData，
+ *  它的 images/ 与 thumbs/ 等一样平铺在 userData 下 */
+export function activeRoot(): string {
+  return getActiveLibrary().path
 }
 
 export interface CreateLibraryResult {

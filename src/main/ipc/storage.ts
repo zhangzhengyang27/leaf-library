@@ -1,7 +1,12 @@
 /**
- * F11：库存储模式 / 断链扫描 / 重新定位 / 存量迁移 IPC。
+ * D-020：库存储（入库即拷贝）/ 断链扫描 / 重新定位 / 存量迁移 IPC。
  *
  * 注册时延迟 3s 做一次静默断链扫描（自包含，不依赖 main/index.ts 生命周期链）。
+ *
+ * 这里**没有** getMode/setMode：曾经有过「引用原文件 / 拷贝入库」两档开关，
+ * 默认还是引用，结果是编辑类动作要么拒绝要么改写用户散在磁盘上的原件，
+ * 与 Eagle 的「库自持一份」模型对不上。现在导入一律拷贝入库，开关与它的
+ * preload 通道一并撤掉。
  */
 import { BrowserWindow, ipcMain } from 'electron'
 import { existsSync } from 'node:fs'
@@ -10,13 +15,6 @@ import { sanitizeIpcMessage } from './utils'
 import { showOpenDialogFor } from '../modules/dialogs'
 
 export function registerStorageIpcHandlers(): void {
-  ipcMain.handle('storage:getMode', () => photoStore.getStorageMode())
-
-  ipcMain.handle('storage:setMode', (_e, mode: 'reference' | 'copy') => {
-    photoStore.setStorageMode(mode === 'copy' ? 'copy' : 'reference')
-    return photoStore.getStorageMode()
-  })
-
   ipcMain.handle('storage:scanMissing', async () => {
     try {
       return { ok: true, ...(await photoStore.scanMissing()) }

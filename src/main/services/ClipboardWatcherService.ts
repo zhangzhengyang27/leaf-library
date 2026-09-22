@@ -17,8 +17,8 @@ import { join } from 'path'
 import { NotificationService, NotificationType } from './NotificationService'
 import { getAssetProcessingRef } from './assetProcessingRef'
 import { activeSubdir } from '../modules/libraryRegistry'
-import { photoRepository } from '../db/repos/PhotoRepository'
-import type { PhotoRepository } from '../db/repos/PhotoRepository'
+import { photoStore } from '../stores'
+import type { PhotoDataStore } from '../stores/PhotoDataStore'
 import { prefRepository } from '../db/repos/PrefRepository'
 import type { PrefRepository } from '../db/repos/PrefRepository'
 import { extractPathsFromText } from '../utils/clipboardPaths'
@@ -37,7 +37,7 @@ export class ClipboardWatcherService {
 
   constructor(
     private readonly prefs: Pick<PrefRepository, 'get' | 'set'> = prefRepository,
-    private readonly photos: Pick<PhotoRepository, 'addPhotos'> = photoRepository
+    private readonly photos: Pick<PhotoDataStore, 'addPhotos'> = photoStore
   ) {}
 
   isEnabled(): boolean {

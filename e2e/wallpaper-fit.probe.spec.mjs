@@ -91,12 +91,14 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   )
   console.log('probe: imported =', JSON.stringify(imported?.added ?? imported))
 
-  const pRow = await page.evaluate(async (p) => await window.api.photos.getByPath(p), portrait)
-  const wRow = await page.evaluate(async (p) => await window.api.photos.getByPath(p), wide)
-  expect(pRow?.filePath).toBe(portrait)
+  // D-020：入库即拷贝，素材指的是库内副本（以前断言 filePath === 原路径）
+  const pRow = imported.find((x) => x.fileName === 'portrait.png')
+  const wRow = imported.find((x) => x.fileName === 'wide.png')
+  expect(pRow.filePath).not.toBe(portrait)
+  expect(pRow.sourcePath).toBe(portrait)
 
-  const pFit = await page.evaluate(async (p) => await window.api.assessWallpaper(p), portrait)
-  const wFit = await page.evaluate(async (p) => await window.api.assessWallpaper(p), wide)
+  const pFit = await page.evaluate(async (fp) => await window.api.assessWallpaper(fp), pRow.filePath)
+  const wFit = await page.evaluate(async (fp) => await window.api.assessWallpaper(fp), wRow.filePath)
   console.log('probe: portrait fit =', JSON.stringify(pFit))
   console.log('probe: wide fit =', JSON.stringify(wFit?.assessments?.[0] ?? wFit))
   expect(pFit.ok).toBe(true)

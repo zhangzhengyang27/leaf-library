@@ -211,8 +211,8 @@ test('帧率一路走到预览按钮，字幕在真 Chromium 里解析出 cue', 
   )
   const page = await launchModern()
   try {
-    // 开 copy 模式：视频会被搬进库内，字幕文件留在外面 —— 下面断言的就是这条回落
-    await page.evaluate(async () => await window.api.storage.setMode('copy'))
+    // D-020 起导入即拷贝（原来这里要先 storage.setMode('copy')）：
+    // 视频进库内、字幕文件留在外面 —— 下面断言的就是这条按 source_path 的回落
     await page.evaluate(async (p) => await window.api.photos.importPaths([p]), clip)
     const id = await idOf(page, 'c24.mp4')
     await expect

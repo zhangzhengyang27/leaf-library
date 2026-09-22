@@ -9,11 +9,10 @@ import { albumRepository, type Album } from '../db/repos/AlbumRepository'
 import { photoFolderRepository, type PhotoFolder } from '../db/repos/PhotoFolderRepository'
 import type { SmartAlbumRules } from '../db/smartAlbumRules'
 import { activeRoot, activeSubdir } from '../modules/libraryRegistry'
-import { prefRepository } from '../db/repos/PrefRepository'
 import { existsSync, copyFileSync, mkdirSync, statSync, unlinkSync, lstatSync } from 'fs'
 import { basename, isAbsolute, join, relative } from 'path'
-import { randomUUID } from 'crypto'
 import { sanitizeFileNameBase } from '@shared/filename'
+import { uniqueFilePath } from '../utils/screenshotFile'
 import { planLibraryMoveRepair } from '../utils/libraryMoveRepair'
 import { isBundlePath, isSensitiveImportPath } from '../utils/pathPolicy'
 import { applySemanticQuery, stripSemanticSnapshot } from '../services/semanticRules'
@@ -100,10 +99,8 @@ export class PhotoDataStore {
       { width?: number; height?: number; fileSize?: number; sourcePath?: string }
     >
   ): Photo[] {
-    // F11：copy 模式下先拷贝入库（库内已有文件与不可达文件保持原样），路径映射后交给管线
-    if (this.getStorageMode() !== 'copy') {
-      return photoRepository.addPhotos(filePaths, metadataMap)
-    }
+    // D-020：入库即拷贝进库（Eagle 语义）。库内已有文件与不可达文件保持原样，
+    // 路径映射后交给管线
     const mapped: string[] = []
     /** 本次调用新拷贝进库的目标文件（DB 写失败时回滚删除，防孤儿文件） */
     const copiedTargets: string[] = []
@@ -118,6 +115,14 @@ export class PhotoDataStore {
       let target = p
       const origMeta = metadataMap?.get(p)
       if (!this.isInsideLibrary(p) && existsSync(p)) {
+        // 同一个原文件重复导入认旧行为主：副本路径与原路径不同，按 file_path 去重
+        // 认不出「这就是刚才那个文件」，不查 source_path 就会拷出第二份、建出第二行
+        const seen = photoRepository.getPhotoBySourcePathIncludingDeleted(p)
+        if (seen) {
+          mapped.push(seen.filePath)
+          if (origMeta) remappedMeta.set(seen.filePath, origMeta)
+          continue
+        }
         const copied = this.copyIntoLibrary(p)
         if (copied) {
           target = copied
@@ -149,32 +154,26 @@ export class PhotoDataStore {
     }
   }
 
-  // —— F11：库拷贝式存储 / 断链 ——
+  // —— D-020：拷贝式入库 / 断链 ——
 
-  private static STORAGE_MODE_KEY = 'library:storage-mode'
-
-  /** 库存储模式：reference（默认，只记绝对路径）| copy（导入即拷贝进库） */
-  getStorageMode(): 'reference' | 'copy' {
-    return prefRepository.get(PhotoDataStore.STORAGE_MODE_KEY) === 'copy' ? 'copy' : 'reference'
-  }
-
-  setStorageMode(mode: 'reference' | 'copy'): void {
-    prefRepository.set(PhotoDataStore.STORAGE_MODE_KEY, mode)
-  }
-
-  private isInsideLibrary(p: string): boolean {
-    const root = activeRoot()
-    if (!root) return false
-    // 用 path.relative 判定包含关系：旧实现的 `root + '/'` 字符串前缀匹配
-    // 在 win32 反斜杠路径上永远匹配不上 → copy 模式每次导入都重复拷贝一份
-    const rel = relative(root, p)
+  /** 用 path.relative 判定包含关系：旧实现的 `root + '/'` 字符串前缀匹配
+   *  在 win32 反斜杠路径上永远匹配不上 → 每次导入都会重复拷贝一份 */
+  isInsideLibrary(p: string): boolean {
+    const rel = relative(activeRoot(), p)
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
   }
 
-  /** copy 落盘：images/YYMM/<uuid8>_<安全名>；legacy 库/不可达文件返回 null */
-  private copyIntoLibrary(srcPath: string): string | null {
+  /**
+   * copy 落盘：images/YYMM/<原名>；不可达文件返回 null。
+   *
+   * 名字**保持原样**（重名才追加 ` (2)`）：库内路径的唯一性是目录给的（按月的 YYMM 分桶
+   * + 重名探测），而 file_name 是卡片/检查器直接显示的那一行——早期实现给每个副本加
+   * `<uuid8>_` 前缀，结果是用户导入的东西在界面上全长着乱码前缀的名字。
+   * Eagle 同理：原件按原名存在 `<库>/images/<id>.info/` 里。
+   */
+  copyIntoLibrary(srcPath: string): string | null {
     const root = activeRoot()
-    if (!root || !existsSync(srcPath)) return null
+    if (!existsSync(srcPath)) return null
     const d = new Date()
     const yymm = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}`
     const dir = join(root, 'images', yymm)
@@ -183,7 +182,7 @@ export class PhotoDataStore {
     const dot = origBase.lastIndexOf('.')
     const stem = sanitizeFileNameBase(dot > 0 ? origBase.slice(0, dot) : origBase) || 'file'
     const ext = dot > 0 ? origBase.slice(dot) : ''
-    const dest = join(dir, `${randomUUID().slice(0, 8)}_${stem}${ext}`)
+    const dest = uniqueFilePath(dir, stem, ext)
     try {
       copyFileSync(srcPath, dest)
       return dest
@@ -226,9 +225,12 @@ export class PhotoDataStore {
   repairMovedLibrary(
     oldRoot: string,
     dryRun: boolean
-  ): { missing: number; repairable: number; repaired: number } {
+  ): {
+    missing: number
+    repairable: number
+    repaired: number
+  } {
     const newRoot = activeRoot()
-    if (!newRoot) throw new Error('旧版库布局不支持该修复')
     const missing = photoRepository.listMissing()
     const plan = planLibraryMoveRepair(
       missing.map((m) => ({ id: m.id, filePath: m.filePath })),
@@ -254,15 +256,14 @@ export class PhotoDataStore {
    * 原始文件，撤销不了——所以编辑类动作一律先 materialize，原文件保持不动，
    * source_path 记下出处。
    *
-   * 旧版（legacy）库没有 images/ 根，activeRoot() 返回 null，此时**明确抛错**而不是
-   * 退化成就地改：让用户知道要先建库，比悄悄动他桌面上的文件好。
+   * 库根就是当前库目录（legacy 库即 userData，D-020 起支持收库编辑），
+   * 拷贝失败才抛错——绝不退化成就地改用户散在磁盘上的原始文件。
    */
   materializeIntoLibrary(photoId: string): string {
     const photo = photoRepository.getPhotoById(photoId)
     if (!photo) throw new Error('素材不存在')
     if (this.isInsideLibrary(photo.filePath)) return photo.filePath
     if (!existsSync(photo.filePath)) throw new Error('素材文件已丢失')
-    if (!activeRoot()) throw new Error('旧版库布局不支持收库编辑，请先新建资源库')
     const dest = this.copyIntoLibrary(photo.filePath)
     if (!dest) throw new Error('拷贝入资源库失败（磁盘空间或权限？）')
     photoRepository.updateMigrationBatch([
@@ -278,8 +279,6 @@ export class PhotoDataStore {
     copied: number
     failed: number
   }> {
-    const root = activeRoot()
-    if (!root) throw new Error('旧版库布局不支持拷贝入库')
     const rows = photoRepository.listAllForStorageScan()
     const candidates: Array<{ id: string; filePath: string; size: number }> = []
     let totalSize = 0
@@ -475,9 +474,24 @@ export class PhotoDataStore {
     return photoRepository.restorePhotos(ids)
   }
 
-  /** 清空回收站，返回被清理的 photoId（调用方负责清理缩略图目录） */
+  /**
+   * 清空回收站：删行 + 删**库内**副本（Eagle 也是这一步才真删字节）。
+   * 只删落在库根内的普通文件——D-020 之前入库的引用式素材，它的 file_path 就是
+   * 用户自己磁盘上的原件，清空回收站不该把它删了；原件留给用户自己处置，
+   * 素材行没了就是库里没了。返回被清理的 photoId（调用方负责缩略图目录）。
+   */
   clearRecycleBin(): string[] {
-    return photoRepository.clearRecycleBin()
+    const doomed = photoRepository.getRecycleBinPhotos()
+    const ids = photoRepository.clearRecycleBin()
+    for (const p of doomed) {
+      if (!this.isInsideLibrary(p.filePath)) continue
+      try {
+        if (lstatSync(p.filePath).isFile()) unlinkSync(p.filePath)
+      } catch {
+        /* 删不掉留给断链扫描标记 */
+      }
+    }
+    return ids
   }
 
   // —— 智能文件夹 ——

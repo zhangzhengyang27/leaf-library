@@ -133,8 +133,6 @@ export interface API {
   }
   /** F11：库存储模式 / 断链 / 迁移 */
   storage: {
-    getMode: () => Promise<'reference' | 'copy'>
-    setMode: (mode: 'reference' | 'copy') => Promise<'reference' | 'copy'>
     scanMissing: () => Promise<{
       ok: boolean
       missing?: number

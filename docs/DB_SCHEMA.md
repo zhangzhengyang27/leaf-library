@@ -132,7 +132,9 @@ PRAGMA temp_store = MEMORY;      -- 临时表/索引放内存
 
 #### `photo_photos`
 
-照片主体。`file_path` 是绝对路径（**非侵入式**：不复制原文件）；`hash` 存文件 md5（精确去重）；
+照片主体。`file_path` 是绝对路径（D-020 起 **入库即拷贝**：新素材落 `<库根>/images/YYMM/原名`，
+`source_path` 记出处；更早以引用方式入库的行仍指向用户磁盘上的原件，用设置页「迁移引用文件入库」批量拷入）；
+`hash` 存文件 md5（精确去重）；
 EXIF 列（`camera_model` / `lens_model` / `iso` / `aperture` / `shutter` / `focal_length` /
 `latitude` / `longitude`）由 AssetProcessingService 用 exifr 解析后回填；
 `phash` 为 64 位感知哈希（对 1024 预览计算，二期以图搜图/查重用）；

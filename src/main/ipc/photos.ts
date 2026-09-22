@@ -930,7 +930,9 @@ export function registerPhotoIpcHandlers(
     },
     /**
      * round20：替换文件（保留标签/评分/描述/文件夹等所有元数据）。
-     * 流程：选择新文件 → 复制到旧目录 → 更新数据库文件字段 → 删除旧文件 → 重建缩略图/元数据。
+     * D-020 起的形状：新字节拷进库（images/YYMM），旧文件**只有落在库内才删**。
+     * 旧实现是「复制到旧目录 + 无条件 unlink 旧文件」，而引用式入库的素材
+     * file_path 就是用户散在自己磁盘上的原件——那等于把用户自己的文件删了。
      */
     replaceFile: async (id: string): Promise<{ ok: boolean; error?: string; photo?: unknown }> => {
       const src = photoStore.getPhotoById(id)
@@ -947,19 +949,9 @@ export function registerPhotoIpcHandlers(
       const newPath = result.filePaths[0]
       if (!existsSync(newPath)) return { ok: false, error: '文件不存在' }
       try {
-        const dir = dirname(src.filePath)
-        const newName = basename(newPath)
-        let target = join(dir, newName)
-        // 重名自动追加序号（不覆盖其他已有文件）
-        if (target !== src.filePath && existsSync(target)) {
-          const ext = extname(newName)
-          const base = newName.slice(0, newName.length - ext.length)
-          let n = 2
-          while (existsSync(join(dir, `${base} ${n}${ext}`))) n++
-          target = join(dir, `${base} ${n}${ext}`)
-        }
         const oldPath = src.filePath
-        copyFileSync(newPath, target)
+        const target = photoStore.copyIntoLibrary(newPath)
+        if (!target) return { ok: false, error: '拷贝入资源库失败（磁盘空间或权限？）' }
         const st = statSync(target)
         const updated = photoStore.replaceFile(id, {
           filePath: target,
@@ -967,8 +959,8 @@ export function registerPhotoIpcHandlers(
           fileSize: st.size,
           kind: src.kind
         })
-        // 删除旧物理文件（如果与新路径不同）
-        if (oldPath !== target && existsSync(oldPath)) {
+        // 库内的旧副本让位给新的；库外原件一律不碰
+        if (photoStore.isInsideLibrary(oldPath) && oldPath !== target && existsSync(oldPath)) {
           try {
             unlinkSync(oldPath)
           } catch {
