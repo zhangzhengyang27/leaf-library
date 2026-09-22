@@ -36,7 +36,10 @@ function insertEmbedding(
   )
 }
 
-describe('EmbeddingService · 语义检索', () => {
+// 旧 CLIP 链（EmbeddingService + photo_embeddings）随 D-017 下线，迁移 019 已 DROP 该表，
+// 而 preload 也没暴露过 ai.semanticSearch 这类桥——想在测试里跑绿只能自建表，没有断言价值。
+// 现役语义链是 ClipEmbeddingService + photo_vectors（021），覆盖在 ClipEmbeddingService.model.test.ts。
+describe.skip('EmbeddingService · 语义检索', () => {
   let db: Database.Database
   let svc: EmbeddingService
 

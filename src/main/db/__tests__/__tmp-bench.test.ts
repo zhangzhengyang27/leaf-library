@@ -96,7 +96,7 @@ it('__tmp 分页排序代价测量', () => {
     for (let i = 0; i < 3000; i++)
       db
         .prepare(
-          `INSERT INTO photo_photos (id, file_path, file_name, file_size, imported_at, updated_at, kind) VALUES (?,?,?,?,?,'image')`
+          `INSERT INTO photo_photos (id, file_path, file_name, file_size, imported_at, updated_at, kind) VALUES (?,?,?,?,?,?, 'image')`
         )
         .run(`x-${i}`, `/x/${i}.png`, `x${i}.png`, i, Date.now(), Date.now())
   })()
@@ -108,7 +108,7 @@ it('__tmp 分页排序代价测量', () => {
     for (let i = 0; i < 3000; i++)
       db
         .prepare(
-          `INSERT INTO photo_photos (id, file_path, file_name, file_size, imported_at, updated_at, kind) VALUES (?,?,?,?,?,'image')`
+          `INSERT INTO photo_photos (id, file_path, file_name, file_size, imported_at, updated_at, kind) VALUES (?,?,?,?,?,?, 'image')`
         )
         .run(`y-${i}`, `/y/${i}.png`, `y${i}.png`, i, Date.now(), Date.now())
   })()

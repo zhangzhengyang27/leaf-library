@@ -52,7 +52,8 @@ function insertEmbedding(
   )
 }
 
-describe('EmbeddingService · 全库自动打标（阶段 5.3）', () => {
+// 同 photoEmbedding.test.ts：019 已 DROP photo_embeddings，被断言的这条链在 D-017 随 EmbeddingService 一起下线。
+describe.skip('EmbeddingService · 全库自动打标（阶段 5.3）', () => {
   let db: Database.Database
   let svc: EmbeddingService
 

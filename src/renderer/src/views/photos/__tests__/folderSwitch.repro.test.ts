@@ -47,6 +47,8 @@ function mockApi(): void {
             {},
             {
               get(_t2, m) {
+                if (m === 'getPage')
+                  return () => Promise.resolve({ items: [], nextCursor: null, total: 0 })
                 if (m === 'getByDateSection') return () => Promise.resolve([{ dateSection: '2026-09-01', photos: [photo] }])
                 if (m === 'listPhotoFolders') return () => Promise.resolve([folder])
                 if (m === 'listAlbums' || m === 'listSmartAlbums' || m === 'getUnsorted' || m === 'getRecent') return () => Promise.resolve([])
@@ -59,6 +61,8 @@ function mockApi(): void {
           )
         }
         if (prop === 'tag') return { getTags: () => Promise.resolve([]) }
+        if (prop === 'ai') return { onBatch: () => () => {} }
+        if (prop === 'system') return { listFileManagers: () => Promise.resolve([]) }
         if (typeof prop === 'string' && prop.startsWith('on')) return () => () => {}
         return universal()
       }
