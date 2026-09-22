@@ -37,6 +37,13 @@ const HARMONICS = 4
  * 而三份真素材（50 BPM 点击轨、96 节拍器、Sousa 铜管 march）最低 0.881。
  */
 const MIN_CONFIDENCE = 0.35
+/**
+ * 起度闸门：包络最大值 ÷ 平均值。连续音（440 Hz 纯音、和弦垫、白噪）的能量差分
+ * 几乎没有尖峰，crest 只有一两；有拍点的素材（点击轨、鼓组、铜管 march）在 20 以上。
+ * 没有这一道时 440 Hz 纯音会拿 0.35 那条分数（实测 conf 3.85、报 100 BPM）——
+ * 自相关在完美正弦上当然找得到"周期"，但那是音色不是节拍。
+ */
+const MIN_CREST = 15
 
 export interface AudioFacts {
   /** 每桶峰值，0–255（Uint8Array）；null = 没算出来 */
@@ -82,6 +89,12 @@ export function buildPeaks(pcm: Float32Array, buckets = WAVEFORM_BUCKETS): Uint8
   const out = new Uint8Array(buckets)
   if (pcm.length === 0) return out
   const size = pcm.length / buckets
+  /**
+   * 中间量必须是浮点：桶里的峰值本来是 0..1 的绝对值，直接塞进 Uint8Array 会被
+   * 截成 0（实测整条波形全零，`Math.max(...peaks)` 拿不到 255、`indexOf(255)` 得 -1，
+   * 归一化再乘 255 也救不回来）。
+   */
+  const raw = new Float64Array(buckets)
   let globalMax = 0
   for (let b = 0; b < buckets; b++) {
     const start = Math.floor(b * size)
@@ -91,17 +104,19 @@ export function buildPeaks(pcm: Float32Array, buckets = WAVEFORM_BUCKETS): Uint8
       const v = Math.abs(pcm[i])
       if (v > peak) peak = v
     }
-    out[b] = peak
+    raw[b] = peak
     if (peak > globalMax) globalMax = peak
   }
   // 整条归一到 0–255：不归一的话一段 -12dB 的素材会画成一条矮扁的带子，
   // 而用户看波形看的是形状，不是响度
-  if (globalMax > 0) for (let b = 0; b < buckets; b++) out[b] = Math.round((out[b] / globalMax) * 255)
+  if (globalMax > 0)
+    for (let b = 0; b < buckets; b++)
+      out[b] = Math.min(255, Math.round((raw[b] / globalMax) * 255))
   return out
 }
 
 /** 能量包络（帧 RMS 的半波整流差分）。返回的帧率 = sampleRate / hop */
-function onsetEnvelope(pcm: Float32Array): { v: Float64Array; fps: number } {
+function onsetEnvelope(pcm: Float32Array): { v: Float64Array; env: Float64Array; fps: number } {
   const fps = ENVELOPE_FPS
   const frames: number[] = []
   for (let s = 0; s + ENVELOPE_FRAME <= pcm.length; s += ENVELOPE_HOP) {
@@ -112,8 +127,10 @@ function onsetEnvelope(pcm: Float32Array): { v: Float64Array; fps: number } {
   const env = new Float64Array(Math.max(0, frames.length - 1))
   for (let i = 1; i < frames.length; i++) env[i - 1] = Math.max(0, frames[i] - frames[i - 1])
   const mean = env.reduce((a, b) => a + b, 0) / (env.length || 1)
-  for (let i = 0; i < env.length; i++) env[i] -= mean
-  return { v: env, fps }
+  const centered = new Float64Array(env.length)
+  for (let i = 0; i < env.length; i++) centered[i] = env[i] - mean
+  // env 原样带出去：起度闸门要看的是包络本身的起伏，不是去均值之后的数
+  return { v: centered, env, fps }
 }
 
 /**
@@ -132,8 +149,16 @@ export function estimateBpm(pcm: Float32Array): { bpm: number; confidence: numbe
   const windowed = pcm.length > BPM_WINDOW_SEC * AUDIO_PCM_SAMPLE_RATE
     ? pcm.subarray(0, BPM_WINDOW_SEC * AUDIO_PCM_SAMPLE_RATE)
     : pcm
-  const { v, fps } = onsetEnvelope(windowed)
+  const { v, env, fps } = onsetEnvelope(windowed)
   if (v.length < 8) return null
+  // 起度闸门：先确认包络上有"尖峰"这件事存在，再谈周期
+  let envMax = 0
+  let envSum = 0
+  for (const x of env) {
+    if (x > envMax) envMax = x
+    envSum += x
+  }
+  if (envMax / (envSum / (env.length || 1) || 1e-9) < MIN_CREST) return null
   let energy = 0
   for (const x of v) energy += x * x
   if (energy <= 0) return null

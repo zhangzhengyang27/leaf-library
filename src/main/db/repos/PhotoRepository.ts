@@ -88,6 +88,10 @@ export interface PhotoProcessingResult {
   durationMs?: number | null
   /** 视频实测帧率；undefined=本次没探（不覆盖旧值），null=探了但没有 */
   fps?: number | null
+  /** 音频波形峰值（400 个 0–255，迁移 024）；同 fps 语义：undefined 不覆盖旧值 */
+  waveform?: Uint8Array | Buffer | null
+  /** 节拍估计（整数拍/分）；null=算不出节拍感 */
+  bpm?: number | null
   hash?: string
   phash?: string
   colorDominant?: string
@@ -1619,6 +1623,8 @@ export class PhotoRepository {
            height = COALESCE(?, height),
            duration_ms = ?,
            fps = COALESCE(?, fps),
+           waveform = COALESCE(?, waveform),
+           bpm = COALESCE(?, bpm),
            hash = COALESCE(?, hash),
            phash = ?,
            color_dominant = ?,
@@ -1642,6 +1648,9 @@ export class PhotoRepository {
         result.height ?? null,
         result.durationMs ?? null,
         result.fps ?? null,
+        // 峰值是 Uint8Array，better-sqlite3 直接当 BLOB 绑定
+        result.waveform ?? null,
+        result.bpm ?? null,
         result.hash ?? null,
         result.phash ?? null,
         result.colorDominant ?? null,

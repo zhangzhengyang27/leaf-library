@@ -37,6 +37,7 @@ import { renderSystemPreview } from '../utils/systemPreview'
 import { clipEmbeddings } from './ClipEmbeddingService'
 import { getFfmpegPath } from '../utils/ffmpeg'
 import { probeMedia } from '../utils/ffmpegProbe'
+import { MAX_ANALYZE_DURATION_MS, probeAudioFacts } from '../utils/ffmpegAudio'
 import { isPdfLikeFile, renderPdfFirstPage } from './PdfRasterizer'
 import { extractPsdThumbnail, isPsdFile } from './PsdThumbnail'
 
@@ -350,10 +351,19 @@ export class AssetProcessingService {
         /* 正文抽取不可用：静默跳过 */
       }
 
-      // 音频：探测时长即可，无缩略图（网格用音频卡片）
+      // 音频：时长 + 波形峰值 + 节拍估计（网格用音频卡片，没有缩略图）
       if (kind === 'audio') {
         const { durationMs } = await probeMedia(photo.filePath)
-        photos.updateProcessingResult(photoId, { durationMs })
+        let waveform: Uint8Array | null = null
+        let bpm: number | null = null
+        // 超长素材不分析：45 分钟以上一次解码要占十几秒主进程外的 CPU/内存，
+        // 收益却只是封面条上的一段形状（预览仍能正常拖进度，退化成等高柱）
+        if (durationMs !== null && durationMs > 0 && durationMs <= MAX_ANALYZE_DURATION_MS) {
+          const facts = await probeAudioFacts(photo.filePath)
+          waveform = facts.peaks
+          bpm = facts.bpm
+        }
+        photos.updateProcessingResult(photoId, { durationMs, waveform, bpm })
         photos.setThumbStatus(photoId, 1)
         this.notify(photoId, 'done')
         return

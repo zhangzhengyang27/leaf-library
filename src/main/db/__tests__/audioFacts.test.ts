@@ -31,4 +31,25 @@ describe('024 音频事实：波形/BPM 列与按 id 取用', () => {
     db.prepare(`UPDATE photo_photos SET kind='file' WHERE id=?`).run(p.id)
     expect(photos.getPhotoById(p.id)!.kind).toBe('file')
   })
+
+  /**
+   * 处理管线的写入路径。占位符与参数是一一对位的裸数组，错一位就会把 phash 写进
+   * waveform 这类静默串列——所以走真实方法写、再走真实方法读，不直接 UPDATE。
+   */
+  it('updateProcessingResult 能把峰值与 BPM 落进 BLOB/REAL 列', () => {
+    const photos = new PhotoRepository(db)
+    const p = photos.addPhoto('/tmp/audio-facts-pipeline.mp3')
+    const peaks = Uint8Array.from(new Array(400).fill(7).map((v, i) => v + (i % 51)))
+    photos.updateProcessingResult(p.id, { durationMs: 6_048, waveform: peaks, bpm: 118 })
+    const f = photos.getAudioFacts(p.id)!
+    expect(Array.from(f.waveform!)).toEqual(Array.from(peaks))
+    expect(f.bpm).toBe(118)
+    expect(f.durationMs).toBe(6_048)
+    // 同一次调用没带 waveform/bpm 时不得把已算好的清掉（COALESCE 语义）
+    photos.updateProcessingResult(p.id, { durationMs: 6_048 })
+    expect(photos.getAudioFacts(p.id)!.waveform?.length).toBe(400)
+    expect(photos.getAudioFacts(p.id)!.bpm).toBe(118)
+    // 串列自查：别的数据也没被波形字节污染
+    expect(photos.getPhotoById(p.id)!.phash ?? '').toBe('')
+  })
 })

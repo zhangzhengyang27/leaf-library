@@ -1047,17 +1047,6 @@ function pickWallpaper(event: MouseEvent): void {
                 ≈ {{ Math.round(single.bpm) }} BPM
               </dd>
             </div>
-            <!-- 节拍是估的（迁移 024：能量包络自相关，只看前 120 秒），所以带"≈"并在
-                 title 里交代算法边界 —— 慢歌常被读成两倍速，无节拍感的音频干脆没有这行 -->
-            <div v-if="single.kind === 'audio' && single.bpm" class="contents">
-              <dt class="text-fg-tertiary">节拍</dt>
-              <dd
-                class="text-fg-secondary"
-                title="按前 120 秒的能量包络起拍算出的估计值；慢速素材可能给出两倍速"
-              >
-                ≈ {{ Math.round(single.bpm) }} BPM
-              </dd>
-            </div>
             <div class="contents">
               <dt class="text-fg-tertiary">添加日期</dt>
               <dd class="text-fg-secondary">{{ fmtDate(single.importedAt, expanded) }}</dd>

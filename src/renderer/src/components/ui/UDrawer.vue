@@ -60,3 +60,34 @@ watch(
           aria-modal="true"
           class="absolute inset-y-0 right-0 flex flex-col border-l border-line-default bg-surface-1 shadow-lg"
           :style="{ width }"
+        >
+          <header
+            v-if="title || $slots.header"
+            class="flex items-center justify-between gap-3 border-b border-line-subtle px-5 py-3.5"
+          >
+            <slot name="header">
+              <h3 class="truncate text-sm font-semibold text-fg-primary">{{ title }}</h3>
+            </slot>
+            <button
+              type="button"
+              class="shrink-0 text-fg-muted transition-colors hover:text-fg-primary"
+              aria-label="关闭"
+              @click="close"
+            >
+              ✕
+            </button>
+          </header>
+          <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+            <slot />
+          </div>
+          <footer
+            v-if="$slots.footer"
+            class="flex justify-end gap-2 border-t border-line-subtle px-5 py-3.5"
+          >
+            <slot name="footer" />
+          </footer>
+        </aside>
+      </div>
+    </Transition>
+  </Teleport>
+</template>

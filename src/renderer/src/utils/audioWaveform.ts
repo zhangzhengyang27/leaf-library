@@ -34,8 +34,10 @@ export function columnPeaks(
 ): number[] {
   const n = peaks?.length ?? 0
   const cols = Math.max(0, Math.floor(columns))
+  // 空输入给空数组，不能给 new Array(cols)：那是 cols 个洞（undefined），
+  // 调用方 for..of 一画就是 NaN 高度
+  if (n === 0 || cols === 0) return []
   const out = new Array<number>(cols)
-  if (n === 0 || cols === 0) return out
   for (let c = 0; c < cols; c++) {
     const a = Math.floor((c * n) / cols)
     const b = Math.max(a + 1, Math.floor(((c + 1) * n) / cols))

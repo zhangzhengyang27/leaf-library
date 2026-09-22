@@ -137,3 +137,22 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown, true))
     >
       <button
         class="block w-full px-3 py-1.5 text-left text-fg-primary hover:bg-surface-2"
+        @click="copyImage"
+      >
+        复制图片
+      </button>
+      <button
+        class="block w-full px-3 py-1.5 text-left text-fg-primary hover:bg-surface-2"
+        @click="toLibrary"
+      >
+        入库
+      </button>
+      <button
+        class="block w-full px-3 py-1.5 text-left text-fg-primary hover:bg-surface-2"
+        @click="close"
+      >
+        关闭
+      </button>
+    </div>
+  </div>
+</template>

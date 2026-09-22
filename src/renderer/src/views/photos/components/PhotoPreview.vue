@@ -156,10 +156,17 @@
             用系统播放器打开
           </button>
         </div>
-        <!-- 音频：卡片 + 播放器 -->
-        <div v-else-if="isAudio" class="w-full max-w-lg text-center">
-          <div class="text-8xl mb-8">🎵</div>
-          <audio :key="photo.id" :src="mediaUrl" controls class="w-full" />
+        <!-- 音频：波形条 + 播放/暂停（峰值与 BPM 入库时算好，这里按 id 取一次） -->
+        <div v-else-if="isAudio" class="w-full max-w-lg">
+          <AudioPlayer
+            ref="audioPlayerRef"
+            :key="photo.id"
+            :photo-id="photo.id"
+            :src="mediaUrl"
+            :file-path="photo.filePath"
+            :duration-ms="photo.durationMs"
+            :bpm="photo.bpm"
+          />
         </div>
         <!-- 字体：FontFace 样张（rawfile:// 加载原文件） -->
         <div
@@ -660,6 +667,7 @@ import { usePhotoActions } from '../composables/usePhotoActions'
 import { useWallpaper } from '../composables/useWallpaper'
 import PluginSandbox from '@components/plugins/PluginSandbox.vue'
 import AppIcon from '@components/AppIcon.vue'
+import AudioPlayer from './AudioPlayer.vue'
 import { encodeMediaPath } from '@renderer/utils/mediaPath'
 import { renderMarkdown } from '@renderer/utils/markdownPreview'
 import type { InstalledPlugin } from '@renderer/types/plugin'
@@ -931,9 +939,11 @@ function onKeydown(e: KeyboardEvent): void {
       return
     }
   }
-  if (e.code === 'Space' && isVideoInline.value) {
+  if (e.code === 'Space' && (isVideoInline.value || isAudio.value)) {
     e.preventDefault()
-    toggleVideoPlay()
+    // 音频的空格归播放器，否则"按空格 = 关预览"会盖掉播放（usePhotoKeyboard 那边同步开了例外）
+    if (isVideoInline.value) toggleVideoPlay()
+    else void audioPlayerRef.value?.toggle()
   }
 }
 onMounted(() => {
@@ -1014,6 +1024,8 @@ const isAudio = computed(() => props.photo?.kind === 'audio')
 
 // —— 六期：视频逐帧步进 / 倍速 ——
 const videoRef = ref<HTMLVideoElement | null>(null)
+/** 音频播放器（空格键走它暴露的 toggle） */
+const audioPlayerRef = ref<{ toggle: () => Promise<void> } | null>(null)
 const playbackRate = ref(1)
 const playbackRateLabel = computed(() =>
   playbackRate.value === 1 ? '1x' : `${playbackRate.value}x`
