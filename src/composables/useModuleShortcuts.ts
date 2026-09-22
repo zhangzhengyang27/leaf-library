@@ -1,0 +1,37 @@
+/* 2026-09-22 由 dev 缓存编译产物机械还原：类型标注已被 esbuild 剥除，import 说明符已尽量还原。过 node --check，未做运行验证。 */
+import { onBeforeUnmount, onMounted } from "vue";
+import { useRouter } from "vue-router";
+import { MODULES } from "/src/constants/modules.ts?t=1789599937910";
+function isMetaOrCtrl(e) {
+  return e.metaKey || e.ctrlKey;
+}
+function isTypingTarget(target) {
+  if (!(target instanceof HTMLElement)) return false;
+  const tag = target.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+  if (target.isContentEditable) return true;
+  return false;
+}
+export function useModuleShortcuts() {
+  const router = useRouter();
+  const onKeyDown = (e) => {
+    if (!isMetaOrCtrl(e)) return;
+    if (e.altKey || e.shiftKey) return;
+    if (isTypingTarget(e.target)) return;
+    const key = e.key;
+    if (key < "1" || key > "9") return;
+    const idx = parseInt(key, 10) - 1;
+    const m = MODULES[idx];
+    if (!m) return;
+    e.preventDefault();
+    router.push(m.path);
+  };
+  onMounted(() => {
+    window.addEventListener("keydown", onKeyDown);
+  });
+  onBeforeUnmount(() => {
+    window.removeEventListener("keydown", onKeyDown);
+  });
+}
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbInVzZU1vZHVsZVNob3J0Y3V0cy50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvKipcbiAqIExlYWYgwrcg5YWo5bGA5qih5Z2X5b+r5o236ZSu77yI4oyYMS05IC8gQ3RybCsxLTnvvIlcbiAqXG4gKiDmnaXmupDvvJpkb2NzL0lBLm1k44CMUDMg5YWo5bGA5b+r5o236ZSu55u06L6+44CNXG4gKiAtIE1hYzog4oyYMS05XG4gKiAtIFdpbi9MaW51eDogQ3RybCsxLTlcbiAqIC0gOSDmqKHlnZfpobrluo/op4EgY29uc3RhbnRzL21vZHVsZXMudHMgTU9EVUxFUyDmlbDnu4RcbiAqXG4gKiDms6jmhI/vvJpcbiAqIC0g5Y+q5Zyo6L6T5YWl5qGG77yIaW5wdXQgLyB0ZXh0YXJlYSAvIGNvbnRlbnRFZGl0YWJsZe+8ieWkluinpuWPkVxuICogLSDlhbblroMgYXBwIOW3sue7j+azqOWGjOeahOW/q+aNt+mUruS4jeaKolxuICogLSDnu5/kuIDlvZPliY3nqpflj6PlhoUgcm91dGVyLnB1c2jvvIh2NO+8muS4jeWGjeaWsOW8gOeql+WPo++8iVxuICovXG5cbmltcG9ydCB7IG9uQmVmb3JlVW5tb3VudCwgb25Nb3VudGVkIH0gZnJvbSAndnVlJ1xuaW1wb3J0IHsgdXNlUm91dGVyIH0gZnJvbSAndnVlLXJvdXRlcidcbmltcG9ydCB7IE1PRFVMRVMgfSBmcm9tICcuLi9jb25zdGFudHMvbW9kdWxlcydcblxuZnVuY3Rpb24gaXNNZXRhT3JDdHJsKGU6IEtleWJvYXJkRXZlbnQpOiBib29sZWFuIHtcbiAgcmV0dXJuIGUubWV0YUtleSB8fCBlLmN0cmxLZXlcbn1cblxuZnVuY3Rpb24gaXNUeXBpbmdUYXJnZXQodGFyZ2V0OiBFdmVudFRhcmdldCB8IG51bGwpOiBib29sZWFuIHtcbiAgaWYgKCEodGFyZ2V0IGluc3RhbmNlb2YgSFRNTEVsZW1lbnQpKSByZXR1cm4gZmFsc2VcbiAgY29uc3QgdGFnID0gdGFyZ2V0LnRhZ05hbWVcbiAgaWYgKHRhZyA9PT0gJ0lOUFVUJyB8fCB0YWcgPT09ICdURVhUQVJFQScgfHwgdGFnID09PSAnU0VMRUNUJykgcmV0dXJuIHRydWVcbiAgaWYgKHRhcmdldC5pc0NvbnRlbnRFZGl0YWJsZSkgcmV0dXJuIHRydWVcbiAgcmV0dXJuIGZhbHNlXG59XG5cbmV4cG9ydCBmdW5jdGlvbiB1c2VNb2R1bGVTaG9ydGN1dHMoKTogdm9pZCB7XG4gIGNvbnN0IHJvdXRlciA9IHVzZVJvdXRlcigpXG5cbiAgY29uc3Qgb25LZXlEb3duID0gKGU6IEtleWJvYXJkRXZlbnQpOiB2b2lkID0+IHtcbiAgICAvLyDku4Ug4oyYL0N0cmwgKyDmlbDlrZcgMS05XG4gICAgaWYgKCFpc01ldGFPckN0cmwoZSkpIHJldHVyblxuICAgIGlmIChlLmFsdEtleSB8fCBlLnNoaWZ0S2V5KSByZXR1cm5cbiAgICBpZiAoaXNUeXBpbmdUYXJnZXQoZS50YXJnZXQpKSByZXR1cm5cblxuICAgIGNvbnN0IGtleSA9IGUua2V5XG4gICAgaWYgKGtleSA8ICcxJyB8fCBrZXkgPiAnOScpIHJldHVyblxuXG4gICAgY29uc3QgaWR4ID0gcGFyc2VJbnQoa2V5LCAxMCkgLSAxXG4gICAgY29uc3QgbSA9IE1PRFVMRVNbaWR4XVxuICAgIGlmICghbSkgcmV0dXJuXG5cbiAgICBlLnByZXZlbnREZWZhdWx0KClcbiAgICAvLyDku6PnoIHlrqHmn6UgUDLvvJp1c2FnZS5yZWNvcmRVc2Ug5Li65q276YCa6YGT77yI5Li76L+b56iL5pegIGhhbmRsZXLvvInvvIzliKDpmaRcbiAgICByb3V0ZXIucHVzaChtLnBhdGgpXG4gIH1cblxuICBvbk1vdW50ZWQoKCkgPT4ge1xuICAgIHdpbmRvdy5hZGRFdmVudExpc3RlbmVyKCdrZXlkb3duJywgb25LZXlEb3duKVxuICB9KVxuXG4gIG9uQmVmb3JlVW5tb3VudCgoKSA9PiB7XG4gICAgd2luZG93LnJlbW92ZUV2ZW50TGlzdGVuZXIoJ2tleWRvd24nLCBvbktleURvd24pXG4gIH0pXG59XG4iXSwibWFwcGluZ3MiOiJBQWNBLFNBQVMsaUJBQWlCLGlCQUFpQjtBQUMzQyxTQUFTLGlCQUFpQjtBQUMxQixTQUFTLGVBQWU7QUFFeEIsU0FBUyxhQUFhLEdBQTJCO0FBQy9DLFNBQU8sRUFBRSxXQUFXLEVBQUU7QUFDeEI7QUFFQSxTQUFTLGVBQWUsUUFBcUM7QUFDM0QsTUFBSSxFQUFFLGtCQUFrQixhQUFjLFFBQU87QUFDN0MsUUFBTSxNQUFNLE9BQU87QUFDbkIsTUFBSSxRQUFRLFdBQVcsUUFBUSxjQUFjLFFBQVEsU0FBVSxRQUFPO0FBQ3RFLE1BQUksT0FBTyxrQkFBbUIsUUFBTztBQUNyQyxTQUFPO0FBQ1Q7QUFFTyxnQkFBUyxxQkFBMkI7QUFDekMsUUFBTSxTQUFTLFVBQVU7QUFFekIsUUFBTSxZQUFZLENBQUMsTUFBMkI7QUFFNUMsUUFBSSxDQUFDLGFBQWEsQ0FBQyxFQUFHO0FBQ3RCLFFBQUksRUFBRSxVQUFVLEVBQUUsU0FBVTtBQUM1QixRQUFJLGVBQWUsRUFBRSxNQUFNLEVBQUc7QUFFOUIsVUFBTSxNQUFNLEVBQUU7QUFDZCxRQUFJLE1BQU0sT0FBTyxNQUFNLElBQUs7QUFFNUIsVUFBTSxNQUFNLFNBQVMsS0FBSyxFQUFFLElBQUk7QUFDaEMsVUFBTSxJQUFJLFFBQVEsR0FBRztBQUNyQixRQUFJLENBQUMsRUFBRztBQUVSLE1BQUUsZUFBZTtBQUVqQixXQUFPLEtBQUssRUFBRSxJQUFJO0FBQUEsRUFDcEI7QUFFQSxZQUFVLE1BQU07QUFDZCxXQUFPLGlCQUFpQixXQUFXLFNBQVM7QUFBQSxFQUM5QyxDQUFDO0FBRUQsa0JBQWdCLE1BQU07QUFDcEIsV0FBTyxvQkFBb0IsV0FBVyxTQUFTO0FBQUEsRUFDakQsQ0FBQztBQUNIOyIsIm5hbWVzIjpbXX0=

@@ -1,0 +1,10 @@
+/* 2026-09-22 由 dev 缓存编译产物机械还原：类型标注已被 esbuild 剥除，import 说明符已尽量还原。过 node --check，未做运行验证。 */
+export {
+  MODULES,
+  findModule,
+  findModuleByRoute,
+  getModulesByGroup,
+  GROUP_LABELS
+} from "/src/shared/modules.ts";
+
+//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbIm1vZHVsZXMudHMiXSwic291cmNlc0NvbnRlbnQiOlsiLyoqXG4gKiBMZWFmIOe0oOadkOW6kyDCtyDmuLLmn5Pnq6/mqKHlnZfmuIXljZXvvIjnnJ/nkIbmupDlnKggc2hhcmVkL21vZHVsZXMudHPvvInjgIJcbiAqL1xuXG5leHBvcnQgdHlwZSB7IE1vZHVsZUdyb3VwLCBNb2R1bGVNZXRhIH0gZnJvbSAnLi4vLi4vLi4vc2hhcmVkL21vZHVsZXMnXG5leHBvcnQge1xuICBNT0RVTEVTLFxuICBmaW5kTW9kdWxlLFxuICBmaW5kTW9kdWxlQnlSb3V0ZSxcbiAgZ2V0TW9kdWxlc0J5R3JvdXAsXG4gIEdST1VQX0xBQkVMU1xufSBmcm9tICcuLi8uLi8uLi9zaGFyZWQvbW9kdWxlcydcbiJdLCJtYXBwaW5ncyI6IkFBS0E7QUFBQSxFQUNFO0FBQUEsRUFDQTtBQUFBLEVBQ0E7QUFBQSxFQUNBO0FBQUEsRUFDQTtBQUFBLE9BQ0s7IiwibmFtZXMiOltdfQ==
