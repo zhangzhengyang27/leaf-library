@@ -1,0 +1,9 @@
+# 2026-09-22 恢复：这 7 行原本被误粘进 .prettierrc.yaml（连同 .npmrc 的两行），
+# 按内容判断它们属于本文件——原件已丢失，此处为按证据重建。
+out
+dist
+pnpm-lock.yaml
+LICENSE.md
+tsconfig.json
+tsconfig.*.json
+src/main/db/migrations/

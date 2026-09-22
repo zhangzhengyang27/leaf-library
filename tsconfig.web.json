@@ -10,6 +10,8 @@
     "src/preload/index.ts",
     "src/shared/**/*"
   ],
+  "exclude": ["src/**/*.bundle.ts"],
+
   "compilerOptions": {
     "composite": true,
     "baseUrl": ".",
