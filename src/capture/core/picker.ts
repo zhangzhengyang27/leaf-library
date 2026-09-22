@@ -1,9 +1,0 @@
-/* 2026-09-22 由 dev 缓存编译产物机械还原：类型标注已被 esbuild 剥除，import 说明符已尽量还原。过 node --check，未做运行验证。 */
-import { ref } from "vue";
-export const pickedColor = ref(null);
-export function toHex({ r, g, b }) {
-  const h = (n) => n.toString(16).padStart(2, "0");
-  return `#${h(r)}${h(g)}${h(b)}`.toUpperCase();
-}
-
-//# sourceMappingURL=data:application/json;base64,eyJ2ZXJzaW9uIjozLCJzb3VyY2VzIjpbInBpY2tlci50cyJdLCJzb3VyY2VzQ29udGVudCI6WyIvLyDmlL7lpKfplZzlvZPliY3lj5bliLDnmoTlg4/ntKDoibLvvIhNYWduaWZpZXIg5YaZ77yMU2VsZWN0aW9uTGF5ZXIg6ZSu55uY6K+777yJXG5pbXBvcnQgeyByZWYgfSBmcm9tICd2dWUnXG5leHBvcnQgY29uc3QgcGlja2VkQ29sb3IgPSByZWY8eyByOiBudW1iZXI7IGc6IG51bWJlcjsgYjogbnVtYmVyIH0gfCBudWxsPihudWxsKVxuZXhwb3J0IGZ1bmN0aW9uIHRvSGV4KHsgciwgZywgYiB9OiB7IHI6IG51bWJlcjsgZzogbnVtYmVyOyBiOiBudW1iZXIgfSk6IHN0cmluZyB7XG4gIGNvbnN0IGggPSAobjogbnVtYmVyKTogc3RyaW5nID0+IG4udG9TdHJpbmcoMTYpLnBhZFN0YXJ0KDIsICcwJylcbiAgcmV0dXJuIGAjJHtoKHIpfSR7aChnKX0ke2goYil9YC50b1VwcGVyQ2FzZSgpXG59XG4iXSwibWFwcGluZ3MiOiJBQUNBLFNBQVMsV0FBVztBQUNiLGFBQU0sY0FBYyxJQUFnRCxJQUFJO0FBQ3hFLGdCQUFTLE1BQU0sRUFBRSxHQUFHLEdBQUcsRUFBRSxHQUFnRDtBQUM5RSxRQUFNLElBQUksQ0FBQyxNQUFzQixFQUFFLFNBQVMsRUFBRSxFQUFFLFNBQVMsR0FBRyxHQUFHO0FBQy9ELFNBQU8sSUFBSSxFQUFFLENBQUMsQ0FBQyxHQUFHLEVBQUUsQ0FBQyxDQUFDLEdBQUcsRUFBRSxDQUFDLENBQUMsR0FBRyxZQUFZO0FBQzlDOyIsIm5hbWVzIjpbXX0=

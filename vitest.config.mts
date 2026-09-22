@@ -18,6 +18,18 @@ export default defineConfig({
   },
   plugins: [vue()],
   test: {
-    exclude: ['e2e/**', 'scripts/**', '**/node_modules/**', 'references/**']
+    // 只认 src 下的单测；恢复暂存池（_recovered-usable / _compiled-from-cache / _错位-src根 /
+    // build-snapshot-*）里也有 *.test.ts，它们不是源码，默认 glob 会把它们当测试收进来
+    include: ['src/**/*.{test,spec}.{ts,mts,mjs}'],
+    exclude: [
+      'e2e/**',
+      'scripts/**',
+      '**/node_modules/**',
+      'references/**',
+      '_recovered-usable/**',
+      '_compiled-from-cache/**',
+      '_错位-src根/**',
+      'build-snapshot-*/**'
+    ]
   }
 })
