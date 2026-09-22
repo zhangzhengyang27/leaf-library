@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>示例检查器插件</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 8px;
+        font-family: -apple-system, 'PingFang SC', sans-serif;
+        font-size: 12px;
+        color: #4b5563;
+      }
+      .empty {
+        color: #9ca3af;
+        text-align: center;
+        padding: 16px 0;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 8px;
+        padding: 3px 0;
+        border-bottom: 1px dashed #eee;
+      }
+      .row:last-child {
+        border-bottom: none;
+      }
+      .k {
+        color: #9ca3af;
+      }
+      .v {
+        color: #111827;
+        max-width: 60%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .thumb {
+        width: 100%;
+        height: 72px;
+        object-fit: cover;
+        border-radius: 6px;
+        margin-bottom: 6px;
+      }
+      .tag {
+        display: inline-block;
+        background: #eef2ff;
+        color: #4f46e5;
+        border-radius: 999px;
+        padding: 1px 8px;
+        margin: 2px 2px 0 0;
+        font-size: 11px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app" class="empty">等待素材数据…</div>
+    <script>
+      // 与 hello-formatter 同款转义；额外转义引号以覆盖 title/src 属性上下文
+      function escapeHtml(v) {
+        return String(v === null || v === undefined ? '' : v)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;')
+      }
+      function render(p) {
+        const rows = [
+          ['名称', p.fileName],
+          ['类型', p.kind],
+          ['尺寸', p.width && p.height ? p.width + ' × ' + p.height : '—'],
+          ['大小', p.fileSize ? (p.fileSize / 1024).toFixed(1) + ' KB' : '—'],
+          ['评分', p.rating ? '★'.repeat(p.rating) : '未评分']
+        ]
+        const tags = (p.tags || [])
+          .map(function (t) {
+            return '<span class="tag">' + escapeHtml(t) + '</span>'
+          })
+          .join('')
+        return (
+          '<img class="thumb" src="' +
+          escapeHtml(p.thumbUrl) +
+          '" alt="" />' +
+          rows
+            .map(function (r) {
+              return (
+                '<div class="row"><span class="k">' +
+                r[0] +
+                '</span><span class="v" title="' +
+                escapeHtml(r[1]) +
+                '">' +
+                escapeHtml(r[1]) +
+                '</span></div>'
+              )
+            })
+            .join('') +
+          (tags ? '<div>' + tags + '</div>' : '')
+        )
+      }
+      window.addEventListener('message', function (e) {
+        var msg = e.data
+        if (msg && msg.type === 'leaf:data') {
+          var p = msg.payload
+          document.getElementById('app').innerHTML = p
+            ? render(p)
+            : '<div class="empty">未选中素材</div>'
+        }
+      })
+      parent.postMessage({ type: 'leaf:ready' }, '*')
+    </script>
+  </body>
+</html>

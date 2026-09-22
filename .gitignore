@@ -1,0 +1,22 @@
+# ⚠ 2026-09-22 桌面删除事故后重建的配置，非原件。原件从未进入任何快照/会话记录。
+# 依据：electron-builder.yml（原件已恢复）里显式排除的开发文件名 + 模板默认
+# 注：原来这两行用的是 `//`，gitignore 不认——它们一直被当成 pattern 而不是注释。
+node_modules
+dist
+out
+/gyp/*
+*.log
+*.sh
+*.bat
+.DS_Store
+.eslintcache
+.yarn
+.pnpm-store
+.vscode/*
+!.vscode/settings.json
+resources/**/*.bak
+test-results
+coverage
+.zcode
+.codebuddy
+references

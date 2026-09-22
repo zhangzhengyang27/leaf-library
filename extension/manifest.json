@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Leaf Clip · 存入 Leaf 素材库",
+  "version": "1.0.0",
+  "description": "把网页图片一键存入 Leaf 桌面素材库（右键单张 / 弹窗批选 / 截取可见区域）",
+  "permissions": ["contextMenus", "activeTab", "scripting", "storage", "notifications"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "收集本页图片到 Leaf"
+  },
+  "options_page": "options.html",
+  "icons": {
+    "128": "icons/icon128.png"
+  }
+}

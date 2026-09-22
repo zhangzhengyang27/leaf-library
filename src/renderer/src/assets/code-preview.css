@@ -1,0 +1,62 @@
+/**
+ * 代码预览的 highlight.js token 配色（全局样式，不是 scoped）
+ *
+ * 为什么单开一个全局文件而不是塞进 PhotoPreview.vue 的 style 块：
+ *  1. token 色属于"凡是 hljs 产出的地方都要成立"，跟着某个组件走以后 markdown
+ *     的围栏块要上色还得再抄一份；
+ *  2. v-html 注进来的内容拿不到 scoped 样式的作用域后缀，写成组件内样式得配 :deep，
+ *     而那个 style 块此刻正被同仓另一个会话在飞改写。
+ * 颜色一律用既有语义变量（不新增 hex），亮/暗两套主题下与 surface 配色同口径。
+ */
+
+.leaf-code .hljs-comment,
+.leaf-code .hljs-quote {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.leaf-code .hljs-keyword,
+.leaf-code .hljs-selector-tag,
+.leaf-code .hljs-doctag,
+.leaf-code .hljs-literal {
+  color: var(--brand-500);
+}
+.leaf-code .hljs-string,
+.leaf-code .hljs-regexp,
+.leaf-code .hljs-addition {
+  color: var(--color-success);
+}
+.leaf-code .hljs-number,
+.leaf-code .hljs-symbol,
+.leaf-code .hljs-bullet {
+  color: var(--color-warning);
+}
+.leaf-code .hljs-title,
+.leaf-code .hljs-section,
+.leaf-code .hljs-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.leaf-code .hljs-type,
+.leaf-code .hljs-class .hljs-title,
+.leaf-code .hljs-built_in,
+.leaf-code .hljs-params {
+  color: var(--color-info);
+}
+.leaf-code .hljs-attr,
+.leaf-code .hljs-attribute,
+.leaf-code .hljs-variable,
+.leaf-code .hljs-property,
+.leaf-code .hljs-selector-attr {
+  color: var(--accent-500);
+}
+.leaf-code .hljs-meta,
+.leaf-code .hljs-deletion,
+.leaf-code .hljs-meta .hljs-keyword {
+  color: var(--text-tertiary);
+}
+.leaf-code .hljs-emphasis {
+  font-style: italic;
+}
+.leaf-code .hljs-strong {
+  font-weight: 650;
+}

@@ -1,0 +1,317 @@
+@import '../styles/tokens.css';
+/* 代码预览的 hljs token 色（全局：PhotoPreview 里那套是 scoped，只盖住 markdown 容器） */
+@import './code-preview.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 路由加载骨架色已迁入 tokens.css（--app-route-loading-*，亮/暗成对） */
+
+/* === SplashScreen ============================================
+ * 启动闪屏：在 Vue mount 前显示品牌欢迎 + spinner。
+ * 由 src/renderer/src/main.ts 在 createApp.mount('#app') 后移除 #splash。
+ * 设计要点：
+ * - 不依赖 Tailwind（保证纯 HTML 也能渲染）
+ * - 不依赖主进程 JS（不能等 preload）
+ * - 跟随 prefers-color-scheme：暗色系统下用深背景
+ * =========================================================== */
+#splash {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 亮/暗由 tokens.css 的 --splash-bg / --splash-fg 提供 */
+  background: var(--splash-bg);
+  color: var(--splash-fg);
+  user-select: none;
+  /* 配合 Vue mount 后的 240ms 淡出过渡 */
+  transition: opacity 240ms ease;
+}
+
+#splash.splash-fadeout {
+  opacity: 0;
+}
+
+/* 系统暗色回退：Vue 挂载前 html.dark 未应用，跟随系统偏好 */
+@media (prefers-color-scheme: dark) {
+  #splash {
+    background: var(--splash-bg-system-dark);
+    color: var(--splash-fg-system-dark);
+  }
+}
+
+.splash-inner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.splash-logo {
+  font-size: 64px;
+  line-height: 1;
+  filter: drop-shadow(0 6px 20px rgba(0, 122, 255, 0.25));
+  animation: splash-pulse 2.4s ease-in-out infinite;
+}
+
+.splash-name {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB',
+    'Microsoft YaHei', sans-serif;
+}
+
+.splash-tagline {
+  font-size: 13px;
+  opacity: 0.55;
+  letter-spacing: 0.01em;
+}
+
+.splash-spinner {
+  margin-top: 12px;
+  display: flex;
+  gap: 6px;
+}
+.splash-spinner span {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.3;
+  animation: splash-bounce 1.2s ease-in-out infinite;
+}
+.splash-spinner span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.splash-spinner span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes splash-pulse {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  50% {
+    transform: scale(1.05);
+    opacity: 0.85;
+  }
+}
+
+@keyframes splash-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.3;
+  }
+  40% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* === /SplashScreen =========================================== */
+
+#app {
+  width: 100vw;
+  height: 100vh;
+  user-select: none;
+  overflow: auto;
+}
+
+body {
+  width: 100vw;
+  height: 100vh;
+}
+
+/* === v4 · macOS Native 补充层 ============================================== */
+
+/* 文本选区：品牌蓝浅衬（macOS 式），亮/暗各自取 token 值 */
+::selection {
+  background: var(--brand-glow);
+  color: var(--text-primary);
+}
+
+/* 玻璃材质：blur + saturate（vibrancy 观感）。
+   用法：在玻璃浮层上以 .glass-material 替代裸 backdrop-blur-[var(--glass-blur)] */
+.glass-material {
+  -webkit-backdrop-filter: var(--glass-filter);
+  backdrop-filter: var(--glass-filter);
+}
+
+/* 主题切换过渡：由 useTheme 在切换瞬间给 html 加 .theme-anim，320ms 后移除。
+   常驻会拖慢一切交互，因此只在切换帧启用。 */
+html.theme-anim *,
+html.theme-anim *::before,
+html.theme-anim *::after {
+  transition:
+    background-color 240ms ease,
+    border-color 240ms ease,
+    color 240ms ease,
+    fill 240ms ease,
+    stroke 240ms ease,
+    box-shadow 240ms ease !important;
+}
+
+
+/* 统一滚动条样式（颜色走 tokens.css --scrollbar-*，亮/暗自适应） */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+/* WebKit 浏览器滚动条样式（Chrome, Safari, Edge） */
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  transition: background 0.2s ease;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+  background-clip: padding-box;
+}
+
+/* 水平滚动条样式优化 */
+*::-webkit-scrollbar:horizontal {
+  height: 8px;
+}
+
+/* 滚动条角落 */
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* 对于特定区域，可以使用更细的滚动条 */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scrollbar-thumb) transparent;
+}
+
+.scrollbar-thin::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 3px;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 3px;
+  border: 1px solid transparent;
+  background-clip: padding-box;
+}
+
+.scrollbar-thin::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+  background-clip: padding-box;
+}
+
+/* 隐藏滚动条但保持滚动功能 */
+.scrollbar-hidden {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+
+/* ── Eagle 式 CSS 画控制态（Eagle 空勾选框/单选圆即 CSS 绘制，图标集无空盒图形）── */
+
+/* 未勾选复选框 */
+.leaf-checkbox {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+  background: transparent;
+}
+
+/* 未选中单选圆 */
+.leaf-radio {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* 选中单选圆（外环 + 中心点） */
+.leaf-radio-checked {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--brand-500);
+  border-radius: 50%;
+  background: var(--brand-500);
+  box-shadow: inset 0 0 0 2.5px var(--surface-1);
+}
+
+/* ── Eagle 式 CSS 画控制态（Eagle 空勾选框/单选圆即 CSS 绘制，图标集无空盒图形）── */
+
+/* 未勾选复选框 */
+.leaf-checkbox {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 3px;
+  background: transparent;
+}
+
+/* 未选中单选圆 */
+.leaf-radio {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+}
+
+/* 选中单选圆（外环 + 中心点） */
+.leaf-radio-checked {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  border: 1.5px solid var(--brand-500);
+  border-radius: 50%;
+  background: var(--brand-500);
+  box-shadow: inset 0 0 0 2.5px var(--surface-1);
+}

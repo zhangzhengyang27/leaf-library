@@ -1,0 +1,188 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    name: Lint & Type Check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint (ESLint)
+        run: pnpm run lint
+
+      - name: Lint (Stylelint)
+        run: pnpm run lint:css || true
+
+      - name: Typecheck (Node)
+        run: pnpm run typecheck:node
+
+      - name: Typecheck (Web)
+        run: pnpm run typecheck:web
+
+      - name: Lint CSS (增量：只查本次 changed / untracked)
+        # 存量 946 warnings 用 lint:css:changed 渐进清零；
+        # 增量 PR 必须用 token 写颜色
+        run: pnpm run lint:css:changed
+
+  test:
+    name: Unit Tests
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [20]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build native modules
+        run: pnpm rebuild:native || echo "Native rebuild skipped (no better-sqlite3)"
+
+      - name: Run tests
+        run: pnpm test -- --reporter=verbose
+
+      # E2E（playwright + electron.launch）仅本地跑；CI 需要 xvfb-run
+      # 包装 + 重新设计，暂不集成到 CI 主流程。
+      # 本地命令：pnpm build && pnpm test:e2e:smoke
+
+  build:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native modules
+        run: pnpm rebuild:native
+
+      - name: electron-vite build
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec electron-vite build
+
+      # 打包结构断言（--dir：不签名、不公证、不发布）。
+      # 为什么必须有：P1-13（开发目录整包夹带）与 P2-30（扩展未进 extraResources）
+      # 这类问题在 `electron-vite build` 下完全隐形——本轮 better-sqlite3 被留在
+      # devDependencies（打包版 require 必崩）也正是靠这一步才被抓出来的。
+      # 断言取自本地实测产物（app.asar 126M）：必须进的在里面、必须没的计数为 0。
+      - name: Package contents check (electron-builder --dir)
+        run: |
+          set -euo pipefail
+          pnpm exec electron-builder --linux --dir
+          ASAR=$(ls -d dist/linux*-unpacked/resources/app.asar | head -1)
+          echo "检查 $ASAR"
+          npx --yes @electron/asar list "$ASAR" > /tmp/asar.txt
+          for must in \
+            'node_modules/better-sqlite3/package.json' \
+            'node_modules/pdfjs-dist/cmaps/UniGB-UCS2-H.bcmap' \
+            'node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs'; do
+            grep -q "$must" /tmp/asar.txt || { echo "FAIL: 包内缺少 $must"; exit 1; }
+          done
+          for bad in \
+            'pnpm-store' \
+            '^/package/docs/' \
+            '\.map$' \
+            'node_modules/@huggingface/transformers/\.cache' \
+            'node_modules/onnxruntime-web/dist'; do
+            if grep -q "$bad" /tmp/asar.txt; then
+              echo "FAIL: 包内出现了 $bad"
+              grep "$bad" /tmp/asar.txt | head -5
+              exit 1
+            fi
+          done
+          echo "打包结构 OK（$(wc -l < /tmp/asar.txt) 条）"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-build
+          path: out/
+          retention-days: 7
+
+  # 六期：E2E 冒烟上 CI（此前仅本地）。Linux 下 Electron 依赖系统库，用 xvfb 包装；
+  # 各发行版包名差异大，先 continue-on-error 观察，稳定后转必过。
+  e2e-smoke:
+    name: E2E Smoke (Linux, xvfb)
+    runs-on: ubuntu-latest
+    needs: [lint, test]
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Rebuild native modules
+        run: pnpm rebuild:native
+
+      - name: Install Electron system deps + xvfb
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libnss3 libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libxss1 \
+            libasound2t64 xvfb
+
+      - name: electron-vite build
+        run: pnpm exec electron-vite build
+
+      - name: E2E smoke
+        run: xvfb-run -a pnpm exec playwright test e2e/launch-smoke.spec.mjs

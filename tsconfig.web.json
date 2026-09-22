@@ -1,0 +1,31 @@
+// ⚠ 2026-09-22 桌面删除事故后重建的配置，非原件。原件从未进入任何快照/会话记录。
+// paths 只列 src/renderer/src 下实际存在的目录（该仓库无 api/constants/router）
+{
+  "extends": "@electron-toolkit/tsconfig/tsconfig.web.json",
+  "include": [
+    "src/renderer/src/env.d.ts",
+    "src/renderer/src/**/*",
+    "src/renderer/src/**/*.vue",
+    "src/preload/index.d.ts",
+    "src/preload/index.ts",
+    "src/shared/**/*"
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "baseUrl": ".",
+    "moduleResolution": "bundler",
+    "types": ["vite/client"],
+    "ignoreDeprecations": "5.0",
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "paths": {
+      "@renderer/*": ["src/renderer/src/*"],
+      "@components/*": ["src/renderer/src/components/*"],
+      "@composables/*": ["src/renderer/src/composables/*"],
+      "@utils/*": ["src/renderer/src/utils/*"],
+      "@views/*": ["src/renderer/src/views/*"],
+      "@preload/*": ["src/preload/*"],
+      "@shared/*": ["src/shared/*"]
+    }
+  }
+}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>示例文本预览</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 12px;
+        font-size: 12px;
+        background: transparent;
+        color: #374151;
+      }
+      pre {
+        margin: 0;
+        font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+        font-size: 11px;
+        line-height: 1.6;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      h1,
+      h2,
+      h3 {
+        margin: 8px 0 4px;
+      }
+      h1 {
+        font-size: 15px;
+      }
+      h2 {
+        font-size: 13px;
+      }
+      h3 {
+        font-size: 12px;
+      }
+      .meta {
+        color: #9ca3af;
+        font-size: 10px;
+        margin-bottom: 8px;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="meta" class="meta"></div>
+    <pre id="app">等待数据…</pre>
+    <script>
+      // 最小 Markdown 头渲染（#/##/###），其余按等宽文本展示
+      function escapeHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      }
+      function renderMd(text) {
+        return escapeHtml(text)
+          .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+          .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+          .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+      }
+      window.addEventListener('message', function (e) {
+        var msg = e.data
+        if (msg && msg.type === 'leaf:data') {
+          var p = msg.payload
+          var app = document.getElementById('app')
+          var meta = document.getElementById('meta')
+          if (!p || !p.content) {
+            app.textContent = '（无内容或读取失败）'
+            meta.textContent = ''
+            return
+          }
+          var ext = (p.ext || 'txt').toLowerCase()
+          meta.textContent = p.fileName + ' · ' + p.content.length + ' 字符'
+          app.innerHTML =
+            ext === 'md' || ext === 'markdown' ? renderMd(p.content) : escapeHtml(p.content)
+        }
+      })
+      parent.postMessage({ type: 'leaf:ready' }, '*')
+    </script>
+  </body>
+</html>

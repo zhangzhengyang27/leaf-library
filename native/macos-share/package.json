@@ -1,0 +1,9 @@
+{
+  "name": "leaf-macos-share",
+  "version": "1.0.0",
+  "description": "Leaf · macOS 分享面板（NSSharingServicePicker 原生绑定）",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "private": true,
+  "gypfile": true
+}

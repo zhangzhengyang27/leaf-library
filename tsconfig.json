@@ -1,0 +1,6 @@
+// ⚠ 2026-09-22 桌面删除事故后重建的配置，非原件。原件从未进入任何快照/会话记录。
+// 依据：package.json 的 typecheck 脚本引用了 tsconfig.node.json / tsconfig.web.json
+{
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }]
+}

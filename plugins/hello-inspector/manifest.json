@@ -1,0 +1,9 @@
+{
+  "id": "hello-inspector",
+  "name": "示例检查器插件",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "permissions": [],
+  "formats": []
+}

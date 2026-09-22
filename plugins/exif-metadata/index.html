@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>Exif 元数据</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed #e5e7eb}
+.row:last-child{border-bottom:none}.k{color:#9ca3af;flex-shrink:0}.v{color:#111827;text-align:right}
+</style></head>
+<body><div id="app" class="empty">等待素材数据…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){document.getElementById('app').innerHTML='<div class="empty">未选中素材</div>';return}
+ var rows=[['相机',p.cameraModel],['镜头',p.lensModel],['ISO',p.iso],['光圈',p.aperture?'f/'+p.aperture:null],
+  ['快门',p.shutter],['焦距',p.focalLength?p.focalLength+' mm':null],
+  ['GPS',p.latitude!=null&&p.longitude!=null?p.latitude.toFixed(5)+', '+p.longitude.toFixed(5):null]];
+ rows=rows.filter(function(r){return r[1]!==null&&r[1]!==undefined&&r[1]!==''});
+ document.getElementById('app').innerHTML=rows.length?rows.map(function(r){
+  return '<div class="row"><span class="k">'+r[0]+'</span><span class="v">'+escapeHtml(r[1])+'</span></div>'}).join('')
+  :'<div class="empty">该素材没有 EXIF 信息</div>'})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

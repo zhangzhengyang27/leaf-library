@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>RGB 直方图</title><style>
+body{margin:0;padding:8px;font:12px/1.5 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+canvas{width:100%;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa}
+.legend{display:flex;gap:10px;margin-top:4px;font-size:10px;color:#6b7280}
+.legend i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:3px;vertical-align:-1px}
+</style></head>
+<body>
+<div id="app" class="empty">等待素材数据…</div>
+<canvas id="cv" width="512" height="200" style="display:none"></canvas>
+<div id="legend" class="legend" style="display:none">
+  <span><i style="background:#ef4444"></i>R</span><span><i style="background:#22c55e"></i>G</span>
+  <span><i style="background:#3b82f6"></i>B</span><span><i style="background:#6b7280"></i>亮度</span>
+</div>
+<script>
+function drawHistogram(img){
+  var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+  var w=256,h=Math.max(1,Math.round(256*img.naturalHeight/img.naturalWidth));
+  ctx.clearRect(0,0,cv.width,cv.height);
+  var off=document.createElement('canvas');off.width=w;off.height=h;
+  var octx=off.getContext('2d');octx.drawImage(img,0,0,w,h);
+  var d;
+  try{d=octx.getImageData(0,0,w,h).data}catch(err){
+    document.getElementById('app').textContent='无法读取像素（跨域限制）';return}
+  var r=new Array(64).fill(0),g=new Array(64).fill(0),b=new Array(64).fill(0),l=new Array(64).fill(0);
+  for(var i=0;i<d.length;i+=4){
+    r[d[i]>>2]++;g[d[i+1]>>2]++;b[d[i+2]>>2]++;l[(d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114)>>2]++;
+  }
+  var max=1;for(i=0;i<64;i++)max=Math.max(max,r[i],g[i],b[i],l[i]);
+  function poly(arr,color){ctx.beginPath();ctx.moveTo(0,cv.height);
+    for(i=0;i<64;i++)ctx.lineTo(i/63*cv.width,cv.height-Math.pow(arr[i]/max,0.5)*(cv.height-4));
+    ctx.lineTo(cv.width,cv.height);ctx.closePath();ctx.globalAlpha=0.45;ctx.fillStyle=color;ctx.fill();
+    ctx.globalAlpha=1;ctx.strokeStyle=color;ctx.lineWidth=1;ctx.stroke()}
+  poly(l,'#6b7280');poly(r,'#ef4444');poly(g,'#22c55e');poly(b,'#3b82f6');
+  cv.style.display='';document.getElementById('legend').style.display='flex';
+  document.getElementById('app').style.display='none';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){document.getElementById('app').style.display='';document.getElementById('app').textContent='未选中素材';return}
+ if(p.kind!=='image'){document.getElementById('app').style.display='';
+   document.getElementById('app').textContent='仅图片素材支持直方图';return}
+ var img=new Image();img.crossOrigin='anonymous';
+ img.onload=function(){drawHistogram(img)};
+ img.onerror=function(){document.getElementById('app').textContent='缩略图加载失败'};
+ img.src=p.bigThumbUrl||p.thumbUrl;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

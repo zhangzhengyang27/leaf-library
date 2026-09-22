@@ -1,0 +1,104 @@
+appId: com.leaf.library
+productName: Leaf 素材库
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!{.eslintcache,eslint.config.mjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md,CONTRIBUTING.md}'
+  - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  # 只负向模式会以 dot:true 补默认 **/*，下列开发目录（约 200MB+）曾全部进 asar（审查 P1-13）
+  - '!**/.pnpm-store/**'
+  - '!**/.git/**'
+  - '!**/.github/**'
+  - '!**/.zcode/**'
+  - '!**/.codebuddy/**'
+  - '!.vscode/**'
+  - '!docs/**'
+  - '!test-results/**'
+  - '!playwright-report/**'
+  - '!e2e/**'
+  - '!scripts/**'
+  - '!native/**'
+  - '!extension/**'
+  - '!plugins/**'
+  - '!node_modules/.cache/**'
+  # pnpm 布局下真实路径带 .pnpm/ 段，仓库级 .cache 模式命中不到运行时下载的模型权重
+  # （实测包内 146MB：CLIP onnx 权重落在 transformers 包内的 .cache/，本机跑过 embedding 才有；
+  #  这条在包内「相对包根」形态下生效，产物已核）
+  - '!node_modules/@huggingface/transformers/.cache/**'
+  # 纯浏览器版 ORT（四个 ort-wasm 共 ~108MB）：主进程只 require onnxruntime-node /
+  # onnxruntime-common。删掉这条 app.asar 实测从 126M 涨到 234M，务必保留。
+  # 注：它只剪掉该包自身 dist/，嵌套的 onnxruntime-common 副本仍随依赖树进包（node 侧要）
+  - '!node_modules/onnxruntime-web/**'
+  - '!**/*.map'
+  - '!**/*.tsbuildinfo'
+  - '!*.png'
+  - '!*.md'
+asarUnpack:
+  - resources/**
+  - node_modules/@ffmpeg-installer/**
+  - node_modules/leaf-macos-share/**
+extraResources:
+  # 阶段 5.1：内置插件随包分发（PluginService.listBuiltin 扫描 resources/plugins）
+  - from: plugins
+    to: plugins
+    filter:
+      - '**/*'
+  # 剪藏扩展：Chrome 无法从 asar 内加载未打包扩展，必须落 extraResources（审查 P2-30）
+  - from: extension/chrome
+    to: extension
+    filter:
+      - '**/*'
+win:
+  executableName: Leaf
+nsis:
+  artifactName: ${name}-${version}-setup.${ext}
+  shortcutName: ${productName}
+  uninstallDisplayName: ${productName}
+  createDesktopShortcut: always
+mac:
+  entitlementsInherit: build/entitlements.mac.plist
+  extendInfo:
+    NSCameraUsageDescription: Application requests access to the device's camera.
+    NSScreenUsageDescription: Leaf needs screen recording permission to capture screenshots.
+    NSMicrophoneUsageDescription: Application requests access to the device's microphone.
+    NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
+    NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
+    NSCameraUseContinuityCameraDeviceType: true
+  # 公证（notarize）——「按凭据自动决定」是 electron-builder 的内建行为（已核源码
+  # app-builder-lib/out/macPackager.js getNotarizeOptions）：
+  #   · 完全没有 Apple 相关环境变量 → 打 warn「skipped macOS notarization」并正常出包，
+  #     所以本地 pnpm build:mac 不需要额外开关
+  #   · 凭据只配了一半 → 抛 InvalidConfigurationError（这是唯一会卡的场景）
+  # 需要的环境变量（CI 通过 secret 注入，两组二选一）：
+  #   notarytool：APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID
+  #   API key：APPLE_API_KEY / APPLE_API_KEY_ID / APPLE_API_ISSUER
+  notarize: true
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  # signing identity：
+  # - CI：通过 CSC_LINK / CSC_KEY_PASSWORD 注入 .p12 证书
+  # - 本地：electron-builder 默认走系统 keychain 查找
+  #   "Developer ID Application: Your Name (TEAMID)"，故本地通常无需额外配置
+dmg:
+  artifactName: ${name}-${version}.${ext}
+linux:
+  target:
+    - AppImage
+    - snap
+    - deb
+  maintainer: electronjs.org
+  category: Utility
+appImage:
+  artifactName: ${name}-${version}.${ext}
+npmRebuild: false
+publish:
+  provider: generic
+  # 发布前必须替换为真实 HTTPS 更新源；AutoUpdateService 会检测占位符并短路
+  # 「检查更新」（提示更新源未配置），不会真的向 example.com 发请求
+  url: https://example.com/auto-updates
+electronDownload:
+  mirror: https://npmmirror.com/mirrors/electron/

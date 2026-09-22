@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>媒体信息</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed #e5e7eb}
+.row:last-child{border-bottom:none}.k{color:#9ca3af;flex-shrink:0}.v{color:#111827;text-align:right;word-break:break-all}
+h4{margin:6px 0 4px;font-size:11px;color:#6b7280}
+</style></head>
+<body><div id="app" class="empty">等待素材数据…</div>
+<script>
+function fmtSize(n){if(!n)return'—';if(n<1024)return n+' B';if(n<1048576)return(n/1024).toFixed(1)+' KB';return(n/1048576).toFixed(2)+' MB'}
+function fmtDate(ts){return ts?new Date(ts).toLocaleString():'—'}
+function fmtDur(ms){if(!ms)return'—';var s=Math.round(ms/1000);return Math.floor(s/60)+':'+String(s%60).padStart(2,'0')}
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function render(p){
+  var rows=[
+    ['格式',p.ext?p.ext.toUpperCase():'—'],['尺寸',p.width&&p.height?p.width+' × '+p.height:'—'],
+    ['大小',fmtSize(p.fileSize)]]; if(p.kind==='video'||p.kind==='audio')rows.push(['时长',fmtDur(p.durationMs)]);
+  rows.push(['添加时间',fmtDate(p.importedAt)],['拍摄时间',fmtDate(p.takenAt)],
+    ['评分',p.rating?'★'.repeat(p.rating):'未评分'],['收藏',p.isFavorite?'是':'否']);
+  return rows.map(function(r){return '<div class="row"><span class="k">'+r[0]+'</span><span class="v">'+escapeHtml(r[1])+'</span></div>'}).join('')
+}
+window.addEventListener('message',function(e){var m=e.data;if(m&&m.type==='leaf:data'){
+  document.getElementById('app').innerHTML=m.payload?render(m.payload):'<div class="empty">未选中素材</div>'}})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

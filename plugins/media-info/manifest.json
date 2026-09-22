@@ -1,0 +1,9 @@
+{
+  "id": "media-info",
+  "name": "媒体信息",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "permissions": [],
+  "formats": []
+}

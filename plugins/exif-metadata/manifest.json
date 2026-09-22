@@ -1,0 +1,9 @@
+{
+  "id": "exif-metadata",
+  "name": "Exif 元数据",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "permissions": [],
+  "formats": []
+}

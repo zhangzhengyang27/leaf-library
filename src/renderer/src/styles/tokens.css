@@ -1,0 +1,498 @@
+/**
+ * Leaf · Design Tokens（唯一视觉事实源）· v4 macOS Native Design Language
+ *
+ * v4 设计原则（替代 v2 Raycast/Linear 方向，2026-08 重设计决策）：
+ * 1. 原生质感 —— 对齐 Apple HIG：SF 系统字体栈、hairline 描边、大而柔的阴影、
+ *    毛玻璃材质（blur + saturate）、系统级控件观感；亮暗两套都是「第一主题」
+ * 2. 科技蓝主色 —— Brand 以 macOS System Blue 为基准（浅 #007AFF / 深 #0A84FF），
+ *    全站单一品牌色相；旧 Sunset Orange CTA 退役，accent 收敛为 brand 别名
+ * 3. 冷调中性 —— 中性灰带轻微蓝灰偏移（macOS 窗口材质感），告别纯 zinc 灰
+ * 4. 三层架构 —— primitive（brand/gray/语义原色）→ semantic（surface/line/fg/glass）
+ *    → module namespace（pomo-* / shot-* / legacy bg-*），亮暗共用同一套语义名
+ * 5. 兼容 —— v1/v2/v3 全部变量名保留，存量组件零破坏；值层整体换血
+ *
+ * 对比度基线（WCAG）：
+ *   - 正文 / 次级文本 ≥ 4.5:1（AA）
+ *   - 弱化文本（muted，仅限提示性内容）≥ 3:1
+ *   - 按钮文字对品牌底色按 UI 组件 3:1 标准（HIG 同款取舍）
+ *
+ * 消费方：
+ *   - src/renderer/src/assets/main.css（@import）
+ *   - tailwind.config.js（colors / spacing / radius / shadow 走 var(--*)）
+ *   - 组件中直接 var(--surface-1) 引用
+ */
+
+:root {
+  /* ─── Primitive · Brand（Tech Blue，macOS System Blue 基准）── */
+  --brand-50: #f0f6ff; /* 高亮背景 / hover 底色 */
+  --brand-100: #dcebff; /* 次级背景 */
+  --brand-200: #b4d6ff; /* 边框（弱） */
+  --brand-300: #85bdfa; /* active 状态 */
+  --brand-400: #5cabff; /* hover 主色（深底用） */
+  --brand-500: #3297ff; /* **Brand Default**（对齐 Eagle 实测选中蓝，八轮文档 light primary）*/
+  --brand-600: #0064d2; /* 主按钮 hover（同时是 AA 达标的文本品牌色） */
+  --brand-700: #0053ae; /* 主按钮 active */
+  --brand-900: #002e5f; /* 深色文字、Logo */
+  /* 品牌「辉光」——CTA / 焦点氛围光 */
+  --brand-glow: rgba(0, 122, 255, 0.3);
+
+  /* ─── Primitive · Accent（关键 CTA）──────────────────
+     v4：Sunset Orange 退役。macOS 的默认按钮就是系统蓝，
+     全站收敛为单一品牌色相（克制原则）。变量名保留兼容。 */
+  --accent-500: #007aff;
+  --accent-600: #0064d2;
+
+  /* ─── Primitive · Neutral（冷调蓝灰，macOS 材质感）──── */
+  --gray-50: #f7f8fa;
+  --gray-100: #eff1f4;
+  --gray-200: #e3e6eb;
+  --gray-300: #d2d6dd;
+  --gray-400: #a9b0ba;
+  --gray-500: #7d8590;
+  --gray-600: #626b78;
+  --gray-700: #4a525e;
+  --gray-800: #343a44;
+  --gray-900: #21262e;
+  --gray-950: #14181e;
+
+  /* ─── Semantic · 表面分层（浅色：八轮对齐 Eagle theme-light #f3f4f6）── */
+  --surface-0: #f3f4f6; /* 应用画布（Eagle theme-light） */
+  --surface-1: #ffffff; /* 面板 / 卡片 */
+  --surface-2: #ffffff; /* 浮起卡片 */
+  --surface-3: #ffffff; /* 模态 / 弹窗 / Popover */
+  --surface-hover: rgba(44, 47, 50, 0.05); /* 十五轮：Eagle dark-5（5% 墨罩） */
+  --surface-active: rgba(44, 47, 50, 0.1);
+  --surface-inverse: #1d1d1f; /* 反色面（深色按钮等） */
+
+  /* ─── Semantic · 描边（hairline，划界的主力）─────────── */
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.16);
+
+  /* ─── Semantic · 文本层级（八轮对齐 Eagle light：#26272B/#323339 实测）─ */
+  --text-primary: #26272b;
+  --text-secondary: #323339;
+  --text-tertiary: #51545b;
+  --text-muted: #86868b;
+  --text-inverse: #f5f5f7;
+  --text-brand: #0064d2; /* 白底 5.6:1，AA ✓ */
+  --text-danger: #d70015; /* Apple accessible red */
+  --text-success: #248a3d; /* Apple accessible green */
+
+  /* ─── Semantic · 玻璃拟态（macOS 材质）────────────────── */
+  --glass-bg: rgba(255, 255, 255, 0.68);
+  --glass-bg-strong: rgba(255, 255, 255, 0.82);
+  --glass-border: rgba(0, 0, 0, 0.09);
+  /* 顶部 1px 内高光 —— 材质厚度感的关键 */
+  --glass-highlight: rgba(255, 255, 255, 0.6);
+  --glass-blur: 20px;
+  --glass-saturate: 1.8; /* v4 新增：材质「鲜艳度」，vibrancy 观感的来源 */
+  --glass-filter: blur(20px) saturate(1.8); /* v4 新增：整体 backdrop-filter */
+
+  /* ─── Semantic · 遮罩 ──────────────────────────────── */
+  --overlay-bg: rgba(0, 0, 0, 0.28);
+
+  /* ─── Primitive · 语义色（HIG System Colors）─────────── */
+  --color-success: #34c759;
+  --color-warning: #ff9500;
+  --color-danger: #ff3b30;
+  --color-info: #3297ff;
+
+  /* ─── 字体（七轮对齐 Eagle：Lato UI 栈 + Fira Mono 等宽，@fontsource 本地打包）──
+     Eagle 实测字体栈（app.asar style_*.css）：
+     UI  = "Lato","PingFang TC","PingFang SC","STHeiti","微軟正黑體","Microsoft Yahei",sans-serif
+     Mono = 'Fira Mono' / "Fira Code",PingFang...；
+     Lato 缺字形时回退 SF/PingFang，中文始终走 PingFang */
+  --font-sans:
+    'Lato', -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  --font-mono:
+    'Fira Mono', 'Fira Code', 'SF Mono', ui-monospace, 'JetBrains Mono', Menlo, Consolas, monospace;
+
+  /* ─── Spacing (4/8 制) ───────────────────────────── */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ─── Radius（七轮对齐 Eagle：紧凑精准 —— 控件 3-5px / 卡片 8px / 弹层 10px）── */
+  --radius-sm: 4px; /* 按钮 / 输入框（Eagle 3-5px） */
+  --radius-md: 7px; /* 卡片 / 面板（Eagle 8px） */
+  --radius-lg: 10px; /* 模态 / Popover（Eagle 10px） */
+  --radius-xl: 14px; /* Hero / 大卡片 */
+
+  /* ─── Shadow（七轮对齐 Eagle：小模糊、高不透明、利落干净───────
+     Eagle 实测：0 1px 3px rgba(0,0,0,.2) / 0 2px 4px rgba(0,0,0,.3) /
+     弹层 0 2px 12px rgba(0,0,0,.3)——「利落」是精致感的关键，拒绝大弥散） */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.14);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.18);
+  --shadow-glow: 0 0 0 1px rgba(0, 114, 239, 0.15), 0 4px 16px -4px rgba(0, 114, 239, 0.3);
+  --shadow-ring-focus: 0 0 0 3px rgba(0, 114, 239, 0.28);
+  --shadow-ring-danger: 0 0 0 3px rgba(255, 59, 48, 0.28);
+
+  /* ─── Motion（七轮对齐 Eagle：100ms 主导 + ease / super 曲线）── */
+  --motion-instant: 60ms ease;
+  --motion-fast: 100ms ease;
+  --motion-normal: 150ms cubic-bezier(0.4, 0, 0.22, 1);
+  --motion-slow: 250ms cubic-bezier(0.4, 0, 0.22, 1);
+  --motion-spring: 240ms cubic-bezier(0.4, 0, 0.22, 1);
+  --ease-super: cubic-bezier(0.4, 0, 0.22, 1); /* Eagle --timing-function-super */
+
+  /* ─── Z ─────────────────────────────────────────── */
+  --z-base: 0;
+  --z-elevated: 10;
+  --z-sticky: 20;
+  --z-dropdown: 100;
+  --z-modal: 1000;
+  --z-toast: 1100;
+  --z-cmdk: 1200;
+  --z-screenshot: 9999;
+
+  /* ─── Shell 布局（消灭 TopBar 魔法数字，B14；十五轮对齐 Eagle 4.0：工具栏 48px）─ */
+  --shell-topbar-h: 3rem;
+  /* D-008 Edge 化：sidebar 语义改为素材库树形面板宽度（折叠=0 整栏隐藏）；
+     旧 60/240 两值保留供历史引用 */
+  --shell-sidebar-w: 60px;
+  --shell-sidebar-w-expanded: 240px;
+  --shell-library-panel-w: 300px; /* .sidebar{width:300px}（layout-metrics.spec L334） */
+  /* 右栏三面板（PhotoInspector / FolderInspector / LibraryInfoPanel）共用同一宽度：
+     .inspector{width:250px}（spec L637，旧 AX 值 240 作废） */
+  --shell-inspector-w: 250px;
+
+  /* ─── 滚动条（macOS overlay 式，低调）──────────────── */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.22);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.35);
+  --scrollbar-thumb-active: rgba(0, 0, 0, 0.5);
+
+  /* ─── 路由加载骨架（自 main.css 迁入，亮/暗成对）───── */
+  --app-route-loading-bg-start: #f6f7f9;
+  --app-route-loading-bg-end: #f1f3f6;
+  --app-route-loading-skeleton-a: #e7eaf0;
+  --app-route-loading-skeleton-b: #f5f7fa;
+  --app-route-loading-skeleton-c: #e7eaf0;
+
+  /* ─── SplashScreen（自 main.css 迁入）─────────────── */
+  --splash-bg:
+    radial-gradient(1200px 600px at 50% 0%, rgba(0, 122, 255, 0.07), transparent 60%), #f5f5f7;
+  --splash-fg: #1d1d1f;
+  --splash-glow: rgba(0, 122, 255, 0.22);
+  /* 系统暗色回退：Vue 挂载前 html.dark 尚未应用，splash 跟随 prefers-color-scheme */
+  --splash-bg-system-dark:
+    radial-gradient(1200px 600px at 50% 0%, rgba(10, 132, 255, 0.08), transparent 60%), #121316;
+  --splash-fg-system-dark: #f5f5f7;
+
+  /* ─── Pomodoro · Stitch ZenFocus（v4 与全局蓝体系调和）── */
+  /* Material-3 state colors：work 转入品牌蓝家族，short/long 保持青/紫区分 */
+  --pomo-work: #0b5ad3;
+  --pomo-work-soft: rgba(11, 90, 211, 0.1);
+  --pomo-work-glow: rgba(0, 122, 255, 0.4);
+  --pomo-short: #006e9e;
+  --pomo-short-soft: rgba(57, 184, 253, 0.12);
+  --pomo-short-glow: rgba(57, 184, 253, 0.4);
+  --pomo-long: #5e2bc4;
+  --pomo-long-soft: rgba(111, 61, 217, 0.12);
+  --pomo-long-glow: rgba(111, 61, 217, 0.4);
+  --pomo-paused: #7c8595;
+  --pomo-paused-soft: rgba(124, 133, 149, 0.1);
+  --pomo-idle: #7c8595;
+  --pomo-idle-soft: rgba(124, 133, 149, 0.08);
+
+  /* Ring */
+  --pomo-ring-track: rgba(11, 90, 211, 0.1);
+  --pomo-ring-width: 6;
+
+  /* Surfaces — Material-3 light（冷调化） */
+  --pomo-surface: #ffffff;
+  --pomo-surface-alt: #f4f6fd;
+  --pomo-surface-border: rgba(255, 255, 255, 0.4);
+  --pomo-glass-bg: rgba(255, 255, 255, 0.6);
+  --pomo-glass-bg-elevated: rgba(255, 255, 255, 0.75);
+  --pomo-glass-border: rgba(255, 255, 255, 0.4);
+  --pomo-glass-border-elevated: rgba(255, 255, 255, 0.6);
+  --pomo-text-strong: #1c1e26;
+  --pomo-text-soft: #474e5a;
+  --pomo-text-muted: #7c8595;
+  --pomo-outline: #7c8595;
+  --pomo-outline-variant: #c6cbd8;
+  --pomo-surface-container: #eef0f8;
+  --pomo-surface-container-low: #f4f6fd;
+  --pomo-surface-variant: #e2e5ef;
+
+  /* Priority */
+  --pomo-priority-high: #ba1a1a;
+  --pomo-priority-med: #f59e0b;
+  --pomo-priority-low: #006e9e;
+
+  /* Background — ZenFocus light */
+  --pomo-bg-base: #fafbfe;
+  --pomo-bg-gradient-1: rgba(11, 90, 211, 0.03);
+  --pomo-bg-gradient-2: rgba(94, 43, 196, 0.03);
+
+  /* Shadows */
+  --pomo-shadow-card: 0 16px 32px -12px rgba(11, 90, 211, 0.05);
+  --pomo-shadow-elevated: 0 24px 48px -12px rgba(11, 90, 211, 0.08);
+  --pomo-shadow-sidebar: -8px 0 32px rgba(11, 90, 211, 0.05);
+
+  /* ─── Pomodoro 弹窗 / 抽屉（亮/暗成对，随 .dark 切换）── */
+  --pomo-dialog-bg: #ffffff;
+  --pomo-dialog-border: rgba(0, 0, 0, 0.12);
+  --pomo-dialog-text: #1c242b;
+  --pomo-dialog-muted: #67727c;
+  --pomo-input-bg: #f4f6f8;
+  --pomo-input-border: rgba(30, 44, 54, 0.14);
+  --pomodoro-drawer-bg: #ffffff;
+  --pomodoro-drawer-border: rgba(0, 0, 0, 0.06);
+  --pomodoro-drawer-card: rgba(11, 90, 211, 0.05);
+  --pomodoro-drawer-text: #1f2933;
+
+  /* Pomodoro 统计图表 / 面板语义色 */
+  --pomo-text-muted: #68707e;
+  --pomo-text-soft: #474e5a;
+  --pomo-text-faint: #97a0ae;
+  --pomo-accent: #3794f0;
+  --pomo-accent-soft: #6ca7ff;
+  --pomo-on-accent: #ffffff;
+  --pomo-panel: #22262e;
+  --pomo-panel-soft: #1f242b;
+  --pomo-panel-inverse: #ffffff;
+  --pomo-tooltip-bg: #21252c;
+  --pomo-tooltip-text: #f5f6f8;
+  --pomo-success-bright: #50c878;
+  --pomo-danger-bright: #ff6b6b;
+
+  /* ─── 录屏模块旧变量（--bg-* / --primary-*）：按主题定义 ── */
+  --bg-primary: #ffffff;
+  --bg-secondary: #eff1f4;
+  --bg-hover: #e3e6eb;
+  --border-color: #d2d6dd;
+  --primary-color: #007aff;
+  --primary-hover: #0064d2;
+
+  /* 录屏模块主渐变（bg-gradient-primary 的 token 实现）
+     v4：定义为品牌蓝「主操作」渐变 —— 该类一律承载 text-white 主按钮 */
+  --gradient-primary: linear-gradient(135deg, #0a84ff 0%, #0064d2 100%);
+
+  /* ─── 截图覆盖层（恒定深色，不随主题切换）─────────────────
+     截图工具条 / 延时选择器 / 窗口选择器等悬浮在截图之上，必须始终保持深色
+     以与任意截图内容形成对比（同 macOS 截图 UI）。原先用散落字面量，现集中为 token。 */
+  --shot-overlay: rgba(0, 0, 0, 0.5);
+  --shot-panel: #2d2d30;
+  --shot-panel-raised: #3a3a3e;
+  --shot-panel-hover: #454549;
+  --shot-border: #56565c;
+  --shot-text: #ffffff;
+  --shot-text-dim: #cccccc;
+  --shot-text-muted: #999999;
+  --shot-text-faint: #666666;
+  --shot-accent: #4aa3ff;
+  --shot-accent-hover: #3a93f0;
+  --shot-accent-soft: rgba(74, 163, 255, 0.2);
+  --shot-accent-softer: rgba(74, 163, 255, 0.1);
+  --shot-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* ═══ Dark theme（对齐 macOS 深色外观：提亮一档的中性深灰 + hairline）═
+   不再走 Linear 的紫蓝偏移深黑，而是 macOS 式「石墨灰」：
+   层级靠 surface 亮度逐级抬升 + hairline 描边，阴影只做氛围。
+   由 useTheme.ts 切换 html.dark */
+:root.dark,
+html.dark {
+  /* Primitive · Neutral（深色端反转为「由深到浅」） */
+  --gray-50: #1e2127;
+  --gray-100: #242830;
+  --gray-200: #2d323c;
+  --gray-300: #3b414e;
+  --gray-400: #505867;
+  --gray-500: #6a7383;
+  --gray-600: #909aa9;
+  --gray-700: #b2bac6;
+  --gray-800: #d5dae1;
+  --gray-900: #eaeef3;
+  --gray-950: #111419;
+
+  /* Primitive · Brand（深色端切换到 systemBlue dark #0A84FF） */
+  --brand-50: #14202e;
+  --brand-100: #182739;
+  --brand-200: #1e3250;
+  --brand-300: #6fb2ff;
+  --brand-400: #5cabff;
+  --brand-500: #3297ff; /* 对齐 Eagle 暗色实测（选中环/文件名蓝条采样 #3297ff） */
+  --brand-600: #5cabff; /* 深色端 hover 向提亮 */
+  --brand-700: #63aeff;
+  --brand-900: #082238;
+  --brand-glow: rgba(10, 132, 255, 0.4);
+
+  /* Semantic · 表面分层 —— 七轮对齐 Eagle 暗色实测
+     （theme-dark #18191c；抬升面 #1d1e21；亮度逐级 + hairline 划界） */
+  --surface-0: #18191c;
+  --surface-1: #1d1e21;
+  --surface-2: #232529;
+  --surface-3: #2a2c31;
+  --surface-hover: rgba(255, 255, 255, 0.05);
+  --surface-active: rgba(255, 255, 255, 0.1);
+  --surface-inverse: #f5f5f7;
+
+  /* Semantic · 描边 —— hairline（Eagle 白 α 0.05-0.1 划界） */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.1);
+  --border-strong: rgba(255, 255, 255, 0.16);
+
+  /* Semantic · 文本层级 —— 七轮对齐 Eagle（#fff / #dcdcdc / #777 实测值） */
+  --text-primary: #ffffff;
+  --text-secondary: #dcdcdc;
+  --text-tertiary: #a8abb2;
+  --text-muted: #73757c;
+  --text-inverse: #1d1d1f;
+  --text-brand: #6fb2ff; /* 深底 8:1，AA ✓ */
+  --text-danger: #ff6961; /* Apple dark accessible red */
+  --text-success: #30d158;
+
+  /* Semantic · 玻璃拟态 */
+  --glass-bg: rgba(24, 25, 28, 0.75);
+  --glass-bg-strong: rgba(29, 30, 33, 0.88);
+  --glass-border: rgba(255, 255, 255, 0.09);
+  --glass-highlight: rgba(255, 255, 255, 0.08);
+  --glass-blur: 24px;
+  --glass-saturate: 1.8;
+  --glass-filter: blur(24px) saturate(1.8);
+
+  --overlay-bg: rgba(0, 0, 0, 0.52);
+
+  /* Primitive · 语义色（HIG dark 提亮变体） */
+  --color-success: #30d158;
+  --color-warning: #ff9f0a;
+  --color-danger: #ff453a;
+  --color-info: #3297ff;
+
+  /* Shadow：七轮对齐 Eagle 暗色（小模糊、高不透明、利落） */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 2px 12px rgba(0, 0, 0, 0.45);
+  --shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.55);
+  --shadow-glow: 0 0 0 1px rgba(10, 132, 255, 0.3), 0 4px 16px -4px rgba(10, 132, 255, 0.36);
+  --shadow-ring-focus: 0 0 0 3px rgba(10, 132, 255, 0.4);
+  --shadow-ring-danger: 0 0 0 3px rgba(255, 69, 58, 0.4);
+
+  /* 滚动条 */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.24);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
+  --scrollbar-thumb-active: rgba(255, 255, 255, 0.55);
+
+  /* 路由加载骨架 */
+  --app-route-loading-bg-start: #1b1d21;
+  --app-route-loading-bg-end: #1f2126;
+  --app-route-loading-skeleton-a: #2b2e35;
+  --app-route-loading-skeleton-b: #24262c;
+  --app-route-loading-skeleton-c: #2b2e35;
+
+  /* SplashScreen */
+  --splash-bg:
+    radial-gradient(1200px 600px at 50% 0%, rgba(10, 132, 255, 0.08), transparent 60%), #121316;
+  --splash-fg: #f5f5f7;
+  --splash-glow: rgba(10, 132, 255, 0.3);
+
+  /* ─── Pomodoro · ZenFocus Dark（v4 调和）──── */
+  --pomo-work: #9bc4ff;
+  --pomo-work-soft: rgba(155, 196, 255, 0.1);
+  --pomo-work-glow: rgba(10, 132, 255, 0.5);
+  --pomo-short: #89ceff;
+  --pomo-short-soft: rgba(137, 206, 255, 0.12);
+  --pomo-short-glow: rgba(57, 184, 253, 0.5);
+  --pomo-long: #d0bcff;
+  --pomo-long-soft: rgba(208, 188, 255, 0.12);
+  --pomo-long-glow: rgba(111, 61, 217, 0.5);
+  --pomo-paused: #c6cbd8;
+  --pomo-paused-soft: rgba(198, 203, 216, 0.1);
+  --pomo-idle: #c6cbd8;
+  --pomo-idle-soft: rgba(198, 203, 216, 0.08);
+
+  --pomo-ring-track: rgba(227, 225, 236, 0.05);
+
+  --pomo-surface: #2c2e35;
+  --pomo-surface-alt: #1c1e24;
+  --pomo-surface-border: rgba(255, 255, 255, 0.05);
+  --pomo-glass-bg: rgba(44, 46, 53, 0.4);
+  --pomo-glass-bg-elevated: rgba(44, 46, 53, 0.6);
+  --pomo-glass-border: rgba(255, 255, 255, 0.05);
+  --pomo-glass-border-elevated: rgba(255, 255, 255, 0.1);
+  --pomo-text-strong: #e8ebf0;
+  --pomo-text-soft: #c6cbd6;
+  --pomo-text-muted: #7c8595;
+  --pomo-outline: #7c8595;
+  --pomo-outline-variant: #4a4e5a;
+  --pomo-surface-container: #2c2e35;
+  --pomo-surface-container-low: #1c1e24;
+  --pomo-surface-variant: #4a4e5a;
+
+  --pomo-priority-high: #ffdad6;
+  --pomo-priority-med: #fcd34d;
+  --pomo-priority-low: #89ceff;
+
+  --pomo-bg-base: #121317;
+  --pomo-bg-gradient-1: rgba(10, 132, 255, 0.05);
+  --pomo-bg-gradient-2: rgba(111, 61, 217, 0.05);
+
+  --pomo-shadow-card: 0 16px 32px -12px rgba(0, 0, 0, 0.5);
+  --pomo-shadow-elevated: 0 24px 48px -12px rgba(0, 0, 0, 0.6);
+  --pomo-shadow-sidebar: -8px 0 32px rgba(0, 0, 0, 0.4);
+
+  /* Pomodoro 弹窗 / 抽屉（暗色） */
+  --pomo-dialog-bg: #23252b;
+  --pomo-dialog-border: rgba(255, 255, 255, 0.1);
+  --pomo-dialog-text: #f4f6f8;
+  --pomo-dialog-muted: #8a909c;
+  --pomo-input-bg: rgba(255, 255, 255, 0.06);
+  --pomo-input-border: rgba(255, 255, 255, 0.12);
+  --pomodoro-drawer-bg: #1d1f24;
+  --pomodoro-drawer-border: rgba(255, 255, 255, 0.07);
+  --pomodoro-drawer-card: rgba(10, 132, 255, 0.09);
+  --pomodoro-drawer-text: #f5f5f7;
+
+  /* Pomodoro 统计图表 / 面板语义色（暗色） */
+  --pomo-text-muted: #9aa4b2;
+  --pomo-text-soft: #b6c0cc;
+  --pomo-text-faint: #7c8798;
+  --pomo-accent: #6ca7ff;
+  --pomo-accent-soft: #9dc4ff;
+  --pomo-on-accent: #0e1116;
+  --pomo-panel: #22252c;
+  --pomo-panel-soft: #1c1f25;
+  --pomo-panel-inverse: #f5f5f7;
+  --pomo-tooltip-bg: #2a2e36;
+  --pomo-tooltip-text: #f4f6f8;
+  --pomo-success-bright: #4ade80;
+  --pomo-danger-bright: #f87171;
+
+  /* 录屏模块旧变量（暗色） */
+  --bg-primary: #222329;
+  --bg-secondary: #1d1f24;
+  --bg-hover: #2d323c;
+  --border-color: #3b414e;
+  --primary-color: #0a84ff;
+  --primary-hover: #3d9bff;
+
+  /* 录屏模块主渐变（暗色） */
+  --gradient-primary: linear-gradient(135deg, #0a84ff 0%, #2e93ff 100%);
+
+  /* 截图覆盖层：恒定深色，暗色主题下与浅色保持一致即可 */
+  --shot-overlay: rgba(0, 0, 0, 0.6);
+  --shot-panel: #26262a;
+  --shot-panel-raised: #313136;
+  --shot-panel-hover: #3d3d43;
+  --shot-border: #4a4a52;
+  --shot-text: #f5f5f7;
+  --shot-text-dim: #d0d0d6;
+  --shot-text-muted: #a0a0a8;
+  --shot-text-faint: #75757e;
+  --shot-accent: #4aa3ff;
+  --shot-accent-hover: #6fb5ff;
+  --shot-accent-soft: rgba(74, 163, 255, 0.24);
+  --shot-accent-softer: rgba(74, 163, 255, 0.12);
+  --shot-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}

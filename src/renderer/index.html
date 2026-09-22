@@ -1,0 +1,48 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>Leaf 素材库</title>
+    <!--
+      CSP（代码审查 P0-6 收紧）：移除工具箱母版遗留的外网域名与 unsafe-eval；
+      仅保留本项目实际消费的端点（ClipServer 本地回环 / Carto 地图瓦片 / Nominatim 反地理编码）。
+      script-src 保留 unsafe-inline（Vue 打包为外链文件，无需 eval）；
+      wasm-unsafe-eval 仅放开 WebAssembly 编译——pdfjs 的 ICC/JBIG2/openjpeg
+      解码器是同步 new WebAssembly.Module(bytes)，不给这条会静默失去色彩管理。
+      仍不开 unsafe-eval。
+      connect-src 里的五个自定义协议（thumb/image/video/rawfile/pdfres）与
+      protocols.ts 的 registerSchemesAsPrivileged 必须同口径：那些 scheme 已声明
+      supportFetchAPI，但 Chromium 还看文档 CSP 的 connect-src——两边不一致时
+      「协议看着能用、fetch 一律 Failed to fetch」（二轮审查真机踩过）。
+      这些 scheme 只能取已入库素材或包内只读资源，不构成对外出口。
+      base-uri 额外放行 rawfile:：HTML 预览往沙箱 iframe 的 srcdoc 注入
+      <base href="rawfile://素材目录/"> 让相对资源按素材目录解析；srcdoc 继承本文档 CSP，
+      这里不放行则 base 被拒、相对资源回落到应用自身目录（真机报
+      "Not allowed to load local resource"），HTML 预览里的图片/样式全挂。
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self' file: data:; script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: file: image: thumb: rawfile: video: https:; font-src 'self' data: rawfile:; media-src 'self' file: data: blob: video: https:; worker-src 'self' blob:; connect-src 'self' thumb: image: video: rawfile: pdfres: https://basemaps.cartocdn.com https://*.basemaps.cartocdn.com https://nominatim.openstreetmap.org; frame-src 'self' blob: data:; object-src 'none'; base-uri 'self' rawfile:"
+    />
+  </head>
+
+  <body>
+    <!--
+      启动闪屏（SplashScreen）。
+      背景色 + 静态品牌元素，避免 Vue mount 前的「白屏」。
+      Vue mount 后由 src/renderer/src/main.ts 立刻移除。
+    -->
+    <div id="splash" aria-hidden="true">
+      <div class="splash-inner">
+        <div class="splash-logo">🌿</div>
+        <div class="splash-name">Leaf</div>
+        <div class="splash-tagline">Tools that breathe with your day.</div>
+        <div class="splash-spinner" role="progressbar" aria-label="loading">
+          <span></span><span></span><span></span>
+        </div>
+      </div>
+    </div>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

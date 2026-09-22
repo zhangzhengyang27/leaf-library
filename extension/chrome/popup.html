@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        width: 340px;
+        margin: 0;
+        font: 12px/1.5 -apple-system, 'PingFang SC', sans-serif;
+        color: #1f2937;
+      }
+      header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 12px;
+        border-bottom: 1px solid #e5e7eb;
+      }
+      header b {
+        font-size: 13px;
+      }
+      header .spacer {
+        flex: 1;
+      }
+      header a {
+        color: #2563eb;
+        text-decoration: none;
+        font-size: 11px;
+      }
+      main {
+        padding: 8px 12px;
+      }
+      .tip {
+        color: #6b7280;
+        padding: 24px 0;
+        text-align: center;
+      }
+      .folder-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 8px;
+      }
+      .folder-row label {
+        color: #6b7280;
+        font-size: 11px;
+        flex-shrink: 0;
+      }
+      .folder-row select {
+        flex: 1;
+        min-width: 0;
+        border: 1px solid #d1d5db;
+        border-radius: 6px;
+        padding: 4px 6px;
+        font-size: 12px;
+      }
+      .actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-top: 1px solid #e5e7eb;
+      }
+      .actions .count {
+        color: #6b7280;
+      }
+      button {
+        border: 0;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        cursor: pointer;
+        background: #e5e7eb;
+      }
+      button.primary {
+        background: #2563eb;
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.5;
+        cursor: default;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 6px;
+        max-height: 320px;
+        overflow-y: auto;
+      }
+      .cell {
+        position: relative;
+        aspect-ratio: 1;
+        border-radius: 6px;
+        overflow: hidden;
+        background: #f3f4f6;
+        cursor: pointer;
+      }
+      .cell img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      .cell.off img {
+        opacity: 0.25;
+      }
+      .cell .tick {
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        background: #2563eb;
+        color: #fff;
+        font-size: 10px;
+        line-height: 16px;
+        text-align: center;
+      }
+      .cell.off .tick {
+        background: #9ca3af;
+      }
+      footer {
+        padding: 6px 12px 10px;
+        color: #6b7280;
+        font-size: 11px;
+        min-height: 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <b>Leaf Clipper</b>
+      <span class="spacer"></span>
+      <a href="./options.html" target="_blank">设置</a>
+    </header>
+    <main>
+      <div id="tip" class="tip">正在读取页面图片…</div>
+      <div id="folderRow" class="folder-row" style="display: none">
+        <label for="folder">收藏到</label>
+        <select id="folder"></select>
+      </div>
+      <div id="grid" class="grid" style="display: none"></div>
+    </main>
+    <div class="actions">
+      <span id="count" class="count"></span>
+      <span class="spacer" style="flex: 1"></span>
+      <button id="toggle" type="button">反选</button>
+      <button id="save" class="primary" type="button" disabled>收藏选中</button>
+    </div>
+    <footer id="status"></footer>
+    <script src="popup.js"></script>
+  </body>
+</html>

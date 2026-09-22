@@ -1,0 +1,9 @@
+{
+  "id": "hello-formatter",
+  "name": "示例文本预览插件",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "permissions": [],
+  "formats": ["txt", "md", "markdown", "log", "json", "yaml", "yml", "csv"]
+}

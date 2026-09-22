@@ -1,0 +1,11 @@
+{
+  "manifest_version": 3,
+  "name": "Leaf Clipper",
+  "version": "1.0.0",
+  "description": "将网页图片一键收藏到 Leaf 素材库（Eagle 式剪藏）。",
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus"],
+  "host_permissions": ["http://127.0.0.1/*"],
+  "background": { "service_worker": "background.js" },
+  "action": { "default_popup": "popup.html", "default_title": "收藏到 Leaf" },
+  "options_page": "options.html"
+}

@@ -1,0 +1,9 @@
+{
+  "id": "histogram",
+  "name": "RGB 直方图",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "permissions": [],
+  "formats": []
+}
