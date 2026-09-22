@@ -612,6 +612,23 @@ export class PhotoRepository {
       .all(limit) as Array<{ id: string; file_path: string }>
   }
 
+  /** 音频事实（peaks/duration/bpm）：400 B 一条，不随列表下发，在打开音频预览时按 id 取一次 */
+  getAudioFacts(id: string): { waveform: Uint8Array | null; bpm: number | null; durationMs: number | null } | null {
+    const row = this.db
+      .prepare(
+        `SELECT waveform, bpm, duration_ms FROM photo_photos WHERE id = ? AND deleted_at IS NULL`
+      )
+      .get(id) as
+      | { waveform: Uint8Array | null; bpm: number | null; duration_ms: number | null }
+      | undefined
+    if (!row) return null
+    return {
+      waveform: row.waveform ?? null,
+      bpm: row.bpm ?? null,
+      durationMs: row.duration_ms ?? null
+    }
+  }
+
   /** 022：写入回填的帧率（仅当行内仍为空，避免覆盖并行处理结果） */
   updateBackfilledFps(id: string, fps: number): void {
     this.db.prepare(`UPDATE photo_photos SET fps = COALESCE(fps, ?) WHERE id = ?`).run(fps, id)

@@ -7,6 +7,7 @@
  */
 import { ipcMain } from 'electron'
 import { photoRepository } from '../db/repos/PhotoRepository'
+import { isAnnotationIdLike } from '@shared/annotations'
 import { findSubtitleTracksAny } from '../services/SubtitleService'
 
 export interface SubtitleTrackDto {
@@ -35,6 +36,32 @@ export function subtitlesForPhoto(photoId: unknown): SubtitleTrackDto[] {
   }
 }
 
+export interface AudioFactsDto {
+  peaks: number[] | null
+  durationMs: number
+  bpm: number | null
+}
+
+/** 音频预览的事实数据：peaks 转成普通数组过 IPC（Uint8Array 结构化克隆到渲染层是 Uint8Array，
+ *  但这里与 d.ts 的 number[] 契约对齐），任何异常都当「没有」不打断播放 */
+export function audioFactsForPhoto(photoId: unknown): AudioFactsDto | null {
+  if (!isAnnotationIdLike(photoId)) return null
+  try {
+    const photo = photoRepository.getPhotoById(photoId)
+    if (!photo || photo.kind !== 'audio') return null
+    const facts = photoRepository.getAudioFacts(photoId)
+    if (!facts) return null
+    return {
+      peaks: facts.waveform ? Array.from(facts.waveform) : null,
+      durationMs: facts.durationMs ?? 0,
+      bpm: facts.bpm
+    }
+  } catch {
+    return null
+  }
+}
+
 export function registerMediaIpcHandlers(): void {
   ipcMain.handle('video:subtitles', (_e, photoId: unknown) => subtitlesForPhoto(photoId))
+  ipcMain.handle('audio:waveform', (_e, photoId: unknown) => audioFactsForPhoto(photoId))
 }
