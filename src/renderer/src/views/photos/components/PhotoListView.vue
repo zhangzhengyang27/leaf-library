@@ -5,7 +5,7 @@
  * 与 PhotoGrid 同一套交互契约：选择（含 ⌘/Shift 连选）、预览、右键菜单、
  * 拖拽、键盘高亮；行 = 缩略图 + 名称 + 类型 + 尺寸/大小 + 日期 + 评分。
  */
-import { computed, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import AppIcon from '@components/AppIcon.vue'
 import { KIND_LABELS } from '@shared/assetTypes'
 import type { Photo, PhotoSection } from '../../../types/photo'
@@ -26,8 +26,10 @@ const props = withDefaults(
     navActiveId?: string | null
     /** 分页化阶段 1：数据源还有下一页（触底后 emit load-more） */
     hasMore?: boolean
+    /** D-012：父层（右键「重命名」/ F2 / ⌘R）驱动的行内就地重命名 */
+    renamingId?: string | null
   }>(),
-  { mode: 'normal', navActiveId: null }
+  { mode: 'normal', navActiveId: null, renamingId: null }
 )
 
 // F1：剪切态（Eagle：已剪切素材半透明）
@@ -49,6 +51,9 @@ const emit = defineEmits<{
   ]
   /** D-012 框选橡皮筋：拖拽中/结束的最终选中集 */
   'marquee-select': [ids: string[]]
+  /** D-012 就地重命名（与 PhotoGrid 同一契约，父层 onRenameCommit 复用） */
+  'rename-commit': [photo: Photo, newName: string]
+  'rename-cancel': []
 }>()
 
 const isSelected = (photoId: string): boolean => props.selectedSet.has(photoId)
@@ -62,6 +67,57 @@ const marquee = useMarquee({
   getBaseSelection: () => [...props.selectedSet],
   onSelect: (ids) => emit('marquee-select', ids)
 })
+
+// —— D-012 行内就地重命名（P1-11 收尾：此前列表布局没有该能力，
+//    入口在列表/自由网格下写了 renamingId 却无人消费 → 静默无反应）——
+
+const renamingPhotoId = ref<string | null>(null)
+const renameValue = ref('')
+let renameSettled = false
+
+function startRename(p: Photo): void {
+  renamingPhotoId.value = p.id
+  renameValue.value = p.fileName
+  renameSettled = false
+  void nextTick(() => {
+    const input = listEl.value?.querySelector<HTMLInputElement>('input[data-rename-input]')
+    if (input) {
+      input.focus()
+      const dot = p.fileName.lastIndexOf('.')
+      input.setSelectionRange(0, dot > 0 ? dot : p.fileName.length)
+    }
+  })
+}
+
+function commitRename(p: Photo): void {
+  if (renameSettled) return
+  renameSettled = true
+  if (renameValue.value.trim() && renameValue.value !== p.fileName)
+    emit('rename-commit', p, renameValue.value)
+  else emit('rename-cancel')
+  renamingPhotoId.value = null
+}
+
+function cancelRename(): void {
+  emit('rename-cancel')
+  renamingPhotoId.value = null
+}
+
+watch(
+  () => props.renamingId,
+  (id) => {
+    if (!id) {
+      renamingPhotoId.value = null
+      return
+    }
+    if (renamingPhotoId.value === id) return
+    const target = props.sections.flatMap((s) => s.photos).find((p) => p.id === id)
+    if (target) startRename(target)
+  },
+  // immediate：布局来回切换时组件会重新挂载，而父层的 renamingId 仍在——
+  // 没有它则回到列表后输入框不再出现（与 PhotoGrid 同修）
+  { immediate: true }
+)
 
 function handleClick(photo: Photo, e: MouseEvent): void {
   if (props.mode === 'trash') return
@@ -271,7 +327,20 @@ onUnmounted(() => io?.disconnect())
               <AssetThumb :photo="photo" :cover="true" />
             </div>
 
-            <span class="min-w-0 flex-1 truncate text-xs text-fg-primary">
+            <input
+              v-if="renamingPhotoId === photo.id"
+              data-rename-input
+              class="min-w-0 flex-1 truncate rounded-xs border border-brand-500 bg-surface-1 px-1 text-xs text-fg-primary outline-none"
+              :value="renameValue"
+              draggable="false"
+              @click.stop
+              @dblclick.stop
+              @input="renameValue = ($event.target as HTMLInputElement).value"
+              @keydown.enter.prevent="commitRename(photo)"
+              @keydown.esc.prevent="cancelRename()"
+              @blur="commitRename(photo)"
+            />
+            <span v-else class="min-w-0 flex-1 truncate text-xs text-fg-primary">
               {{ photo.fileName }}
             </span>
 

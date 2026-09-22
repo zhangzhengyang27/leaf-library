@@ -22,19 +22,6 @@ const dragActive = ref(false)
 let dragDepth = 0
 
 /** File/blob → 裸 base64（Data URL 去头），供 importBlob 走 IPC 入库 */
-function fileToBase64(f: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      const s = String(reader.result ?? '')
-      const comma = s.indexOf(',')
-      resolve(comma >= 0 ? s.slice(comma + 1) : s)
-    }
-    reader.onerror = () => reject(reader.error ?? new Error('读取失败'))
-    reader.readAsDataURL(f)
-  })
-}
-
 /** File/blob → 裸 base64（Data URL 去头），供 importBlob 走 IPC 入库 */
 function fileToBase64(f: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -93,37 +80,6 @@ function build() {
     } catch (error) {
       console.error('粘贴导入失败:', error)
       toast.error('粘贴导入失败', { description: (error as Error).message })
-    }
-  }
-
-  /** 粘贴内存位图（截图/网页复制的图，无磁盘路径）直接入库 */
-  const importBlobs = async (blobs: File[], folderId?: string | null): Promise<void> => {
-    if (blobs.length === 0) return
-    importing.value = true
-    try {
-      let n = 0
-      for (const b of blobs) {
-        const base64 = await fileToBase64(b)
-        const res = await window.api.photos.importBlob({ mime: b.type, base64 })
-        if (res.ok && res.photo) {
-          n += 1
-          if (folderId) {
-            await window.api.photos.assignPhotosToFolder(folderId, [res.photo.id])
-          }
-        } else {
-          toast.error('粘贴的图片导入失败', { description: res.error })
-        }
-      }
-      if (n > 0) {
-        if (folderId) await data.loadFolders()
-        toast.success(`成功导入 ${n} 个素材`)
-        await data.refreshAllPools()
-      }
-    } catch (error) {
-      console.error('粘贴图片导入失败:', error)
-      toast.error('粘贴图片导入失败', { description: (error as Error).message })
-    } finally {
-      importing.value = false
     }
   }
 

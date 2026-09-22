@@ -179,6 +179,12 @@ export interface SearchScopeOptions {
   folderName?: string
   /** 素材所属文件夹描述（folderDesc 范围用） */
   folderDesc?: string
+  /**
+   * 预切好的搜索词（jieba 分词结果，由 useQueryWords 提供）。
+   * 给了就用它做 AND 匹配——中文没有空格，只按 \s+ 切等于一个整词，
+   * 「红色海报」搜不到文件名写作「红 色 海 报」近义分写的素材。
+   */
+  words?: string[]
 }
 
 function scopeHaystack(p: Photo, opts?: SearchScopeOptions): string {
@@ -280,5 +286,6 @@ export function searchMatch(p: Photo, query: string, opts?: SearchScopeOptions):
   if (opts?.scopes && opts.scopes.length === 0) return false
   // 快速路径：空格 AND
   const haystack = scopeHaystack(p, opts)
-  return q.split(/\s+/).every((word) => haystack.includes(word.toLowerCase()))
+  const words = opts?.words?.length ? opts.words : q.toLowerCase().split(/\s+/).filter(Boolean)
+  return words.every((word) => haystack.includes(word))
 }

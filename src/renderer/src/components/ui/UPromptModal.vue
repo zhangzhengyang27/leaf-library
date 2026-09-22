@@ -8,7 +8,6 @@ import UModal from './UModal.vue'
 import UButton from './UButton.vue'
 import { useDialogs } from '../../views/photos/composables/useDialogs'
 import { useToast } from '@composables/useToast'
-import { useToast } from '@composables/useToast'
 
 const { pendingPrompt, requestPrompt } = useDialogs()
 

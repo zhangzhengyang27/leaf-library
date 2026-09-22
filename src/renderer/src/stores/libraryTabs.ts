@@ -95,6 +95,10 @@ export interface LibraryTab {
   title: string
   kindFilter: AssetKind | null
   colorFilter: HueBucket | null
+  /** 二十六轮：颜色匹配模式——'bucket' 按色系桶，'close' 按近似色（CIEDE2000 距离） */
+  colorMatch: 'bucket' | 'close'
+  /** 二十六轮：近似色条件（Eagle 吸管 + 准确度滑杆；accuracy 5–40，越大越严；null=不限） */
+  colorClose: { hex: string; accuracy: number } | null
   /** 二十六轮：格式多选包含（扩展名小写，空 = 不限；Eagle 格式弹层 左键选择） */
   formatInclude: string[]
   /** 二十六轮：格式右键排除（Eagle 格式弹层 排除 右键） */
@@ -173,6 +177,8 @@ export function makeTab(view = 'all', title = '全部'): LibraryTab {
     title,
     kindFilter: null,
     colorFilter: null,
+    colorMatch: 'bucket',
+    colorClose: null,
     formatInclude: [],
     formatExclude: [],
     resolutionFilter: '',
@@ -219,6 +225,7 @@ export function makeTab(view = 'all', title = '全部'): LibraryTab {
 const FILTER_FIELD_KEYS = [
   'kindFilter',
   'colorFilter',
+  'colorClose',
   'formatInclude',
   'formatExclude',
   'resolutionFilter',
@@ -284,6 +291,15 @@ function migrateLegacyFilterFields(tab: Record<string, unknown>): void {
   if (!Array.isArray(tab.shapeExclude)) tab.shapeExclude = []
   if (!Array.isArray(tab.ratingInclude)) tab.ratingInclude = []
   if (!Array.isArray(tab.ratingExclude)) tab.ratingExclude = []
+  if (tab.colorMatch !== 'close') tab.colorMatch = 'bucket'
+  const legacyClose = tab.colorClose as { hex?: unknown; accuracy?: unknown } | null
+  if (
+    !legacyClose ||
+    typeof legacyClose.hex !== 'string' ||
+    typeof legacyClose.accuracy !== 'number'
+  ) {
+    tab.colorClose = null
+  }
   const legacyFormat = tab.formatFilter
   if (
     typeof legacyFormat === 'string' &&

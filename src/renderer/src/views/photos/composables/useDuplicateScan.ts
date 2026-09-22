@@ -45,8 +45,6 @@ function build() {
   const { selectedIds } = usePhotoSelection()
   /** 找相似请求序号（审查 P3-34） */
   let similarSeq = 0
-  /** 找相似请求序号（审查 P3-34） */
-  let similarSeq = 0
 
   /** 打开扫描设置弹窗（真正扫描在弹窗「开始扫描」触发） */
   function openDuplicateScan(): void {

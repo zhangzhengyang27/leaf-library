@@ -50,6 +50,8 @@ export interface Photo {
   durationMs?: number // 视频/音频时长
   /** 视频实测帧率（022，ffmpeg 探测；逐帧步进按它挪时间） */
   fps?: number
+  /** 音频 BPM（024，仅在确实测出正数时挂上，检查器据此决定显不显示） */
+  bpm?: number
   folderId?: string // 所属文件夹
   sourceUrl?: string // 书签来源 URL（017，kind='bookmark'）
   rating: number // 0-5
@@ -131,6 +133,8 @@ interface PhotoRow {
   kind: string
   duration_ms: number | null
   fps?: number | null
+  /** 024：音频 BPM（列表 SELECT 未取时为空，仅在有值的行上挂到 Photo.bpm） */
+  bpm?: number | null
   folder_id: string | null
   deleted_at: number | null
   last_viewed_at: number | null
@@ -247,6 +251,7 @@ export class PhotoRepository {
     }
     if (row.duration_ms !== null) p.durationMs = row.duration_ms
     if (row.fps !== null && row.fps !== undefined) p.fps = row.fps
+    if (typeof row.bpm === 'number' && row.bpm > 0) p.bpm = row.bpm
     if (row.folder_id !== null) p.folderId = row.folder_id
     if (row.fs_created_at !== null && row.fs_created_at > 0) p.fsCreatedAt = row.fs_created_at
     if (row.fs_modified_at !== null && row.fs_modified_at > 0) p.fsModifiedAt = row.fs_modified_at

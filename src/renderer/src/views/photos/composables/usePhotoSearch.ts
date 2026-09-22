@@ -67,3 +67,11 @@ function build() {
 
   return { handleSearch, dispose }
 }
+
+/** 模块单例：搜索状态（防抖计时器/语义档接线）全视图共享一份 */
+let singleton: ReturnType<typeof build> | null = null
+
+export function usePhotoSearch(): ReturnType<typeof build> {
+  if (!singleton) singleton = build()
+  return singleton
+}

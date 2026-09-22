@@ -38,8 +38,16 @@ const processing = ref<ProcessingProgress | null>(null)
  * 仅在 loadPhotos / replacePhotoLocal 时同步维护，不参与 Vue 响应系统。
  */
 const photoIndex = new Map<string, Photo>()
+/** 索引代次：Map 原地增删不换引用，读侧靠这个计数建立依赖 */
+const photoRev = ref(0)
 
 /** O(1) 批量按 id 查素材（顺序稳定，缺失项跳过） */
+/** 取「当下活着」的那份素材对象：读 photoRev 建依赖，就地替换后能重渲染 */
+function livePhoto(id: string): Photo | undefined {
+  void photoRev.value
+  return photoIndex.get(id)
+}
+
 function byIds(ids: string[]): Photo[] {
   const out: Photo[] = []
   for (const id of ids) {
@@ -82,17 +90,27 @@ const recentViewedPhotos = computed<Photo[]>(() => {
 // 门控由 usePhotoFilters 注册（反向依赖，避免循环 import）；任一筛选激活时
 // watch 触发 loadPhotos() 切回全量路径——两种池的输出与现状逐字节一致。
 // FilterBar 快筛的 SQL 下推在「带筛选分页」真正需要时再做（阶段 2b，可选）。
+const sidebarCounts = ref({ all: 0, untagged: 0, recentViewed: 0 })
+const loadSidebarCounts = async (): Promise<void> => {
+  try {
+    sidebarCounts.value = await window.api.photos.getSidebarCounts()
+  } catch (error) {
+    console.error('加载侧栏计数失败:', error)
+  }
+}
+
 const MAIN_PAGE_SIZE = 500
 const mainCursor = ref<string | null>(null)
 const mainHasMore = ref(false)
 let mainPageInFlight = false
+let mainPendingReset = false
 let mainPageGate: (() => boolean) | null = null
 /** 阶段 3：维度筛选 spec（usePhotoFilters 注入，下推 WHERE） */
-let mainPageFilters: SmartAlbumRules | undefined = undefined
+let pagedFilters: SmartAlbumRules | undefined = undefined
 /** 主视图当前是否走分页窗口路径（displaySections 据此跳过窗口内 matchAll） */
 const mainPagedActive = ref(false)
-function setMainPageFilters(spec: SmartAlbumRules | undefined): void {
-  mainPageFilters = spec
+function setPagedFilters(spec: SmartAlbumRules | undefined): void {
+  pagedFilters = spec
 }
 
 function registerMainPageGate(fn: () => boolean): void {
@@ -113,25 +131,40 @@ function groupSectionsInOrder(items: Photo[]): PhotoSection[] {
 }
 
 const loadMainPage = async (reset: boolean): Promise<void> => {
-  if (mainPageInFlight) return
+  if (mainPageInFlight) {
+    // 在飞期间又来了 reset（切筛选/导入完成）：记下待重置，本轮响应落地后重取。
+    // 直接 return 会把新筛选条件下的第一页丢掉。
+    if (reset) mainPendingReset = true
+    return
+  }
   if (!reset && !mainHasMore.value) return
   mainPageInFlight = true
   try {
-    const page = await window.api.photos.getPage({
-      view: 'all',
-      filters: mainPageFilters,
-      sort: 'imported_at',
-      desc: true,
-      cursor: reset ? undefined : (mainCursor.value ?? undefined),
-      limit: MAIN_PAGE_SIZE
-    })
-    allPhotos.value = reset ? page.items : [...allPhotos.value, ...page.items]
-    photoIndex.clear()
-    for (const p of allPhotos.value) photoIndex.set(p.id, p)
-    sections.value = groupSectionsInOrder(allPhotos.value)
-    mainCursor.value = page.nextCursor
-    mainHasMore.value = page.nextCursor !== null
-    mainPagedActive.value = true
+    let doReset = reset
+    for (;;) {
+      mainPendingReset = false
+      const page = await window.api.photos.getPage({
+        view: 'all',
+        filters: pagedFilters,
+        sort: 'imported_at',
+        desc: true,
+        cursor: doReset ? undefined : (mainCursor.value ?? undefined),
+        limit: MAIN_PAGE_SIZE
+      })
+      if (mainPendingReset) {
+        doReset = true
+        continue
+      }
+      allPhotos.value = doReset ? page.items : [...allPhotos.value, ...page.items]
+      photoIndex.clear()
+      for (const p of allPhotos.value) photoIndex.set(p.id, p)
+      photoRev.value++
+      sections.value = groupSectionsInOrder(allPhotos.value)
+      mainCursor.value = page.nextCursor
+      mainHasMore.value = page.nextCursor !== null
+      mainPagedActive.value = true
+      break
+    }
   } catch (error) {
     console.error('加载图片失败:', error)
     toast.error('加载图片失败', { description: (error as Error).message })
@@ -139,7 +172,6 @@ const loadMainPage = async (reset: boolean): Promise<void> => {
     mainPageInFlight = false
   }
 }
-
 const loadMoreMain = (): void => {
   void loadMainPage(false)
 }
@@ -154,6 +186,7 @@ const loadPhotos = async (): Promise<void> => {
       // 顺带刷新侧栏固定项计数池（未分类/最近添加），避免导入/删除后计数陈旧
       void loadUnsorted()
       void loadRecent()
+      void loadSidebarCounts()
       return
     }
     mainHasMore.value = false
@@ -498,7 +531,12 @@ function replacePhotoLocal(updated: Photo): void {
   replaceIn(folderPhotos.value)
   replaceIn(smartAlbumPhotos.value)
   replaceIn(recycleBinPhotos.value)
+  replaceIn(favoritesPhotos.value)
+  replaceIn(searchPoolPhotos.value)
+  replaceIn(unsortedPhotos.value)
+  replaceIn(recentPhotos.value)
   for (const section of sections.value) replaceIn(section.photos)
+  photoRev.value++
 }
 
 export function usePhotoData(): {
@@ -516,25 +554,25 @@ export function usePhotoData(): {
   folderPhotos: typeof folderPhotos
   smartAlbumPhotos: typeof smartAlbumPhotos
   unsortedPhotos: typeof unsortedPhotos
-  untaggedPhotos: typeof untaggedPhotos
   recentPhotos: typeof recentPhotos
   recentViewedPhotos: typeof recentViewedPhotos
+  sidebarCounts: typeof sidebarCounts
   loadPhotos: typeof loadPhotos
   loadAlbums: typeof loadAlbums
   loadFolders: typeof loadFolders
   loadSmartAlbums: typeof loadSmartAlbums
   loadDictionaryTags: typeof loadDictionaryTags
   loadRecycleBin: typeof loadRecycleBin
-  /** 分页化阶段 1：回收站窗口取数 */
   loadMoreTrash: typeof loadMoreTrash
   trashHasMore: typeof trashHasMore
-  /** 分页化阶段 2：收藏 / 文件夹窗口取数 */
   favoritesPhotos: typeof favoritesPhotos
   favoritesHasMore: typeof favoritesHasMore
   loadMoreFavorites: typeof loadMoreFavorites
+  loadFavoritesPage: typeof loadFavoritesPage
   usePagedFavorites: typeof usePagedFavorites
   folderHasMore: typeof folderHasMore
   loadMoreFolder: typeof loadMoreFolder
+  loadFolderPage: typeof loadFolderPage
   usePagedFolder: typeof usePagedFolder
   searchPoolPhotos: typeof searchPoolPhotos
   searchHasMore: typeof searchHasMore
@@ -542,11 +580,10 @@ export function usePhotoData(): {
   loadSearchPage: typeof loadSearchPage
   loadMoreSearch: typeof loadMoreSearch
   usePagedSearch: typeof usePagedSearch
-  /** 分页化阶段 2：主视图窗口取数（门控混合，见 loadPhotos 注释） */
   loadMoreMain: typeof loadMoreMain
   mainHasMore: typeof mainHasMore
   registerMainPageGate: typeof registerMainPageGate
-  setMainPageFilters: typeof setMainPageFilters
+  setPagedFilters: typeof setPagedFilters
   mainPagedActive: typeof mainPagedActive
   refreshAlbumPhotos: typeof refreshAlbumPhotos
   refreshFolderPhotos: typeof refreshFolderPhotos
@@ -556,8 +593,8 @@ export function usePhotoData(): {
   refreshAllPools: typeof refreshAllPools
   setLastViewed: typeof setLastViewed
   replacePhotoLocal: typeof replacePhotoLocal
-  /** 代码审查 P0-11：O(1) 按 id 批量查素材（Map 索引） */
   byIds: typeof byIds
+  livePhoto: typeof livePhoto
 } {
   return {
     loading,
@@ -574,9 +611,9 @@ export function usePhotoData(): {
     folderPhotos,
     smartAlbumPhotos,
     unsortedPhotos,
-    untaggedPhotos,
     recentPhotos,
     recentViewedPhotos,
+    sidebarCounts,
     loadPhotos,
     loadAlbums,
     loadFolders,
@@ -587,34 +624,36 @@ export function usePhotoData(): {
     trashHasMore,
     favoritesPhotos,
     favoritesHasMore,
-}
-
-/** 单张就地替换（缩略图/EXIF 回填、收藏/评分/标签等增量更新） */
-function replacePhotoLocal(updated: Photo): void {
-  photoIndex.set(updated.id, updated)
-  const replaceIn = (list: Photo[]): void => {
-    const i = list.findIndex((p) => p.id === updated.id)
-    if (i >= 0) list.splice(i, 1, updated)
+    loadMoreFavorites,
+    loadFavoritesPage,
+    usePagedFavorites,
+    folderHasMore,
+    loadMoreFolder,
+    loadFolderPage,
+    usePagedFolder,
+    searchPoolPhotos,
+    searchHasMore,
+    searchPoolQuery,
+    loadSearchPage,
+    loadMoreSearch,
+    usePagedSearch,
+    loadMoreMain,
+    mainHasMore,
+    registerMainPageGate,
+    setPagedFilters,
+    mainPagedActive,
+    refreshAlbumPhotos,
+    refreshFolderPhotos,
+    refreshSmartAlbumPhotos,
+    loadUnsorted,
+    loadRecent,
+    refreshAllPools,
+    setLastViewed,
+    replacePhotoLocal,
+    byIds,
+    livePhoto,
   }
-  replaceIn(allPhotos.value)
-  replaceIn(albumPhotos.value)
-  replaceIn(folderPhotos.value)
-  replaceIn(smartAlbumPhotos.value)
-  replaceIn(recycleBinPhotos.value)
-  for (const section of sections.value) replaceIn(section.photos)
 }
-
-export function usePhotoData(): {
-  loading: typeof loading
-  sections: typeof sections
-  allPhotos: typeof allPhotos
-  smartAlbums: typeof smartAlbums
-  albums: typeof albums
-  folders: typeof folders
-  dictionaryTags: typeof dictionaryTags
-  }
-}
-
 /**
  * 后台处理进度订阅（幂等：仅首次调用时挂监听，返回解绑函数）。
  * 模块单例下多次组件挂载不会重复注册。

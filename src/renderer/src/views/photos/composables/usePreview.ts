@@ -1,22 +1,38 @@
 /**
  * Leaf 素材库 · 预览状态（D-008 重构）
  *
- * previewPhoto + 翻页（顺序与网格/列表展示一致：flatDisplayPhotos），
+ * 预览不存对象快照，只记 id：每次经 data.livePhoto(id) 现取，
+ * 于是缩略图/EXIF 回填、收藏/评分/标签的就地替换能立刻反映到打开着的预览上。
+ * 素材已从所有池里消失（删除/筛选挪走）时退回最后一次快照，预览不会突然空白。
  * 空格 QuickLook 的锚点（lastViewedId）也在这里。
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { Photo } from '@renderer/types/photo'
+import { usePhotoData } from './usePhotoData'
 import { usePhotoFilters } from './usePhotoFilters'
 
-const previewPhoto = ref<Photo | null>(null)
+const previewId = ref<string | null>(null)
+const previewSnapshot = ref<Photo | null>(null)
 const lastViewedId = ref<string | null>(null)
 
 function build() {
   const filters = usePhotoFilters()
+  const data = usePhotoData()
+
+  const previewPhoto = computed<Photo | null>(() => {
+    const id = previewId.value
+    if (!id) return null
+    return data.livePhoto(id) ?? (previewSnapshot.value?.id === id ? previewSnapshot.value : null)
+  })
+
+  function show(photo: Photo): void {
+    previewId.value = photo.id
+    previewSnapshot.value = photo
+  }
 
   function openPhoto(photo: Photo): void {
     lastViewedId.value = photo.id
-    previewPhoto.value = photo
+    show(photo)
   }
 
   function openById(photoId: string, pool?: Photo[]): void {
@@ -25,7 +41,8 @@ function build() {
   }
 
   function close(): void {
-    previewPhoto.value = null
+    previewId.value = null
+    previewSnapshot.value = null
   }
 
   // 翻页池选择（审查 P3-38）：地图视图的展示池是 flatDisplayPhotos（主池），
@@ -36,17 +53,19 @@ function build() {
   }
 
   function previous(): void {
-    if (!previewPhoto.value) return
+    const id = previewId.value
+    if (!id) return
     const pool = pagePool()
-    const idx = pool.findIndex((p) => p.id === previewPhoto.value!.id)
-    if (idx > 0) previewPhoto.value = pool[idx - 1]
+    const idx = pool.findIndex((p) => p.id === id)
+    if (idx > 0) show(pool[idx - 1])
   }
 
   function next(): void {
-    if (!previewPhoto.value) return
+    const id = previewId.value
+    if (!id) return
     const pool = pagePool()
-    const idx = pool.findIndex((p) => p.id === previewPhoto.value!.id)
-    if (idx >= 0 && idx < pool.length - 1) previewPhoto.value = pool[idx + 1]
+    const idx = pool.findIndex((p) => p.id === id)
+    if (idx >= 0 && idx < pool.length - 1) show(pool[idx + 1])
   }
 
   return { previewPhoto, lastViewedId, openPhoto, openById, close, previous, next }

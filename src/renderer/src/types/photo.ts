@@ -55,6 +55,12 @@ export interface Photo {
   missingAt?: number
   /** F12：图片内文字（OCR；undefined=未识别，''=识别过但无文字） */
   ocrText?: string
+  /** 文档正文抽取（018，代码/文本/office 类素材；与 ocrText 同属「可搜的正文」但来源不同） */
+  docText?: string
+  /** 视频实测帧率（022，逐帧步进按它挪时间） */
+  fps?: number
+  /** 音频 BPM（024；主进程只在测出正数时挂上，检查器据此决定显不显示） */
+  bpm?: number
 }
 
 export interface PhotoSection {
@@ -62,47 +68,15 @@ export interface PhotoSection {
   photos: Photo[]
 }
 
-/** 智能收藏夹规则（与主进程 SmartAlbumRules 一致） */
-export interface SmartAlbumRules {
-  /** D-012 匹配模式：any = 任一条件满足；all = 全部满足（默认） */
-  match?: 'any' | 'all'
-  tags?: string[]
-  /** 六期：素材类型（image/video/audio/font/file/bookmark），空=不限 */
-  kinds?: string[]
-  favorite?: boolean
-  minRating?: number
-  formats?: string[]
-  minWidth?: number
-  minHeight?: number
-  /** 主色色相桶（HUE_BUCKETS.key） */
-  colorHue?: string
-  /** 文件大小区间（字节） */
-  minFileSize?: number
-  maxFileSize?: number
-  /** 时长区间（毫秒，视频/音频） */
-  minDurationMs?: number
-  maxDurationMs?: number
-  /** 书签来源 URL 包含 */
-  sourceUrl?: string
-  /** 描述关键词（专指 description 字段） */
-  descriptionKeyword?: string
-  /** ⑤：完全相等语义（保存筛选映射） */
-  descriptionExact?: string
-  sourceUrlExact?: string
-  takenFrom?: number
-  takenTo?: number
-  importedFrom?: number
-  importedTo?: number
-  /** D-012 文件系统修改时间区间（unix ms） */
-  modifiedFrom?: number
-  modifiedTo?: number
-  /** D-012 所属文件夹（'none' = 未分类到文件夹） */
-  folderIds?: string[]
-  /** D-012 最大宽/高 */
-  maxWidth?: number
-  maxHeight?: number
-  keyword?: string
-}
+/**
+ * 智能收藏夹规则：类型单源在 @shared/smartAlbumRules（主进程的 buildSmartAlbumWhere
+ * 与这里必须是同一份，否则渲染层能填、主进程不认）。此前本文件另有一份只到
+ * D-012 的副本，二十六轮之后的谓词（形状/比例/标签按名/近似色/语义档…）
+ * 全都不在里面，导致消费方按 shared 的字段写、类型检查却报错。
+ */
+import type { SmartAlbumRules as SharedSmartAlbumRules } from '@shared/smartAlbumRules'
+
+export type SmartAlbumRules = SharedSmartAlbumRules
 
 export interface SmartAlbum {
   id: string

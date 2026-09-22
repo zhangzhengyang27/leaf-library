@@ -34,7 +34,8 @@ function mockApi(): void {
   // 万能 mock：任何属性都是「可调用 + 可继续取属性」的函数对象
   const universal = (): unknown =>
     new Proxy(vi.fn(() => Promise.resolve([])), {
-      get: (t, p) => (p in t ? (t as Record<string, unknown>)[p as string] : universal()),
+      get: (t, p) =>
+        p in t ? (t as unknown as Record<string, unknown>)[p as string] : universal(),
       apply: () => Promise.resolve([])
     })
   w.api = new Proxy(
