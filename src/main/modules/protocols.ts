@@ -160,12 +160,12 @@ async function serveFileWithRange(filePath: string, request: Request): Promise<R
   const { size } = await fsp.stat(filePath)
   const raw = request.headers.get('range')?.trim() ?? ''
   /**
-   * 正文一律自己开文件流，不把 net.fetch(file://) 的 body 转手出去。
+   * 区间响应（206）自己开文件流：不把 Range 转给 net.fetch（实测它会切片却仍回 200、
+   * 不给 Content-Range，媒体元素据此误判整文件长度，拖进度条退化成重新拉全文件），
+   * 也不把整个文件读进内存。
    *
-   * `<audio>` 首发是不带 Range 的裸 GET：实测同一个 .mp3，`fetch()` 拿到的 96,801
-   * 字节喂成 blob 能播，而 `<audio src="video://…">` 直接 MediaError 4「无可用源」；
-   * `<video>` 走 206 分支（自己 createReadStream）却一直正常。转手流与手写的
-   * content-length 一旦对不齐，媒体栈就当容器坏了。
+   * 注意：**只有 206 走这里**。裸 GET 必须留给 net.fetch 的 passthrough ——
+   * 见下面 !raw 分支的注释，非 faststart 的 mp4/m4a 靠它才能回跳。
    */
   const fileResponse = (start: number, end: number, status: 200 | 206, contentType: string) => {
     const headers = new Headers({
@@ -180,8 +180,20 @@ async function serveFileWithRange(filePath: string, request: Request): Promise<R
     )
   }
   if (!raw) {
-    // 整文件响应也必须带 MIME：缺 content-type 时 Chromium 直接判 Format error
-    return fileResponse(0, size - 1, 200, await sniffFileType(filePath))
+    // 裸 GET（`<audio>` 的首发就是它）：正文交给 net.fetch 的 file:// 响应，不要换成
+    // createReadStream —— 非 faststart 的 .m4a（moov 在文件尾；本机 27 KB 样本
+    // moov@25440）要能回跳到尾部才拿得到容器头，passthrough 那条路是给过的。
+    // 但 MIME 必须我们自己给：Chromium 的 file:// 响应有概率不给 content-type
+    // （或给 application/octet-stream），那时媒体栈直接判「无可用源」。
+    // 注：这条路径仍会偶发坏加载（同字节的 blob: 秒播），兜底在 AudioPlayer 里。
+    const contentType = await sniffFileType(filePath)
+    const full = await net.fetch(pathToFileURL(filePath).toString())
+    const headers = new Headers({
+      'accept-ranges': 'bytes',
+      'content-length': String(size),
+      'content-type': contentType
+    })
+    return new Response(full.body, { status: 200, headers })
   }
   const m = /^bytes=(\d*)-(\d*)$/.exec(raw)
   if (!m || (m[1] === '' && m[2] === '')) {

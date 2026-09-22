@@ -9,7 +9,7 @@
  * 峰值与 BPM 都是入库时算好的（AssetProcessingService → 迁移 024），这里只按 id 取一次；
  * 取不到（老素材没回填、超 45 分钟没分析）就退化成不带包络的进度条，照样能拖能 seek。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { columnPeaks, seekRatioFromPointer } from '@renderer/utils/audioWaveform'
 
 const props = defineProps<{
@@ -61,10 +61,44 @@ function fmt(sec: number): string {
 async function loadFacts(): Promise<void> {
   peaks.value = null
   failed.value = false
+  reloadTried = false
   currentSec.value = 0
   elementDurationSec.value = 0
   const facts = await window.api.audio.waveform(props.photoId)
   if (facts?.peaks?.length) peaks.value = facts.peaks
+}
+
+/**
+ * 元素真正用的源。默认就是 video://，坏加载时换成同一批字节的 blob:（见 onError）。
+ *
+ * 为什么要这条退路：实测 `video://` 的自定义协议媒体加载**会偶发直接被媒体栈判
+ * 「无可用源」(MediaError 4)** —— 同一个时刻 `fetch(同一个 URL)` 拿到 200 + 正确 MIME +
+ * 完整字节，把这些字节包成 blob 立刻能播（e2e 里这条对照就是 PLAYFAIL 的 `blobPlay` 字段）。
+ * 也证明不是我们的容器/解码问题，而是自定义协议 + 流式响应这条路的时序问题。
+ * 退路只在失败后走，正常播放仍然走流式（不把 30 MB 的歌读进内存）。
+ */
+const mediaSrc = ref('')
+let blobUrl = ''
+
+function releaseBlob(): void {
+  if (!blobUrl) return
+  URL.revokeObjectURL(blobUrl)
+  blobUrl = ''
+}
+
+async function fallBackToBlob(): Promise<boolean> {
+  if (blobUrl) return false
+  try {
+    const resp = await fetch(props.src)
+    if (!resp.ok) return false
+    const blob = await resp.blob()
+    if (!blob.size) return false
+    blobUrl = URL.createObjectURL(blob)
+    mediaSrc.value = blobUrl
+    return true
+  } catch {
+    return false
+  }
 }
 
 function draw(): void {
@@ -138,9 +172,30 @@ function onPause(): void {
   draw()
 }
 
+/**
+ * 首帧自愈。实测：这个元素挂载后的第一次加载常被媒体栈直接判「无可用源」
+ * （MediaError 4 + readyState 0），而**同一个 URL** 当场新建一个元素却秒播、
+ * 对这个元素再 `load()` 一次也秒播——即一次坏掉的加载尝试，不是编码问题。
+ * 用户侧就是"按了播放没反应"。所以 error 与 play() 拒绝之前都先重开一次加载，
+ * 只给一次机会；仍然失败才把「应用内播放失败」摊到界面上。
+ */
+let reloadTried = false
+
 function onError(): void {
-  failed.value = true
   playing.value = false
+  const audio = audioRef.value
+  if (!audio) return
+  if (!reloadTried) {
+    reloadTried = true
+    audio.load()
+    return
+  }
+  // 第二次还是坏的就是那种"自定义协议 + 流式响应"的瞬时坏加载：换 blob 再来
+  if (!blobUrl) {
+    void fallBackToBlob()
+    return
+  }
+  failed.value = true
 }
 
 async function toggle(): Promise<void> {
@@ -150,12 +205,38 @@ async function toggle(): Promise<void> {
     audio.pause()
     return
   }
+  /**
+   * 三段递进：直接播 → `load()` 重开再播 → 换成同字节的 blob: 再播。
+   *
+   * 为什么要走到第三段：挂载后的首次加载有时会坏在媒体栈里（同一个 URL 现建元素秒播、
+   * 对同一元素 `load()` 后也秒播），而用户是在坏掉之后立刻按键 —— 这时 `error`
+   * 可能还没落下来，`play()` 直接被拒，按键就"没反应"。三段都失败才是真解不了，
+   * 那时给「应用内播放失败」+ 系统播放器出口，不静默。
+   */
   try {
     await audio.play()
+    return
   } catch {
-    // Chromium 解不了这个编码（或文件已移出库）——给出口，不再静默
-    failed.value = true
+    /* 往下走 */
   }
+  try {
+    reloadTried = true
+    audio.load()
+    await audio.play()
+    return
+  } catch {
+    /* 往下走 */
+  }
+  if (await fallBackToBlob()) {
+    await nextTick() // 让新 src 落到元素上再播
+    try {
+      await audio.play()
+      return
+    } catch {
+      /* 落到下面 */
+    }
+  }
+  failed.value = true
 }
 
 function seekRatio(clientX: number): number {
@@ -207,12 +288,23 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  releaseBlob()
   stopTick()
   observer?.disconnect()
   observer = null
 })
 
 watch(() => props.photoId, () => void loadFacts().then(draw), { immediate: true })
+// 换素材就回到流式那条路：上一条留下的 blob 要放掉，重试状态也要清
+watch(
+  () => props.src,
+  (v) => {
+    releaseBlob()
+    mediaSrc.value = v
+    reloadTried = false
+  },
+  { immediate: true }
+)
 
 defineExpose({ toggle })
 </script>
@@ -270,7 +362,7 @@ defineExpose({ toggle })
          控件交给上面的波形条。 -->
     <audio
       ref="audioRef"
-      :src="src"
+      :src="mediaSrc"
       controls
       preload="metadata"
       style="

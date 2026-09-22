@@ -276,7 +276,23 @@ test('预览里的波形条能播、能点着 seek', async () => {
                     }
                   : null,
                 playBtns: [...document.querySelectorAll('.fixed button[aria-label="播放"]')].length,
-                toast: /应用内播放失败/.test(document.querySelector('.fixed')?.innerText ?? '')
+                toast: /应用内播放失败/.test(document.querySelector('.fixed')?.innerText ?? ''),
+                // 页面不可见时 Chromium 会挂起媒体加载（fetch 不受影响），
+                // 这条就是用来把"环境不给看"和"代码坏了"分开的
+                blobPlay: await (async () => {
+                  const b = await (await fetch(a.src)).blob()
+                  const el = new Audio(URL.createObjectURL(b))
+                  el.controls = true
+                  document.body.appendChild(el)
+                  let j = 'ok'
+                  try { await el.play() } catch (e) { j = e.name }
+                  await new Promise((x) => setTimeout(x, 900))
+                  const o = `${j} t=${el.currentTime.toFixed(2)} ${b.type}/${b.size}B`
+                  el.pause(); el.remove()
+                  return o
+                })(),
+                visibility: document.visibilityState,
+                hasFocus: document.hasFocus()
               }
             })
           )

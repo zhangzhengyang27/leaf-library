@@ -131,6 +131,16 @@ describe('迁移 022（存量库升级）', () => {
     m22?.up(legacy)
     expect(has()).toBe(1)
 
+    // 022 之后新增列的迁移也要跟上：`updateProcessingResult` 的 SQL 会写 waveform/bpm
+    // （024），停在 v22 的库上调用它就是 "no such column: waveform"。
+    // 这条用例测的是「存量库升上来后老行的 fps 是 NULL」，不是测「v22 那一刻的 schema」。
+    for (const later of migrations.filter((m) => m.version > 22)) {
+      legacy.transaction(() => {
+        later.up(legacy)
+        legacy.prepare('INSERT INTO meta (version, applied_at) VALUES (?, ?)').run(later.version, 1)
+      })()
+    }
+
     const repo = new PhotoRepository(legacy)
     const old = repo.addPhoto('/legacy/old.mp4', { kind: 'video' })
     repo.updateProcessingResult(old.id, { durationMs: 900 })
