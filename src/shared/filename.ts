@@ -10,9 +10,13 @@ export function sanitizeFileNameBase(name: string): string {
   return name.replace(illegal, '-').trim()
 }
 
+/** 批量重命名模板支持的 token（渲染端与模型产出共用同一份词表） */
+export const RENAME_TOKENS = ['{name}', '{n}', '{date}', '{time}', '{parent}', '{rand}'] as const
+
 /**
- * 批量重命名模板校验：占位符以外的字面量必须本身就是合法文件名。
- * 模板可以来自 AI 生成的结果，不挡就等于把「带路径分隔符 / 多余花括号」的名字直接送进 renameFiles。
+ * 校验一条命名模板是否可用：只允许已知 token + 合法字面文本。
+ * 模型产出的 pattern 必须先过这道闸——它可能吐出 {ext}、{invalid} 甚至带 '/' 的东西，
+ * 而批量重命名是直接改磁盘文件的动作。
  */
 export function isSafeRenamePattern(pattern: string): boolean {
   const p = pattern.trim()

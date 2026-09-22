@@ -2,8 +2,9 @@
  * Leaf · Trackpad / 触控板手势
  *
  * 设计：仿 macOS Safari 原生体验
- * - 双指水平 swipe（accumulated deltaX）：驱动 libraryTabs 的视图历史栈
- *   （App.vue 接线：back()/forward()，仅图库视图历史，不会跳出当前路由）
+ * - 双指水平 swipe（accumulated deltaX）：
+ *   - 向左滑（deltaX < 0）→ back（history.back），对应 macOS「回到上一页」
+ *   - 向右滑（deltaX > 0）→ forward（history.forward），对应 macOS「去下一页」
  * - wheel 监听 passive=true，不阻塞主线程滚动
  *
  * 约束：

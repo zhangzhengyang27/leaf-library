@@ -14,6 +14,8 @@ import { useLibraryTabs } from '@renderer/stores/libraryTabs'
 import { usePhotoActions } from '@views/photos/composables/usePhotoActions'
 import { useDuplicateScan } from '@views/photos/composables/useDuplicateScan'
 import { useToast } from '@composables/useToast'
+import { useRunInLibrary } from '@composables/useRunInLibrary'
+import { isEscTop, popEscScope, pushEscScope } from '@renderer/utils/escStack'
 
 const router = useRouter()
 const palette = useLibraryCommandPalette()
@@ -21,6 +23,8 @@ const tabs = useLibraryTabs()
 const actions = usePhotoActions()
 const scan = useDuplicateScan()
 const toast = useToast()
+const runInLib = useRunInLibrary()
+let escScope: symbol | null = null
 
 const query = ref('')
 const inputRef = ref<HTMLInputElement | null>(null)
@@ -53,19 +57,29 @@ const commands = computed<Cmd[]>(() => {
         toast.info(t.shuffle ? '已开启随机模式' : '已关闭随机模式')
       }
     },
-    { id: 'new-album', title: '新建：相册', hint: '弹窗', run: () => actions.openAlbumModal() },
-    { id: 'new-folder', title: '新建：文件夹', hint: '弹窗', run: () => actions.openFolderModal() },
+    {
+      id: 'new-album',
+      title: '新建：相册',
+      hint: '弹窗',
+      run: () => runInLib(() => actions.openAlbumModal())
+    },
+    {
+      id: 'new-folder',
+      title: '新建：文件夹',
+      hint: '弹窗',
+      run: () => runInLib(() => actions.openFolderModal())
+    },
     {
       id: 'new-smart',
       title: '新建：智能文件夹',
       hint: '弹窗',
-      run: () => actions.openSmartAlbumModal(null)
+      run: () => runInLib(() => actions.openSmartAlbumModal(null))
     },
     {
       id: 'new-bookmark',
       title: '新建：书签',
       hint: '弹窗',
-      run: () => (actions.bookmarkModalOpen.value = true)
+      run: () => runInLib(() => (actions.bookmarkModalOpen.value = true))
     },
     { id: 'duplicates', title: '工具：相似查重', run: () => void scan.openDuplicateScan() },
     {
@@ -117,8 +131,11 @@ const onKeyDown = (e: KeyboardEvent): void => {
 
   if (!palette.isOpen.value) return
   if (e.key === 'Escape') {
-    e.preventDefault()
-    palette.close()
+    // 层级裁决（审查 P2-34）：模态叠加在面板之上时 Esc 先关模态
+    if (escScope && isEscTop(escScope)) {
+      e.preventDefault()
+      palette.close()
+    }
     return
   }
   if (e.key === 'ArrowDown') {
@@ -142,10 +159,14 @@ watch(
   () => palette.isOpen.value,
   async (open) => {
     if (open) {
+      escScope = pushEscScope()
       query.value = ''
       activeIdx.value = 0
       await nextTick()
       inputRef.value?.focus()
+    } else if (escScope) {
+      popEscScope(escScope)
+      escScope = null
     }
   }
 )
@@ -155,6 +176,11 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKeyDown)
+  // 卸载时若面板仍开着，出栈防止 Esc 栈泄漏（审查 P2-34）
+  if (escScope) {
+    popEscScope(escScope)
+    escScope = null
+  }
 })
 </script>
 

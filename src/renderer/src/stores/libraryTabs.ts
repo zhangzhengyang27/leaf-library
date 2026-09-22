@@ -35,12 +35,7 @@ export type LibrarySort =
 export type ThumbSize = 'sm' | 'md' | 'lg' | 'xl'
 /** 形状筛选（八轮对齐 Eagle：横/竖/方形 + 细长横/细长竖） */
 export type Orientation =
-  | ''
-  | 'landscape'
-  | 'portrait'
-  | 'square'
-  | 'panoramic'
-  | 'panoramicPortrait'
+  '' | 'landscape' | 'portrait' | 'square' | 'panoramic' | 'panoramicPortrait'
 /** 二十六轮：形状取值（不含空值；空数组 = 不限）——Eagle 形状弹层多选/排除 */
 export type OrientationValue = Exclude<Orientation, ''>
 
@@ -95,9 +90,12 @@ export interface LibraryTab {
   title: string
   kindFilter: AssetKind | null
   colorFilter: HueBucket | null
-  /** 二十六轮：颜色匹配模式——'bucket' 按色系桶，'close' 按近似色（CIEDE2000 距离） */
+  /**
+   * 二十九轮 G3：颜色匹配方式。色系=9 桶等值（走 color_hue 索引列，快）；
+   * 近似色=Eagle 的「吸管 + 准确度」，走 color_close() 的 CIEDE2000 判定。
+   */
   colorMatch: 'bucket' | 'close'
-  /** 二十六轮：近似色条件（Eagle 吸管 + 准确度滑杆；accuracy 5–40，越大越严；null=不限） */
+  /** 近似色档：取到的色 + 准确度（5–40，越大越严，同 Eagle） */
   colorClose: { hex: string; accuracy: number } | null
   /** 二十六轮：格式多选包含（扩展名小写，空 = 不限；Eagle 格式弹层 左键选择） */
   formatInclude: string[]
@@ -291,6 +289,8 @@ function migrateLegacyFilterFields(tab: Record<string, unknown>): void {
   if (!Array.isArray(tab.shapeExclude)) tab.shapeExclude = []
   if (!Array.isArray(tab.ratingInclude)) tab.ratingInclude = []
   if (!Array.isArray(tab.ratingExclude)) tab.ratingExclude = []
+  // 二十九轮 G3 的两个新键同样要归一：旧持久化标签上它们是 undefined，
+  // 不归一的话「近似色」档一刷新就掉回色系，形状像没生效
   if (tab.colorMatch !== 'close') tab.colorMatch = 'bucket'
   const legacyClose = tab.colorClose as { hex?: unknown; accuracy?: unknown } | null
   if (
@@ -339,26 +339,32 @@ function migrateLegacyFilterFields(tab: Record<string, unknown>): void {
 function loadPersisted(): PersistedState | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
+    // 三条一次性迁移标志必须无条件先写（审查 P2-22）：旧实现只在读到持久化数据时
+    // 才写标志——新装用户首轮无 raw 提前 return，标志永不落盘，第二次启动时
+    // 首轮产生的默认值（waterfall/showName/摘要）被误判为「旧数据」遭到改写
+    const needHoverbarMigration = !localStorage.getItem('leaf.hoverbar-migrated-v1')
+    const needLayoutMigration = !localStorage.getItem('leaf.layout-migrated-v4')
+    const needDisplayMigration = !localStorage.getItem('leaf.display-migrated-v2')
+    if (needHoverbarMigration) localStorage.setItem('leaf.hoverbar-migrated-v1', '1')
+    if (needLayoutMigration) localStorage.setItem('leaf.layout-migrated-v4', '1')
+    if (needDisplayMigration) localStorage.setItem('leaf.display-migrated-v2', '1')
     if (!raw) return null
     const parsed = JSON.parse(raw) as PersistedState
     if (!parsed.tab || typeof parsed.tab.view !== 'string') return null
     // 二十六轮：旧单值字段迁入多选数组
     migrateLegacyFilterFields(parsed.tab as unknown as Record<string, unknown>)
     // 十八轮一次性迁移：Eagle 无卡片 hover 操作条，旧用户默认开启的统一关闭。
-    if (!localStorage.getItem('leaf.hoverbar-migrated-v1')) {
-      localStorage.setItem('leaf.hoverbar-migrated-v1', '1')
+    if (needHoverbarMigration) {
       if (parsed.tab.display) parsed.tab.display.showHoverBar = false
     }
     // 二十三轮一次性迁移：布局语义对齐 Eagle——「自适应」=justified 行式（行高≈固定、
     // 宽度成比例、整行填满），旧瀑布流偏好（flex 定高行）迁入自适应；瀑布流改为 masonry 列式。
-    if (!localStorage.getItem('leaf.layout-migrated-v4')) {
-      localStorage.setItem('leaf.layout-migrated-v4', '1')
+    if (needLayoutMigration) {
       if ((parsed.tab.layout as string) === 'waterfall') parsed.tab.layout = 'auto'
     }
     // 二十三轮一次性迁移：卡片下方名称/简介默认隐藏（对齐用户 Eagle 当前状态——纯净瀑布流；
     // 需要时可在布局弹层「显示名称 / 显示简介」重新打开）
-    if (!localStorage.getItem('leaf.display-migrated-v2')) {
-      localStorage.setItem('leaf.display-migrated-v2', '1')
+    if (needDisplayMigration) {
       if (parsed.tab.display) {
         parsed.tab.display.showName = false
         parsed.tab.display.showSummary = 'none'
@@ -603,4 +609,3 @@ export function defaultTitleForView(view: string): string {
   if (view.startsWith('tag:')) return '标签'
   return '图库'
 }
-

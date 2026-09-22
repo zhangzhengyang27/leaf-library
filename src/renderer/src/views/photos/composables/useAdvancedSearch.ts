@@ -180,11 +180,10 @@ export interface SearchScopeOptions {
   /** 素材所属文件夹描述（folderDesc 范围用） */
   folderDesc?: string
   /**
-   * 预切好的搜索词（jieba 分词结果，由 useQueryWords 提供）。
-   * 给了就用它做 AND 匹配——中文没有空格，只按 \s+ 切等于一个整词，
-   * 「红色海报」搜不到文件名写作「红 色 海 报」近义分写的素材。
+   * 主进程分词好的词（中文连写词切得开）。缺省时回落到空白切分——
+   * 与 SQL 下推那一侧同源与否就取决于调用方有没有传，所以取词统一走 useQueryWords。
    */
-  words?: string[]
+  words?: readonly string[]
 }
 
 function scopeHaystack(p: Photo, opts?: SearchScopeOptions): string {
@@ -202,6 +201,8 @@ function scopeHaystack(p: Photo, opts?: SearchScopeOptions): string {
   if (has('tags')) parts.push(p.tags.map((t) => t.toLowerCase()).join('\n'))
   if (has('link')) parts.push((p.sourceUrl ?? '').toLowerCase())
   if (has('note')) parts.push((p.description ?? '').toLowerCase())
+  if (has('ocr')) parts.push((p.ocrText ?? '').toLowerCase())
+  if (has('docText')) parts.push((p.docText ?? '').toLowerCase())
   return parts.join('\n')
 }
 
@@ -284,7 +285,8 @@ export function searchMatch(p: Photo, query: string, opts?: SearchScopeOptions):
   const advanced = advancedMatch(p, q, opts)
   if (advanced !== null) return advanced
   if (opts?.scopes && opts.scopes.length === 0) return false
-  // 快速路径：空格 AND
+  // 快速路径：词 AND。词优先取主进程分词结果（「红色海报」能切成两词），
+  // 没有才退回空白切分（英文/未取到词时行为不变）
   const haystack = scopeHaystack(p, opts)
   const words = opts?.words?.length ? opts.words : q.toLowerCase().split(/\s+/).filter(Boolean)
   return words.every((word) => haystack.includes(word))

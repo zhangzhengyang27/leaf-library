@@ -23,6 +23,8 @@ const duplicateGroups = ref<DuplicateGroup[]>([])
 const duplicateLoading = ref(false)
 const similarSourceName = ref('')
 const similarMatches = ref<Photo[]>([])
+/** G1：本次"找相似"里由向量档补进来的条数（pHash 之外的那一档） */
+const similarVectorCount = ref(0)
 /** F5：扫描设置弹窗（Eagle 4「扫描相同文件/相似图片」× 范围） */
 const scanModalOpen = ref(false)
 /** 最近一次扫描参数（结果页徽标 + 移除后按原参数重扫） */
@@ -108,8 +110,10 @@ function build() {
   }
 
   /**
-   * 找相似：pHash 感知哈希。结果池注入 usePhotoFilters 展示。
-   * （原「CLIP 视觉相似优先、pHash 兜底」的两档随 D-017 下线，只剩 pHash）
+   * 找相似：两档合并。① pHash 感知哈希（近乎同一张图）；② G1 的图像向量档
+   * （改过一版、换过封面但视觉同类的那一批）。结果池注入 usePhotoFilters 展示。
+   * D-017 拆掉 CLIP 后这里只剩 pHash 一档，向量档随二十九轮重新接回（实现换成了
+   * 主进程直跑 onnxruntime-node，不再是 transformers.js 那条宿主路）。
    */
   const handleFindSimilar = async (photoId: string): Promise<void> => {
     // 序号守卫（审查 P3-34）：连续对两张图找相似时，先发的慢请求不得覆盖新视图
@@ -123,6 +127,24 @@ function build() {
       if (seq === similarSeq) toast.error('找相似失败', { description: (error as Error).message })
       return
     }
+    // G1 第二档：pHash 只认"近乎同一张图"（同尺寸同构图），换封面/改过一版的
+    // 视觉同类它看不见；向量档补这一段。模型没下载时 vectors.similar 直接返回空，
+    // 所以这里不报错也不提示——那一档就是不存在。
+    let vectorCount = 0
+    try {
+      const hits = await window.api.vectors.similar(photoId, 24)
+      if (seq !== similarSeq) return
+      const seen = new Set(matches.map((p) => p.id))
+      for (const hit of hits) {
+        if (!hit?.photo || seen.has(hit.photo.id)) continue
+        seen.add(hit.photo.id)
+        matches.push(hit.photo)
+        vectorCount++
+      }
+    } catch {
+      /* 向量档不可用：pHash 那一档的结果照常展示 */
+    }
+    similarVectorCount.value = vectorCount
     if (seq !== similarSeq) return
     similarSourceName.value =
       data.allPhotos.value.find((p) => p.id === photoId)?.fileName ?? '所选图片'
@@ -131,6 +153,10 @@ function build() {
     if (matches.length === 0) {
       toast.info('没有找到相似图片', {
         description: `相似度阈值：汉明距离 ≤ ${SIMILARITY_THRESHOLD}`
+      })
+    } else if (vectorCount > 0 && matches.length > vectorCount) {
+      toast.info(`另有 ${vectorCount} 张由向量档补入`, {
+        description: 'pHash 认近乎同一张的图；向量档认改过一版、构图相似的那类'
       })
     }
   }
@@ -173,6 +199,7 @@ function build() {
     duplicateLoading,
     similarSourceName,
     similarMatches,
+    similarVectorCount,
     scanModalOpen,
     scanLabel,
     lastScan,
