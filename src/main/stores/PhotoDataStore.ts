@@ -9,7 +9,18 @@ import { albumRepository, type Album } from '../db/repos/AlbumRepository'
 import { photoFolderRepository, type PhotoFolder } from '../db/repos/PhotoFolderRepository'
 import type { SmartAlbumRules } from '../db/smartAlbumRules'
 import { activeRoot, activeSubdir } from '../modules/libraryRegistry'
-import { existsSync, copyFileSync, mkdirSync, statSync, unlinkSync, lstatSync } from 'fs'
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  unlinkSync,
+  utimesSync
+} from 'fs'
 import { basename, isAbsolute, join, relative } from 'path'
 import { sanitizeFileNameBase } from '@shared/filename'
 import { uniqueFilePath } from '../utils/screenshotFile'
@@ -18,6 +29,17 @@ import { isBundlePath, isSensitiveImportPath } from '../utils/pathPolicy'
 import { applySemanticQuery, stripSemanticSnapshot } from '../services/semanticRules'
 
 export type { Photo, SmartAlbum, SmartAlbumRules, Album, PhotoFolder }
+
+/** 导入时可随路径带的元数据（拷贝入库后按「目标路径」重键传给仓库层） */
+export interface ImportMeta {
+  width?: number
+  height?: number
+  fileSize?: number
+  /** copy 模式：这条素材的原文件路径 */
+  sourcePath?: string
+  /** copy 模式：原文件的出生时间。副本的 birthtime 是导入那一刻，不带就会改掉「创建日期」 */
+  fsCreatedAt?: number
+}
 
 /** 路径存在且是普通文件（非目录/设备/失效路径）；目录拖入库会成为无法预览的死条目 */
 function isRegularFile(p: string): boolean {
@@ -67,10 +89,7 @@ export class PhotoDataStore {
     return photoRepository.addPhoto(filePath, metadata)
   }
 
-  addPhotos(
-    filePaths: string[],
-    metadataMap?: Map<string, { width?: number; height?: number; fileSize?: number }>
-  ): Photo[] {
+  addPhotos(filePaths: string[], metadataMap?: Map<string, ImportMeta>): Photo[] {
     // 入口统一校验：非字符串/相对路径/目录与失效路径跳过；凭据/私钥类敏感文件
     // 拒绝入库（防「先入库再经 image:// 读内容」绕过协议白名单）。单个不合法不中断整批。
     const importable = filePaths.filter((p) => {
@@ -92,48 +111,53 @@ export class PhotoDataStore {
     return this.addPhotosInner(importable, metadataMap)
   }
 
-  private addPhotosInner(
-    filePaths: string[],
-    metadataMap?: Map<
-      string,
-      { width?: number; height?: number; fileSize?: number; sourcePath?: string }
-    >
-  ): Photo[] {
-    // D-020：入库即拷贝进库（Eagle 语义）。库内已有文件与不可达文件保持原样，
-    // 路径映射后交给管线
+  private addPhotosInner(filePaths: string[], metadataMap?: Map<string, ImportMeta>): Photo[] {
+    // D-020：入库即拷贝进库（Eagle 语义）。库内已有文件与不可达文件保持原样
     const mapped: string[] = []
-    /** 本次调用新拷贝进库的目标文件（DB 写失败时回滚删除，防孤儿文件） */
+    /** 本次调用新拷贝进库的目标文件（只删确实没落库的那些） */
     const copiedTargets: string[] = []
     // 元数据按「目标路径」重键：拷贝项补 source_path，未拷贝项透传原元数据。
     // 注意 metadataMap 常为 undefined（拖拽/监控导入），此时也要建表——否则 source_path 丢失。
-    const remappedMeta = new Map<
-      string,
-      { width?: number; height?: number; fileSize?: number; sourcePath?: string }
-    >()
+    const remappedMeta = new Map<string, ImportMeta>()
     let anyCopied = false
-    for (const p of filePaths) {
-      let target = p
+    // 同批内同一路径先去重：不去重会拷出两份副本、建出两行（mapped=[c1,c2]）
+    for (const p of new Set(filePaths)) {
       const origMeta = metadataMap?.get(p)
-      if (!this.isInsideLibrary(p) && existsSync(p)) {
-        // 同一个原文件重复导入认旧行为主：副本路径与原路径不同，按 file_path 去重
-        // 认不出「这就是刚才那个文件」，不查 source_path 就会拷出第二份、建出第二行
-        const seen = photoRepository.getPhotoBySourcePathIncludingDeleted(p)
-        if (seen) {
-          mapped.push(seen.filePath)
-          if (origMeta) remappedMeta.set(seen.filePath, origMeta)
-          continue
-        }
-        const copied = this.copyIntoLibrary(p)
-        if (copied) {
-          target = copied
-          anyCopied = true
-          copiedTargets.push(copied)
-          remappedMeta.set(target, { ...origMeta, sourcePath: p })
-        }
-      } else if (origMeta) {
-        remappedMeta.set(target, origMeta)
+      if (this.isInsideLibrary(p) || !existsSync(p)) {
+        if (origMeta) remappedMeta.set(p, origMeta)
+        mapped.push(p)
+        continue
       }
-      mapped.push(target)
+      // 两种"这个原文件其实已经在库里"：D-020 之前按引用入库的行（file_path 就是它），
+      // 以及拷贝入库后再导入的行（file_path 是副本，只能按 source_path 认）
+      const known =
+        photoRepository.getPhotoByPathIncludingDeleted(p) ??
+        photoRepository.getPhotoBySourcePathIncludingDeleted(p)
+      if (known) {
+        mapped.push(known.filePath)
+        if (origMeta) remappedMeta.set(known.filePath, origMeta)
+        continue
+      }
+      // 副本的 birthtime 是"这一刻"，直接 stat 会把创建日期/修改日期改写成导入时间
+      // （「创建日期」排序与「修改日期」条件都吃这两列）→ 原文件的出生时间随元数据带进去，
+      // mtime/atime 由 copyIntoLibrary 用 utimesSync 落回副本
+      let originBirth: number | undefined
+      try {
+        const st = statSync(p)
+        if (st.birthtimeMs > 0) originBirth = Math.round(st.birthtimeMs)
+      } catch {
+        /* 不可达就不带 */
+      }
+      const copied = this.copyIntoLibrary(p)
+      if (copied) {
+        mapped.push(copied)
+        copiedTargets.push(copied)
+        anyCopied = true
+        remappedMeta.set(copied, { ...origMeta, sourcePath: p, fsCreatedAt: originBirth })
+      } else {
+        if (origMeta) remappedMeta.set(p, origMeta)
+        mapped.push(p)
+      }
     }
     try {
       return photoRepository.addPhotos(
@@ -141,11 +165,11 @@ export class PhotoDataStore {
         anyCopied || remappedMeta.size > 0 ? remappedMeta : undefined
       )
     } catch (err) {
-      // 事务性：入库写库失败时，把本次拷贝的文件删掉再抛出——
-      // 否则磁盘上留下无 DB 记录的孤儿文件，重试导入又会拷一份
+      // 只删「确实没落库」的副本：addPhotos 按 200 条一批分别提交，无条件回滚会把
+      // 已提交行的文件一起删掉，那些行当场变断链
       for (const t of copiedTargets) {
         try {
-          if (existsSync(t)) unlinkSync(t)
+          if (existsSync(t) && !photoRepository.getPhotoByPath(t)) unlinkSync(t)
         } catch {
           /* 删不掉就留给断链扫描 */
         }
@@ -157,37 +181,67 @@ export class PhotoDataStore {
   // —— D-020：拷贝式入库 / 断链 ——
 
   /** 用 path.relative 判定包含关系：旧实现的 `root + '/'` 字符串前缀匹配
-   *  在 win32 反斜杠路径上永远匹配不上 → 每次导入都会重复拷贝一份 */
+   *  在 win32 反斜杠路径上永远匹配不上 → 每次导入都会重复拷贝一份。
+   *  两侧都先 realpath：库根可能是个软链（`images` 被链到库外、或 userData 走
+   *  /var↔/private/var 那类别名），按字面判会把用户自己的文件算成"库内"，
+   *  而「清空回收站」只删判成库内的文件 */
   isInsideLibrary(p: string): boolean {
-    const rel = relative(activeRoot(), p)
+    const rel = relative(this.realpath(activeRoot()), this.realpath(p))
     return rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))
+  }
+
+  /** 解析软链/别名段；路径不存在时按原样比（新副本本来就还不存在） */
+  private realpath(p: string): string {
+    try {
+      return realpathSync(p)
+    } catch {
+      return p
+    }
   }
 
   /**
    * copy 落盘：images/YYMM/<原名>；不可达文件返回 null。
+   * `nameOverride` 供「创建副本」这类要换个显示名的调用方用（副本.ext），
+   * 目的是一次就拷到位，不要让调用方自己拼路径绕开重名探测。
    *
-   * 名字**保持原样**（重名才追加 ` (2)`）：库内路径的唯一性是目录给的（按月的 YYMM 分桶
+   * 名字**保持原样**（重名才追加 ` 2`）：库内路径的唯一性是目录给的（按月的 YYMM 分桶
    * + 重名探测），而 file_name 是卡片/检查器直接显示的那一行——早期实现给每个副本加
    * `<uuid8>_` 前缀，结果是用户导入的东西在界面上全长着乱码前缀的名字。
    * Eagle 同理：原件按原名存在 `<库>/images/<id>.info/` 里。
    */
-  copyIntoLibrary(srcPath: string): string | null {
+  copyIntoLibrary(srcPath: string, nameOverride?: string): string | null {
     const root = activeRoot()
     if (!existsSync(srcPath)) return null
     const d = new Date()
     const yymm = `${String(d.getFullYear()).slice(2)}${String(d.getMonth() + 1).padStart(2, '0')}`
     const dir = join(root, 'images', yymm)
     mkdirSync(dir, { recursive: true })
-    const origBase = basename(srcPath)
+    const origBase = nameOverride ?? basename(srcPath)
     const dot = origBase.lastIndexOf('.')
     const stem = sanitizeFileNameBase(dot > 0 ? origBase.slice(0, dot) : origBase) || 'file'
     const ext = dot > 0 ? origBase.slice(dot) : ''
     const dest = uniqueFilePath(dir, stem, ext)
     try {
-      copyFileSync(srcPath, dest)
+      // .app / .framework 这类 bundle 是按「单个素材项」入库的（pathPolicy 同源），
+      // copyFileSync 对目录必抛 EISDIR → 以前会静默留成库外引用行，迁移时每次数成 failed
+      if (isBundlePath(srcPath)) cpSync(srcPath, dest, { recursive: true })
+      else copyFileSync(srcPath, dest)
+      // 时间戳回到原文件：副本的 mtime 是这一刻，而「修改日期」筛选/排序吃 fs_modified_at
+      try {
+        const st = statSync(srcPath)
+        utimesSync(dest, st.atime, st.mtime)
+      } catch {
+        /* 时间戳尽力而为 */
+      }
       return dest
     } catch (err) {
       console.error('[PhotoDataStore] copy-into-library failed:', srcPath, err)
+      // 拷到一半失败（bundle 尤其可能）不要把半个目录留在库里
+      try {
+        if (existsSync(dest)) rmSync(dest, { recursive: true, force: true })
+      } catch {
+        /* 清不掉就交给断链扫描 */
+      }
       return null
     }
   }
@@ -212,9 +266,18 @@ export class PhotoDataStore {
     return { missing, restored, scanned: rows.length }
   }
 
-  /** 重新定位丢失素材（要求新路径存在） */
+  /**
+   * 重新定位丢失素材（要求新路径存在）。
+   * D-020：选中的新文件在库外时先拷进库、把出处记进 source_path，而不是把行换绑到
+   * 库外路径——后者等于趁用户修一次断链，悄悄把这条素材退回引用形态。
+   */
   relinkPhoto(id: string, newPath: string): Photo | undefined {
     if (!existsSync(newPath)) throw new Error('新文件不存在')
+    if (!this.isInsideLibrary(newPath)) {
+      const copied = this.copyIntoLibrary(newPath)
+      if (copied) return photoRepository.relinkPhoto(id, copied, newPath)
+      console.warn('[PhotoDataStore] relink 拷贝入库失败，退回换绑原路径:', newPath)
+    }
     return photoRepository.relinkPhoto(id, newPath)
   }
 
@@ -509,7 +572,10 @@ export class PhotoDataStore {
     updates: { name?: string; rules?: SmartAlbumRules }
   ): SmartAlbum | undefined {
     if (!updates.rules) return smartAlbumRepository.update(id, updates)
-    return smartAlbumRepository.update(id, { ...updates, rules: stripSemanticSnapshot(updates.rules) })
+    return smartAlbumRepository.update(id, {
+      ...updates,
+      rules: stripSemanticSnapshot(updates.rules)
+    })
   }
 
   deleteSmartAlbum(id: string): boolean {
@@ -653,11 +719,34 @@ export class PhotoDataStore {
 
   // —— 批量操作（五期） ——
 
+  /**
+   * 批量重命名。**先收库再改名**：renameFiles 是 `renameSync` 真改磁盘，
+   * 而 D-020 之前入库的引用行 `file_path` 就是用户散在磁盘上的原件（本库实测 5,152 条
+   * 指向 ~/Desktop）——不改这一步，批量重命名等于在用户自己的目录里改他的文件名。
+   * 收库失败（原文件已丢）的条目记进 conflicts，让弹窗如实显示"这条没改"。
+   */
   renamePhotos(items: Array<{ id: string; pattern?: string; start?: number; name?: string }>): {
     renamed: Array<{ id: string; fileName: string; filePath: string }>
     conflicts: Array<{ id: string; fileName: string }>
   } {
-    return photoRepository.renameFiles(items)
+    const safe: typeof items = []
+    const conflicts: Array<{ id: string; fileName: string }> = []
+    for (const it of items) {
+      const photo = photoRepository.getPhotoById(it.id)
+      if (!photo) continue
+      if (!this.isInsideLibrary(photo.filePath)) {
+        try {
+          this.materializeIntoLibrary(it.id)
+        } catch (err) {
+          console.warn('[PhotoDataStore] 改名前收库失败，跳过该条:', photo.filePath, err)
+          conflicts.push({ id: photo.id, fileName: photo.fileName })
+          continue
+        }
+      }
+      safe.push(it)
+    }
+    const r = photoRepository.renameFiles(safe)
+    return { renamed: r.renamed, conflicts: [...conflicts, ...r.conflicts] }
   }
 
   /** 转换为 WebP：新文件落 userData/converted，入库为新素材（source='converted'），原文件不动 */

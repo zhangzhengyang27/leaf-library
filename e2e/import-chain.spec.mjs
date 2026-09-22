@@ -116,6 +116,11 @@ test('导入目录镜像建夹 → 挂载点 → 粘贴位图 → 侧栏计数 �
     expect(r.truncated).toBe(false)
 
     const folders = await page.evaluate(() => window.api.photos.listPhotoFolders())
+    // 先数"这次新建了 3 个夹"：findByName 一旦不回读同名夹，镜像会重复建整棵树，
+    // 而下面按名字查的断言（Map 后写覆盖前写）对此完全无感
+    expect(r.folders.length, '本次新建的文件夹数').toBe(3)
+    expect(folders.length, '库里总共就该有这 3 个夹').toBe(3)
+    expect(new Set(folders.map((f) => f.name)).size, '不许出现同名重复镜像').toBe(3)
     const byName = new Map(folders.map((f) => [f.name, f]))
     const rootFolder = byName.get('素材源')
     const mid = byName.get('红色海报')
@@ -205,6 +210,12 @@ test('导入目录镜像建夹 → 挂载点 → 粘贴位图 → 侧栏计数 �
       return window.api.photos.docTextStatus()
     })
     expect(drained.pendingTotal, '队列必须真被排空（否则界面数字是假的）').toBe(0)
+    // 排空 ≠ 抽到了正文：extract() 就算一律写空串也能让 pendingTotal 归 0，所以看内容
+    const bodyRow = await page.evaluate(
+      async (fid) => await window.api.photos.getById(fid),
+      fileIn('a1.txt').id
+    )
+    expect(bodyRow.docText ?? '', '正文要真进库').toContain('海报第一张的说明')
 
     // ── 7. fontGlyphs 的守卫：只认已入库素材，码点必须合法 ──
     const notAsset = await page.evaluate(
@@ -222,18 +233,32 @@ test('导入目录镜像建夹 → 挂载点 → 粘贴位图 → 侧栏计数 �
 
     // ── 8. 剪贴板里的中文路径：真主进程写 NSFilenamesPboardType，再走 ⌘V 那条解析 ──
     const cnFile = join(srcRoot, '红色海报', '局部', 'a2.txt')
-    await app.evaluate(({ clipboard }, p) => {
-      const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<plist><array><string>${p}</string></array></plist>`
-      clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist, 'utf8'))
-    }, cnFile)
-    const parsed = await page.evaluate(() => window.api.photos.getClipboardFiles())
+    // 这一段动的是**系统**剪贴板：先把用户的原内容存下来，无论断言成败都必须放回去
+    const saved = await app.evaluate(({ clipboard }) => ({
+      files: clipboard.readBuffer('NSFilenamesPboardType').toString('utf8'),
+      text: clipboard.readText()
+    }))
+    let parsed = []
+    try {
+      await app.evaluate(({ clipboard }, pp) => {
+        const plist = `<?xml version="1.0" encoding="UTF-8"?>\n<plist><array><string>${pp}</string></array></plist>`
+        clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(plist, 'utf8'))
+      }, cnFile)
+      parsed = await page.evaluate(() => window.api.photos.getClipboardFiles())
+    } finally {
+      await app.evaluate(({ clipboard }, prev) => {
+        if (prev.files)
+          clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(prev.files, 'utf8'))
+        if (prev.text) clipboard.writeText(prev.text)
+      }, saved)
+    }
     expect(parsed, '中文路径必须整条解析出来（ASCII 白名单会把它截成三段废路径）').toContain(cnFile)
   } finally {
     if (app) await app.close()
     app = null
-    // 只删自己 mkdtempSync 出来的那三个根，不从任何文件路径反推父目录
-    rmSync(libraryDir, { recursive: true, force: true })
-    rmSync(userDataDir, { recursive: true, force: true })
-    rmSync(outsideDir, { recursive: true, force: true })
+    // 只删自己 mkdtempSync 出来的那三个根（判空再删），绝不从文件路径反推父目录
+    for (const d of [libraryDir, userDataDir, outsideDir]) {
+      if (d) rmSync(d, { recursive: true, force: true })
+    }
   }
 })

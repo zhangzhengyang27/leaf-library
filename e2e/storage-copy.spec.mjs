@@ -19,14 +19,28 @@ import {
   readFileSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync
 } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { basename, dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MAIN_ENTRY = join(ROOT, 'out/main/index.js')
+
+/** 整棵目录树的 {路径: 内容}：只比文件名的话，「同名但被改动/被换成空文件」看不出来 */
+// eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- .mjs 无法写 TS 返回类型
+function snapshotTree(dir) {
+  const out = {}
+  for (const name of readdirSync(dir)) {
+    const q = join(dir, name)
+    if (statSync(q).isDirectory()) {
+      for (const [k, v] of Object.entries(snapshotTree(q))) out[`${name}/${k}`] = v
+    } else out[name] = readFileSync(q, 'utf8')
+  }
+  return { root: relative(tmpdir(), dir), files: out }
+}
 
 let app = null
 let userDataDir = null
@@ -160,25 +174,42 @@ test('导入即复制入库：库内有副本、原件不动、重复导入不�
     expect(migrated.filePath).toContain(join(libraryDir, 'images'))
     expect(migrated.sourcePath).toBe(referenced)
 
+    // ── 4b. 再造一条"库外"素材并**故意不迁**：第 5 步的守卫只有在这种行上才真的被检验
+    // （库里全是副本时，删什么都碰不到库外，断言就成了空转）
+    const stray = join(outsideDir, '别删我.txt')
+    writeFileSync(stray, '这条是用户自己的文件，清空回收站不许动它\n')
+    await page.evaluate(async (p) => await window.api.photos.add(p), stray)
+    // 库内桶里再放一颗"与任何素材无关"的哨兵文件：递归删错目录（rm -rf 桶）会被它抓住
+    const bucket = dirname(afterMove[0].filePath)
+    const sentinel = join(bucket, 'sentinel.txt')
+    writeFileSync(sentinel, '谁都不许连带删掉我\n')
+    const outsideBefore = snapshotTree(outsideDir)
+
     // ── 5. 清空回收站：库内副本删掉，任何库外文件一个字都不碰 ──
-    const outsideBefore = readdirSync(outsideDir).sort()
-    const ids = afterMove.map((p) => p.id)
+    const all = await page.evaluate(() => window.api.photos.getAll())
+    const ids = all.map((p) => p.id)
     await page.evaluate((list) => window.api.photos.deleteMultiple(list), ids)
     expect(await page.evaluate(() => window.api.photos.getRecycleBin().then((l) => l.length))).toBe(
       ids.length
     )
     await page.evaluate(() => window.api.photos.clearRecycleBin())
-    const copiesAfterPurge = readdirSync(join(libraryDir, 'images'))
-      .flatMap((d) => readdirSync(join(libraryDir, 'images', d)))
-      .filter((f) => !f.startsWith('.'))
-    expect(copiesAfterPurge, '库内副本随彻底删除一起走').toEqual([])
-    expect(readdirSync(outsideDir).sort(), '库外原件绝不跟着陪葬').toEqual(outsideBefore)
+    const copiesAfterPurge = readdirSync(join(libraryDir, 'images')).flatMap((d) =>
+      readdirSync(join(libraryDir, 'images', d))
+    )
+    expect(
+      copiesAfterPurge.filter((f) => f !== 'sentinel.txt'),
+      '库内副本要随彻底删除一起走'
+    ).toEqual([])
+    expect(existsSync(sentinel), '清副本必须是逐个 unlink，不能连桶一起端').toBe(true)
+    expect(snapshotTree(outsideDir), '库外原件（含同名 twins、那颗 stray）一个都不能少').toEqual(
+      outsideBefore
+    )
   } finally {
     if (app) await app.close()
     app = null
-    // 只删本次 mkdtempSync 出来的根，不从素材路径反推父目录
-    rmSync(libraryDir, { recursive: true, force: true })
-    rmSync(userDataDir, { recursive: true, force: true })
-    rmSync(outsideDir, { recursive: true, force: true })
+    // 只删本次 mkdtempSync 出来的根（且判空再删），绝不从素材路径反推父目录
+    for (const d of [libraryDir, userDataDir, outsideDir]) {
+      if (d) rmSync(d, { recursive: true, force: true })
+    }
   }
 })

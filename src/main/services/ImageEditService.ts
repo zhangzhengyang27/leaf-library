@@ -46,10 +46,7 @@ export function editableOrThrow(filePath: string): void {
  * orientation 标记，第二遍才施加用户要的转角。只跑第二遍的话，一张 EXIF 标着
  * "需要转 90° 显示"的图会被转成看起来 180°——手机照片十有八九是这种。
  */
-export async function transform(
-  filePath: string,
-  fn: (img: Sharp) => Sharp
-): Promise<Buffer> {
+export async function transform(filePath: string, fn: (img: Sharp) => Sharp): Promise<Buffer> {
   const oriented = await sharp(readFileSync(filePath)).rotate().toBuffer()
   let img = fn(sharp(oriented)).withMetadata()
   // 显式选编码器：不指定的话 sharp 会把 PNG/TIFF 也按 JPEG 吐出来。
@@ -106,8 +103,12 @@ export const imageEdit = {
   async rotate(photoId: string, degrees: number): Promise<void> {
     const d = [90, 180, 270].includes(degrees) ? degrees : null
     if (d === null) throw new Error('只能旋转 90/180/270 度')
+    // 格式闸必须在收库之前：HEIC/RAW 是 materialize 之后才抛错的话，
+    // 库里已经白躺着一份几十 MB 的无主底片副本了
+    const src = photoStore.getPhotoById(photoId)
+    if (!src) throw new Error('素材不存在')
+    editableOrThrow(src.filePath)
     const path = photoStore.materializeIntoLibrary(photoId)
-    editableOrThrow(path)
     const buf = await transform(path, (img) => img.rotate(d))
     writeBack(path, buf)
     await afterEdit(photoId, path)
@@ -117,11 +118,12 @@ export const imageEdit = {
     if (axis !== 'horizontal' && axis !== 'vertical') {
       throw new Error('翻转方向只能是水平或垂直')
     }
+    // 同 rotate：先过格式闸，别为一条注定拒绝的 HEIC 先拷一份进库
+    const src = photoStore.getPhotoById(photoId)
+    if (!src) throw new Error('素材不存在')
+    editableOrThrow(src.filePath)
     const path = photoStore.materializeIntoLibrary(photoId)
-    editableOrThrow(path)
-    const buf = await transform(path, (img) =>
-      axis === 'horizontal' ? img.flop() : img.flip()
-    )
+    const buf = await transform(path, (img) => (axis === 'horizontal' ? img.flop() : img.flip()))
     writeBack(path, buf)
     await afterEdit(photoId, path)
   },

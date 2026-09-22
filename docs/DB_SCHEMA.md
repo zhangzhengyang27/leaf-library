@@ -26,22 +26,22 @@
 
 每个模块独立前缀，作用域在模块内封闭。**禁止跨模块 JOIN**——如有关联，用 `tag_tags` + 中间表。
 
-| 前缀       | 模块               |
-| ---------- | ------------------ |
-| `meta`     | 迁移跟踪（系统）   |
-| `photo_`   | Photos 图片管理    |
-| `rec_`     | Recording 屏幕录制 |
-| `ss_`      | Screenshot 截图    |
-| `pom_`     | Pomodoro 番茄钟    |
-| `snip_`    | Snippet 代码片段   |
-| `tag_`     | Tag 全局标签       |
-| `folder_`  | Folder 文件夹      |
-| `wall_`    | Wallpaper 壁纸     |
-| `pref_`    | Preference 偏好    |
-| `music_`   | Music 音乐（已随 013 下线删除） |
-| `lib_`     | Library 本地文件库 |
-| `usage_`   | Usage 模块使用记录 |
-| `log_`     | Log 服务端日志     |
+| 前缀      | 模块                            |
+| --------- | ------------------------------- |
+| `meta`    | 迁移跟踪（系统）                |
+| `photo_`  | Photos 图片管理                 |
+| `rec_`    | Recording 屏幕录制              |
+| `ss_`     | Screenshot 截图                 |
+| `pom_`    | Pomodoro 番茄钟                 |
+| `snip_`   | Snippet 代码片段                |
+| `tag_`    | Tag 全局标签                    |
+| `folder_` | Folder 文件夹                   |
+| `wall_`   | Wallpaper 壁纸                  |
+| `pref_`   | Preference 偏好                 |
+| `music_`  | Music 音乐（已随 013 下线删除） |
+| `lib_`    | Library 本地文件库              |
+| `usage_`  | Usage 模块使用记录              |
+| `log_`    | Log 服务端日志                  |
 
 ### 2.2 主键
 
@@ -89,38 +89,38 @@ PRAGMA temp_store = MEMORY;      -- 临时表/索引放内存
 
 ## 4. 表清单（30 张业务表 + 1 张 FTS）
 
-| #   | 表名                   | 行数预期     | 模块       | 引入版本 |
-| --- | ---------------------- | ------------ | ---------- | -------- |
-| 1   | `meta`                 | 1 行/版本    | 系统       | 001      |
-| 2   | `photo_photos`         | 万级         | Photos     | 001 → 014 加处理列 |
-| 3   | `photo_albums`         | 数十         | Photos     | 001      |
-| 4   | `photo_album_items`    | 数千         | Photos     | 001      |
-| 5   | `photo_tags`           | 数千         | Photos     | 001 → 014 绑定字典 |
-| 30  | `photo_smart_albums`   | 数十         | Photos     | 014      |
-| 6   | `rec_recordings`       | 数百         | Recording  | 001      |
-| 7   | `rec_markers`          | 数千         | Recording  | 001      |
-| 8   | `rec_clips`            | 数百         | Recording  | 001      |
-| 9   | `ss_screenshots`       | 数千         | Screenshot | 001      |
-| 10  | `pom_pomodoros`        | 数千         | Pomodoro   | 001      |
-| 11  | `pom_tasks`            | 数百         | Pomodoro   | 001      |
-| 12  | `snip_folders`         | 数十         | Snippet    | 001      |
-| 13  | `snip_tags`            | 数千         | Snippet    | 001      |
-| 14  | `snip_snippets`        | 数千         | Snippet    | 001      |
-| 15  | `snip_snippets_fts`    | 同上（FTS5） | Snippet    | 001      |
-| 16  | `tag_tags`             | 数百         | Tag        | 001 → 002 加 `deleted_at` |
-| 17  | `folder_folders`       | 数百         | Folder     | 001      |
-| 18  | `wall_collections`     | 数十         | Wallpaper  | 001      |
-| 19  | `wall_files`           | 数千         | Wallpaper  | 001 → 003 加元数据列 |
-| 20  | `pref_preferences`     | 数百         | Pref       | 001      |
-| 21  | `music_tracks`         | 数千         | Music      | 001      |
-| 22  | ~~`music_playlists`~~  | —            | Music      | 001 引入，013 删除 |
-| 23  | ~~`music_playlist_items`~~ | —        | Music      | 001 引入，013 删除 |
-| 24  | `log_entries`          | 自动截断     | Log        | 001      |
-| 25  | `snip_snippet_contents`| 1:1 with snip_snippets | Snippet | 004（拆分 body / meta） |
-| 26  | `lib_files`            | 数千         | Library    | 003      |
-| 27  | `usage_modules`        | 数十         | Usage      | 007      |
-| 28  | `usage_history`        | 数千         | Usage      | 007      |
-| 29  | ~~`music_online_*`~~   | —            | Music      | 006 引入，013 删除（在线音乐模块下线） |
+| #   | 表名                       | 行数预期               | 模块       | 引入版本                               |
+| --- | -------------------------- | ---------------------- | ---------- | -------------------------------------- |
+| 1   | `meta`                     | 1 行/版本              | 系统       | 001                                    |
+| 2   | `photo_photos`             | 万级                   | Photos     | 001 → 014 加处理列                     |
+| 3   | `photo_albums`             | 数十                   | Photos     | 001                                    |
+| 4   | `photo_album_items`        | 数千                   | Photos     | 001                                    |
+| 5   | `photo_tags`               | 数千                   | Photos     | 001 → 014 绑定字典                     |
+| 30  | `photo_smart_albums`       | 数十                   | Photos     | 014                                    |
+| 6   | `rec_recordings`           | 数百                   | Recording  | 001                                    |
+| 7   | `rec_markers`              | 数千                   | Recording  | 001                                    |
+| 8   | `rec_clips`                | 数百                   | Recording  | 001                                    |
+| 9   | `ss_screenshots`           | 数千                   | Screenshot | 001                                    |
+| 10  | `pom_pomodoros`            | 数千                   | Pomodoro   | 001                                    |
+| 11  | `pom_tasks`                | 数百                   | Pomodoro   | 001                                    |
+| 12  | `snip_folders`             | 数十                   | Snippet    | 001                                    |
+| 13  | `snip_tags`                | 数千                   | Snippet    | 001                                    |
+| 14  | `snip_snippets`            | 数千                   | Snippet    | 001                                    |
+| 15  | `snip_snippets_fts`        | 同上（FTS5）           | Snippet    | 001                                    |
+| 16  | `tag_tags`                 | 数百                   | Tag        | 001 → 002 加 `deleted_at`              |
+| 17  | `folder_folders`           | 数百                   | Folder     | 001                                    |
+| 18  | `wall_collections`         | 数十                   | Wallpaper  | 001                                    |
+| 19  | `wall_files`               | 数千                   | Wallpaper  | 001 → 003 加元数据列                   |
+| 20  | `pref_preferences`         | 数百                   | Pref       | 001                                    |
+| 21  | `music_tracks`             | 数千                   | Music      | 001                                    |
+| 22  | ~~`music_playlists`~~      | —                      | Music      | 001 引入，013 删除                     |
+| 23  | ~~`music_playlist_items`~~ | —                      | Music      | 001 引入，013 删除                     |
+| 24  | `log_entries`              | 自动截断               | Log        | 001                                    |
+| 25  | `snip_snippet_contents`    | 1:1 with snip_snippets | Snippet    | 004（拆分 body / meta）                |
+| 26  | `lib_files`                | 数千                   | Library    | 003                                    |
+| 27  | `usage_modules`            | 数十                   | Usage      | 007                                    |
+| 28  | `usage_history`            | 数千                   | Usage      | 007                                    |
+| 29  | ~~`music_online_*`~~       | —                      | Music      | 006 引入，013 删除（在线音乐模块下线） |
 
 ---
 
@@ -142,6 +142,9 @@ EXIF 列（`camera_model` / `lens_model` / `iso` / `aperture` / `shutter` / `foc
 `rating`（0-5）/ `description` / `source`（manual | screenshot | ...）。
 
 索引：
+
+- `idx_photo_photos_source_path`（025，D-020）：拷贝式入库的重复导入判定按 `source_path` 等值查，
+  没索引就是每导一条全表扫一次
 
 - `(imported_at DESC)` — 主页默认时间线
 - `(taken_at DESC)` — 按拍摄时间排序
@@ -324,19 +327,19 @@ migration 版本表。`version` 主键，`applied_at` 是落地时间。
 
 ### 8.4 迁移历史（v1 → v7）
 
-| 版本 | 文件                                  | 关键变更                                                     |
-| ---- | ------------------------------------- | ------------------------------------------------------------ |
-| 001  | `001_init.ts`                         | 24 张业务表 + 索引 + WAL/foreign_keys PRAGMA                |
-| 002  | `002_tag_softdelete.ts`               | `tag_tags` 加 `deleted_at` + 索引，标签支持软删除            |
-| 003  | `003_lib_files_and_wall_meta.ts`      | 新增 `lib_files` 表（本地文件库）；`wall_files` 加元数据列   |
-| 004  | `004_snippet_contents_and_folder_meta.ts` | 拆出 `snip_snippet_contents`（body 单独存）+ folder 元数据 |
-| 005  | `005_snippet_fts_triggers.ts`         | `snip_snippets_fts` 加 INSERT / UPDATE / DELETE trigger     |
-| 006  | `006_online_music_schema.ts`          | 在线音乐表（`music_online_*`）+ 收藏/最近                    |
-| 007  | `007_usage_schema.ts`                 | `usage_modules` + `usage_history`（Hub 最近/收藏来源）       |
-| 014  | `014_assets_v1.ts`                    | 素材库一期：photo_photos 加 `phash`/`color_dominant`/`thumb_status`/`source`；新增 `photo_smart_albums`；`photo_tags` 裸字符串迁移为 `tag_tags.id` |
-| 015  | `015_photo_embeddings.ts`             | 素材库三期：新增 `photo_embeddings`（CLIP 语义向量，float32 BLOB） |
-| 016  | `016_asset_kinds.ts`                  | 素材库五期：photo_photos 加 `kind`/`duration_ms`/`folder_id`；新建 `photo_folders`；历史数据按扩展名回填 kind |
-| 017  | `017_bookmarks_geo.ts`                | 素材库六期：photo_photos 加 `source_url`（书签来源）；新建 `geo_cache`（反地理编码缓存） |
+| 版本 | 文件                                      | 关键变更                                                                                                                                           |
+| ---- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 001  | `001_init.ts`                             | 24 张业务表 + 索引 + WAL/foreign_keys PRAGMA                                                                                                       |
+| 002  | `002_tag_softdelete.ts`                   | `tag_tags` 加 `deleted_at` + 索引，标签支持软删除                                                                                                  |
+| 003  | `003_lib_files_and_wall_meta.ts`          | 新增 `lib_files` 表（本地文件库）；`wall_files` 加元数据列                                                                                         |
+| 004  | `004_snippet_contents_and_folder_meta.ts` | 拆出 `snip_snippet_contents`（body 单独存）+ folder 元数据                                                                                         |
+| 005  | `005_snippet_fts_triggers.ts`             | `snip_snippets_fts` 加 INSERT / UPDATE / DELETE trigger                                                                                            |
+| 006  | `006_online_music_schema.ts`              | 在线音乐表（`music_online_*`）+ 收藏/最近                                                                                                          |
+| 007  | `007_usage_schema.ts`                     | `usage_modules` + `usage_history`（Hub 最近/收藏来源）                                                                                             |
+| 014  | `014_assets_v1.ts`                        | 素材库一期：photo_photos 加 `phash`/`color_dominant`/`thumb_status`/`source`；新增 `photo_smart_albums`；`photo_tags` 裸字符串迁移为 `tag_tags.id` |
+| 015  | `015_photo_embeddings.ts`                 | 素材库三期：新增 `photo_embeddings`（CLIP 语义向量，float32 BLOB）                                                                                 |
+| 016  | `016_asset_kinds.ts`                      | 素材库五期：photo_photos 加 `kind`/`duration_ms`/`folder_id`；新建 `photo_folders`；历史数据按扩展名回填 kind                                      |
+| 017  | `017_bookmarks_geo.ts`                    | 素材库六期：photo_photos 加 `source_url`（书签来源）；新建 `geo_cache`（反地理编码缓存）                                                           |
 
 > 字段细节以每个 migration 文件为准；本文档 §5 模块说明反映**最新累计**状态（v11）。
 
@@ -355,10 +358,10 @@ migration 版本表。`version` 主键，`applied_at` 是落地时间。
 
 ## 10. 性能基线
 
-| 场景                 | 目标    | 实测 |
-| -------------------- | ------- | ---- |
-| 启动迁移（首次）     | < 500ms | 待测 |
-| 启动迁移（已有库）   | < 50ms  | 待测 |
-| 单条 INSERT          | < 1ms   | 待测 |
-| 全文搜索（10k 片段） | < 50ms  | 待测 |
+| 场景                 | 目标    | 实测                 |
+| -------------------- | ------- | -------------------- |
+| 启动迁移（首次）     | < 500ms | 待测                 |
+| 启动迁移（已有库）   | < 50ms  | 待测                 |
+| 单条 INSERT          | < 1ms   | 待测                 |
+| 全文搜索（10k 片段） | < 50ms  | 待测                 |
 | Hub 最近/收藏查询    | < 5ms   | 待测（007 加索引后） |

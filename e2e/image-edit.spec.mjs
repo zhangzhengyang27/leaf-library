@@ -15,6 +15,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   rmSync,
   statSync,
@@ -42,7 +43,9 @@ async function makeAsymJpg(path, w = 60, h = 20) {
       const i = (y * w + x) * 3
       px[i] = px[i + 1] = px[i + 2] = 0
     }
-  await sharp(px, { raw: { width: w, height: h, channels: 3 } }).jpeg().toFile(path)
+  await sharp(px, { raw: { width: w, height: h, channels: 3 } })
+    .jpeg()
+    .toFile(path)
   return path
 }
 
@@ -140,11 +143,9 @@ test('非 legacy 库：旋转先收副本，原文件不动，派生数据全部
         .toBe(want)
     await waitProcessed(1)
     const before = await page.evaluate(async (pid) => {
-        const x = await window.api.photos.getById(pid)
-        return { filePath: x.filePath, width: x.width, height: x.height }
-      },
-      id
-    )
+      const x = await window.api.photos.getById(pid)
+      return { filePath: x.filePath, width: x.width, height: x.height }
+    }, id)
     expect([before.width, before.height]).toEqual([60, 20])
     // D-020：导入那一刻就已经是库内副本，所以旋转无需再 materialize 一次
     expect(before.filePath, '素材已在库内').not.toBe(src)
@@ -158,7 +159,6 @@ test('非 legacy 库：旋转先收副本，原文件不动，派生数据全部
     //    不能先等 0 再等 1 —— 小图管线几十毫秒就跑完，0 那个窗口会被整个跳过（真 flaky 过一次）
     await expect
       .poll(
-        // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- .mjs 无法写 TS 返回类型
         async () =>
           page.evaluate(async (pid) => {
             const x = await window.api.photos.getById(pid)
@@ -168,19 +168,16 @@ test('非 legacy 库：旋转先收副本，原文件不动，派生数据全部
       )
       .toBe(true)
 
-    const after = await page.evaluate(
-      async (pid) => {
-        const x = await window.api.photos.getById(pid)
-        return {
-          filePath: x.filePath,
-          sourcePath: x.sourcePath,
-          width: x.width,
-          height: x.height,
-          fileSize: x.fileSize
-        }
-      },
-      id
-    )
+    const after = await page.evaluate(async (pid) => {
+      const x = await window.api.photos.getById(pid)
+      return {
+        filePath: x.filePath,
+        sourcePath: x.sourcePath,
+        width: x.width,
+        height: x.height,
+        fileSize: x.fileSize
+      }
+    }, id)
     // ③ 素材改指库内副本，sourcePath 记下出处
     expect(after.filePath).not.toBe(src)
     expect(after.filePath.startsWith(libraryDir)).toBe(true)
@@ -266,9 +263,7 @@ test('IPC 边界：degrees 与 axis 走白名单，路径渲染层传不进来',
     }
     // 全被挡掉之后，磁盘上什么都没变
     expect(readFileSync(src).equals(before)).toBe(true)
-    const notMine = await page.evaluate(
-      async () => await window.api.edit.rotate('/etc/hosts', 90)
-    )
+    const notMine = await page.evaluate(async () => await window.api.edit.rotate('/etc/hosts', 90))
     expect(notMine.ok).toBe(false)
   } finally {
     await closeApp()
@@ -278,11 +273,14 @@ test('IPC 边界：degrees 与 axis 走白名单，路径渲染层传不进来',
 test('HEIC/RAW 这类格式拒绝就地编辑（重编码等于毁原始信息）', async () => {
   test.setTimeout(180_000)
   const page = await launch('modern')
+  // 目录名自己攥着，绝不从文件路径反推父目录去递归删（dirname 一旦拿到相对路径
+  // 或仓库内路径，rmSync -r 就是删工作区）——09-21 那次事故就是这个形状
+  const heicDir = mkdtempSync(join(tmpdir(), 'leaf-heic-'))
   try {
-    const fake = join(mkdtempSync(join(tmpdir(), 'leaf-heic-')), 'shot.heic')
+    const fake = join(heicDir, 'shot.heic')
     await makeAsymJpg(fake)
-    writeFileSync(join(dirname(fake), 'note.txt'), 'x')
-    copyFileSync(fake, join(dirname(fake), 'keep.txt'))
+    writeFileSync(join(heicDir, 'note.txt'), 'x')
+    copyFileSync(fake, join(heicDir, 'keep.txt'))
     await page.evaluate(async (p) => await window.api.photos.importPaths([p]), fake)
     await expect
       .poll(
@@ -300,9 +298,18 @@ test('HEIC/RAW 这类格式拒绝就地编辑（重编码等于毁原始信息�
     expect(gate.ok).toBe(false)
     expect(gate.reason).toMatch(/不支持/)
     const r = await page.evaluate(async (pid) => await window.api.edit.rotate(pid, 90), id)
-    expect(r.ok).toBe(false)
-    rmSync(dirname(fake), { recursive: true, force: true })
+    expect(r.ok, r.error ?? '').toBe(false)
+    // 被拒绝的编辑不能先在库里白拷一份：D-020 后 materialize 在格式闸之前跑的话，
+    // 这里会多出一个无主的 shot 副本
+    const inLib = readdirSync(join(libraryDir, 'images')).flatMap((d) =>
+      readdirSync(join(libraryDir, 'images', d))
+    )
+    expect(
+      inLib.filter((f) => f.startsWith('shot')),
+      `库里只该有导入那一份：${inLib}`
+    ).toHaveLength(1)
   } finally {
     await closeApp()
+    if (heicDir) rmSync(heicDir, { recursive: true, force: true })
   }
 })

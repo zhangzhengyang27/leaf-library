@@ -392,8 +392,13 @@ export class PhotoRepository {
    * 与用户再选一次的原路径对不上，光按 file_path 去重会拷出两份、建出两行。
    */
   getPhotoBySourcePathIncludingDeleted(sourcePath: string): Photo | undefined {
+    // 同一 source_path 理论上可以有多行（先 add 成引用行、再导入、再迁移）。
+    // 不写 ORDER BY 就是"命中哪行看 rowid 心情"，优先活跃行、其次最近导入的那条
     const rows = this.db
-      .prepare(`${PHOTO_SELECT} WHERE source_path = ? LIMIT 1`)
+      .prepare(
+        `${PHOTO_SELECT} WHERE source_path = ?
+         ORDER BY (deleted_at IS NULL) DESC, imported_at DESC LIMIT 1`
+      )
       .all(sourcePath) as PhotoRow[]
     return rows.length ? this.fromRow(rows[0], this.getTags(rows[0].id)) : undefined
   }
@@ -424,6 +429,8 @@ export class PhotoRepository {
       sourceUrl?: string
       description?: string
       sourcePath?: string
+      /** copy 模式：原文件的出生时间（副本的 birthtime 是导入那一刻，不能用） */
+      fsCreatedAt?: number
     }
   ): Photo {
     const existing = this.getPhotoByPath(filePath)
@@ -442,12 +449,16 @@ export class PhotoRepository {
 
     // 003：文件系统时间在导入时落库（取不到留给回填任务重试）
     // 十五轮 A1：同一 stat 顺带取文件大小（Eagle 卡片/检查器/统计显示真实大小）
-    let fsCreatedAt: number | null = null
+    // D-020：copy 模式入库的文件是副本，它的 birthtime 是"这一刻"——原文件的出生时间
+    // 由调用方经 metadata.fsCreatedAt 带进来，否则「创建日期」排序整库塌到导入日
+    let fsCreatedAt: number | null = metadata?.fsCreatedAt ?? null
     let fsModifiedAt: number | null = null
     let statSize: number | null = null
     try {
       const st = statSync(filePath)
-      fsCreatedAt = Math.round(st.birthtimeMs > 0 ? st.birthtimeMs : st.ctimeMs)
+      if (fsCreatedAt == null) {
+        fsCreatedAt = Math.round(st.birthtimeMs > 0 ? st.birthtimeMs : st.ctimeMs)
+      }
       fsModifiedAt = Math.round(st.mtimeMs)
       statSize = st.size
     } catch {
@@ -493,7 +504,13 @@ export class PhotoRepository {
     filePaths: string[],
     metadataMap?: Map<
       string,
-      { width?: number; height?: number; fileSize?: number; sourcePath?: string }
+      {
+        width?: number
+        height?: number
+        fileSize?: number
+        sourcePath?: string
+        fsCreatedAt?: number
+      }
     >
   ): Photo[] {
     const out: Photo[] = []
@@ -634,14 +651,15 @@ export class PhotoRepository {
   }
 
   /** 音频事实（peaks/duration/bpm）：400 B 一条，不随列表下发，在打开音频预览时按 id 取一次 */
-  getAudioFacts(id: string): { waveform: Uint8Array | null; bpm: number | null; durationMs: number | null } | null {
+  getAudioFacts(
+    id: string
+  ): { waveform: Uint8Array | null; bpm: number | null; durationMs: number | null } | null {
     const row = this.db
       .prepare(
         `SELECT waveform, bpm, duration_ms FROM photo_photos WHERE id = ? AND deleted_at IS NULL`
       )
       .get(id) as
-      | { waveform: Uint8Array | null; bpm: number | null; duration_ms: number | null }
-      | undefined
+      { waveform: Uint8Array | null; bpm: number | null; duration_ms: number | null } | undefined
     if (!row) return null
     return {
       waveform: row.waveform ?? null,
@@ -1842,14 +1860,22 @@ export class PhotoRepository {
   }
 
   /** 重新定位：换绑到新路径并清除断链标记（元数据保留）。file_ext 同步维护（审查 P2-10） */
-  relinkPhoto(id: string, newPath: string): Photo | undefined {
+  relinkPhoto(id: string, newPath: string, sourcePath?: string): Photo | undefined {
     const existing = this.getPhotoById(id)
     if (!existing) return undefined
     this.db
       .prepare(
-        `UPDATE photo_photos SET file_path = ?, file_name = ?, file_ext = ?, missing_at = NULL, updated_at = ? WHERE id = ?`
+        `UPDATE photo_photos SET file_path = ?, file_name = ?, file_ext = ?, missing_at = NULL,
+           source_path = COALESCE(?, source_path), updated_at = ? WHERE id = ?`
       )
-      .run(newPath, basename(newPath), extOfFileName(basename(newPath)), now(), id)
+      .run(
+        newPath,
+        basename(newPath),
+        extOfFileName(basename(newPath)),
+        sourcePath ?? null,
+        now(),
+        id
+      )
     return this.getPhotoById(id)
   }
 

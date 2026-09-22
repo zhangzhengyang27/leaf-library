@@ -1,12 +1,10 @@
-import { dirname, extname, join, basename } from 'path'
+import { extname, join, basename, isAbsolute } from 'path'
 import {
   copyFileSync,
   existsSync,
   mkdirSync,
   readFileSync,
-  lstatSync,
   promises as fsPromises,
-  readdirSync,
   rmSync,
   statSync,
   unlinkSync,
@@ -43,7 +41,12 @@ import { reverseGeocode as reverseGeocodeService } from '../services/GeoCoder'
 import { ocrService } from '../services/OcrService'
 import { listZipEntries, extractZipEntryDataUrl } from '../utils/zipBrowse'
 import { uniqueFilePath } from '../utils/screenshotFile'
-import { isOpenPathAllowed, grantScanDir, isScanDirAllowed } from '../utils/pathPolicy'
+import {
+  isOpenPathAllowed,
+  grantScanDir,
+  isScanDirAllowed,
+  isBundlePath
+} from '../utils/pathPolicy'
 import { docTextService } from '../services/DocTextService'
 import { importDirectoryTree, SCAN_LIMIT as FOLDER_SCAN_LIMIT } from '../services/ImportFolderTree'
 import type { ImportDeps } from '../services/ImportFolderTree'
@@ -204,7 +207,9 @@ export function registerPhotoIpcHandlers(
           console.warn(`[photos:importPaths] 跳过不可达路径: ${p} (${(err as Error).message})`)
           continue
         }
-        if (st.isFile()) {
+        // bundle（.app/.framework/…）按「单个素材项」入库，绝不钻进包里把 Mach-O
+        // 和 Info.plist 收成一堆素材——与 PhotoDataStore 的 isBundlePath 放行同源
+        if (st.isFile() || (st.isDirectory() && isBundlePath(p))) {
           files.push(p)
         } else if (st.isDirectory()) {
           const r = await importDirectoryTree(p, under, deps)
@@ -235,8 +240,18 @@ export function registerPhotoIpcHandlers(
           const segs = text.match(/[^\x00-\x1f<>]+/g)
           if (segs) {
             for (const m of segs) {
-              const p = m.trim()
-              if (p.includes('/') && existsSync(p)) out.push(p)
+              // plist 里的 & < > 是转义过的：不解码就 existsSync 不上（a&b.png 直接导不进）
+              const p = m
+                .replace(/&apos;/g, "'")
+                .replace(/&quot;/g, '"')
+                .replace(/&gt;/g, '>')
+                .replace(/&lt;/g, '<')
+                .replace(/&amp;/g, '&')
+                .trim()
+              // 必须是绝对路径：existsSync 会按 cwd 解析相对串（Finder 启动的 .app
+              // cwd 是 /），于是剪贴板里一个 "Applications" 就能过闸，再被 importPaths
+              // 当目录整棵导进来，绕开 photos:importFolderTree 的目录白名单
+              if (p.includes('/') && isAbsolute(p) && existsSync(p)) out.push(p)
             }
           }
         }
@@ -248,7 +263,8 @@ export function registerPhotoIpcHandlers(
         if (txt) {
           for (const line of txt.split(/\r?\n/)) {
             const p = line.trim()
-            if (p && existsSync(p)) out.push(p)
+            // 同样只认绝对路径（纯文本回退最容易混进相对词）
+            if (p && isAbsolute(p) && existsSync(p)) out.push(p)
           }
         }
       }
@@ -279,13 +295,19 @@ export function registerPhotoIpcHandlers(
             .split(';')[0]
             .trim()
         ] ?? 'png'
+      // 上限先看 base64 长度再解码：否则一张超限图会先在内存里解出完整 Buffer
+      if (base64.length > Math.ceil((32 * 1024 * 1024) / 3) * 4) {
+        return { ok: false, error: '图像超过 32MB' }
+      }
       const buf = Buffer.from(base64, 'base64')
       if (buf.length === 0) return { ok: false, error: '剪贴板里没有图像数据' }
       if (buf.length > 32 * 1024 * 1024) return { ok: false, error: '图像超过 32MB' }
       try {
         const dir = activeSubdir('clips')
         mkdirSync(dir, { recursive: true })
-        const outPath = join(dir, `paste-${Date.now()}.${ext}`)
+        // 一次粘贴可以带多个 blob：只到毫秒的时间戳会让第二个覆盖第一个，
+        // 而 addPhoto 按 file_path 去重 → 界面报「导入 2 个」，库里其实只剩 1 个
+        const outPath = uniqueFilePath(dir, `paste-${Date.now()}`, `.${ext}`)
         writeFileSync(outPath, buf)
         const photo = photoStore.addPhoto(outPath)
         getAssetProcessing()?.enqueue(photo.id)
@@ -909,24 +931,22 @@ export function registerPhotoIpcHandlers(
       }
       return false
     },
-    /** 创建副本：同目录复制文件（重名自动追加序号）并入库 */
+    /** 创建副本（D-020）：新文件落**库内** images/。
+     *  旧实现是同目录写一个「xx 副本.ext」——引用式入库的素材，那个目录就是用户自己的，
+     *  等于往他的文件夹里造文件；而且它走 addPhoto（绕过拷贝），新行又指着用户目录。*/
     duplicate: (id: string) => {
       const src = photoStore.getPhotoById(id)
       if (!src || !existsSync(src.filePath)) throw new Error('源文件不存在')
-      const dir = dirname(src.filePath)
       const ext = extname(src.filePath)
       const base = src.fileName.slice(0, src.fileName.length - ext.length)
-      let target = join(dir, `${base} 副本${ext}`)
-      let n = 2
-      while (existsSync(target)) {
-        target = join(dir, `${base} 副本 ${n}${ext}`)
-        n += 1
-      }
-      copyFileSync(src.filePath, target)
-      const added = photoStore.addPhoto(target)
+      const target = photoStore.copyIntoLibrary(src.filePath, `${base} 副本${ext}`)
+      if (!target) throw new Error('拷贝入资源库失败（磁盘空间或权限？）')
+      const added = photoStore.addPhotos([target])
       const processing = getAssetProcessing()
-      processing?.enqueue(added.id)
-      return added
+      for (const p of added) processing?.enqueue(p.id)
+      const out = added[0]
+      if (!out) throw new Error('副本入库失败')
+      return out
     },
     /**
      * round20：替换文件（保留标签/评分/描述/文件夹等所有元数据）。
@@ -1080,8 +1100,9 @@ export function registerPhotoIpcHandlers(
     fontInfo: (
       filePath: string
     ): { familyName: string; subfamilyName: string; fullName: string } | null => {
-      // 仅允许已入库素材路径（与 readTextFile 同一约束），防任意文件解析
-      if (!photoStore.getPhotoByPath(filePath)) return null
+      // 仅允许已入库素材路径（与 readTextFile 同一约束），防任意文件解析。
+      // 含软删行：回收站里的字体也要能看名字（21:22 产物原本就是 IncludingDeleted）
+      if (!photoStore.getPhotoByPathIncludingDeleted(filePath)) return null
       try {
         const opened = fontkit.openSync(filePath)
         // .ttc 集合取第一个字体
@@ -1137,7 +1158,7 @@ export function registerPhotoIpcHandlers(
     if (result.canceled) {
       return []
     }
-    // 登记进目录扫描白名单：后续 getFilesFromFolder / watched:add 只放行
+    // 登记进目录扫描白名单：后续 importFolderTree / watched:add 只放行
     // 用户在对话框里选过的目录（审查 P2-2）
     for (const dir of result.filePaths) grantScanDir(dir)
     return result.filePaths
@@ -1196,7 +1217,7 @@ export function registerPhotoIpcHandlers(
   })
 
   /** 「导入文件夹」：镜像磁盘层级建夹入库（Eagle 口径）。
-   *  目录白名单同 getFilesFromFolder——只放行用户对话框选过的目录 */
+   *  目录白名单：只放行用户对话框选过的目录 / userData / 已登记库根 */
   ipcMain.handle(
     'photos:importFolderTree',
     async (_event, folderPath: string, parentId?: string | null) => {
@@ -1220,77 +1241,4 @@ export function registerPhotoIpcHandlers(
       }
     }
   )
-
-  // 扫描文件夹获取图片文件列表
-  ipcMain.handle('photos:getFilesFromFolder', async (_event, folderPath: string) => {
-    try {
-      // 目录白名单（审查 P2-2）：仅放行用户对话框选过的目录/库根，防被利用的
-      // renderer 借本接口枚举任意目录（含 ~、~/Documents）的文件清单
-      if (typeof folderPath !== 'string' || !folderPath || !isScanDirAllowed(folderPath)) {
-        throw new Error('目录不在允许扫描的白名单内（请通过「选择文件夹」对话框选取）')
-      }
-      // 二十四轮（对齐 Eagle）：任意文件都收，未知扩展归「文件」卡片；
-      // 仅跳过隐藏文件与系统垃圾（.DS_Store / Thumbs.db / desktop.ini / ~$ 临时 / __MACOSX）
-      const files: string[] = []
-      const scanErrors: string[] = []
-      // 扫描上限：误选主目录/整盘时，递归收集会拖垮主进程、巨量导入直接
-      // 崩溃（实测 33 万文件）。与 WatchedFolders 的 SCAN_LIMIT 同思路。
-      const SCAN_LIMIT = 5000
-      const JUNK = new Set(['.ds_store', 'thumbs.db', 'desktop.ini', '__macosx'])
-      const isJunk = (name: string): boolean => {
-        const lower = name.toLowerCase()
-        return lower.startsWith('.') || JUNK.has(lower) || lower.startsWith('~$')
-      }
-      const isBundleDir = (name: string): boolean =>
-        ['.app', '.framework', '.bundle', '.kext', '.plugin'].some((suffix) =>
-          name.toLowerCase().endsWith(suffix)
-        )
-
-      const scanDirectory = (dir: string): void => {
-        if (files.length >= SCAN_LIMIT) return
-        try {
-          const items = readdirSync(dir)
-          for (const item of items) {
-            if (files.length >= SCAN_LIMIT) return
-            if (isJunk(item)) continue
-            const fullPath = join(dir, item)
-            try {
-              const stats = lstatSync(fullPath)
-              if (stats.isSymbolicLink()) continue // 跳过链接，避免环
-              if (stats.isDirectory()) {
-                // .app 等应用包：作为单个文件项入库，不递归内部
-                if (isBundleDir(item)) {
-                  files.push(fullPath)
-                  continue
-                }
-                scanDirectory(fullPath)
-              } else if (stats.isFile()) {
-                files.push(fullPath)
-              }
-            } catch (err) {
-              // 单个文件不可访问：记录后继续
-              scanErrors.push(`${fullPath}: ${(err as Error).message}`)
-            }
-          }
-        } catch (err) {
-          // 目录级读取失败（典型为 macOS 未授权访问该位置）
-          scanErrors.push(`${dir}: ${(err as Error).message}`)
-        }
-      }
-
-      scanDirectory(folderPath)
-      if (files.length >= SCAN_LIMIT) {
-        console.warn(
-          `[photos:getFilesFromFolder] 扫描达到上限 ${SCAN_LIMIT}，已截断（目录可能远大于此）`
-        )
-      }
-      if (files.length === 0 && scanErrors.length > 0) {
-        console.warn('[photos:getFilesFromFolder] 扫描存在读取失败项:', scanErrors.slice(0, 10))
-      }
-      return files
-    } catch (error) {
-      console.error('扫描文件夹失败:', error)
-      throw error
-    }
-  })
 }
