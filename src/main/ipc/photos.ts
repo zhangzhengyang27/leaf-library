@@ -5,6 +5,7 @@ import {
   mkdirSync,
   readFileSync,
   lstatSync,
+  promises as fsPromises,
   readdirSync,
   rmSync,
   statSync,
@@ -15,7 +16,7 @@ import { tmpdir } from 'node:os'
 import type { BrowserWindow, OpenDialogOptions } from 'electron'
 import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
 import { showOpenDialogFor, showSaveDialogFor } from '../modules/dialogs'
-import { getActiveLibrary } from '../modules/libraryRegistry'
+import { getActiveLibrary, activeSubdir } from '../modules/libraryRegistry'
 import { screenshotFileName } from '../utils/screenshotFile'
 import { registerPrefixedHandlers, sanitizeIpcMessage } from './utils'
 import { PhotoDataStore, type Photo, type SmartAlbumRules } from '../stores/PhotoDataStore'
@@ -43,6 +44,9 @@ import { ocrService } from '../services/OcrService'
 import { listZipEntries, extractZipEntryDataUrl } from '../utils/zipBrowse'
 import { uniqueFilePath } from '../utils/screenshotFile'
 import { isOpenPathAllowed, grantScanDir, isScanDirAllowed } from '../utils/pathPolicy'
+import { docTextService } from '../services/DocTextService'
+import { importDirectoryTree, SCAN_LIMIT as FOLDER_SCAN_LIMIT } from '../services/ImportFolderTree'
+import type { ImportDeps } from '../services/ImportFolderTree'
 import {
   lockClear,
   lockIsEnabled,
@@ -55,6 +59,32 @@ export function registerPhotoIpcHandlers(
   photoStore: PhotoDataStore,
   getAssetProcessing: () => AssetProcessingService | null
 ): void {
+  /** 挂载点：只认库里真实存在的文件夹 id，其余（null/坏 id）一律归到侧栏根级 */
+  const resolveParentFolder = (raw: unknown): string | null =>
+    typeof raw === 'string' && raw && photoFolderRepository.getById(raw) ? raw : null
+
+  /** 目录镜像建夹所需的依赖（ImportFolderTree 服务不直接 import 仓库，方便单测注入） */
+  const importDeps = (): ImportDeps<Photo> => {
+    const processing = getAssetProcessing()
+    return {
+      findByName: (parentId: string | null, name: string) =>
+        photoFolderRepository.findByName(name, parentId),
+      create: (parentId: string | null, name: string) =>
+        photoFolderRepository.create(name, parentId).id,
+      addFiles: (paths: string[]) => {
+        const created = photoStore.addPhotos(paths)
+        for (const p of created) processing?.enqueue(p.id)
+        return created
+      },
+      assign: (folderId: string, photoIds: string[]) => {
+        photoStore.assignPhotosToFolder(folderId, photoIds)
+      },
+      remove: (folderId: string) => {
+        photoFolderRepository.remove(folderId, false)
+      }
+    }
+  }
+
   // 直接映射到数据存储的方法
   registerPrefixedHandlers('photos', {
     getAll: () => photoStore.getPhotos(),
@@ -152,12 +182,45 @@ export function registerPhotoIpcHandlers(
       for (const p of newPhotos) processing?.enqueue(p.id)
       return newPhotos
     },
-    /** §2.A 拖拽/粘贴入库：与 addMultiple 同一管线（后台缩略图/EXIF） */
-    importPaths: (filePaths: string[]) => {
-      const newPhotos = photoStore.addPhotos(filePaths)
+    /** §2.A 拖拽/粘贴入库：与 addMultiple 同一管线（后台缩略图/EXIF）。
+     *  拖入目录 = 镜像磁盘层级建夹（Eagle 口径），散装文件与镜像树的根都挂在
+     *  parentId（当前文件夹视图）下面，null = 侧栏根级 */
+    importPaths: async (filePaths: string[], parentId?: string | null): Promise<Photo[]> => {
+      if (!Array.isArray(filePaths)) throw new Error('importPaths: filePaths 必须是数组')
+      const under = resolveParentFolder(parentId)
+      const deps = importDeps()
       const processing = getAssetProcessing()
-      for (const p of newPhotos) processing?.enqueue(p.id)
-      return newPhotos
+      const files: string[] = []
+      const mirrored: Photo[] = []
+      for (const p of filePaths) {
+        if (typeof p !== 'string' || !p) {
+          console.warn(`[photos:importPaths] 忽略非法路径项:`, JSON.stringify(p))
+          continue
+        }
+        let st
+        try {
+          st = await fsPromises.stat(p)
+        } catch (err) {
+          console.warn(`[photos:importPaths] 跳过不可达路径: ${p} (${(err as Error).message})`)
+          continue
+        }
+        if (st.isFile()) {
+          files.push(p)
+        } else if (st.isDirectory()) {
+          const r = await importDirectoryTree(p, under, deps)
+          if (r.truncated) console.warn(`[photos:importPaths] 目录 ${p} 扫描达上限已截断`)
+          mirrored.push(...r.photos)
+        }
+      }
+      const loose = photoStore.addPhotos(files)
+      for (const p of loose) processing?.enqueue(p.id)
+      if (under && loose.length > 0) {
+        photoStore.assignPhotosToFolder(
+          under,
+          loose.map((p) => p.id)
+        )
+      }
+      return [...loose, ...mirrored]
     },
     /** §2.A ⌘V 粘贴：从系统剪贴板读取文件路径（macOS 优先 NSFilenamesPboardType，回退文本/文件 URL） */
     getClipboardFiles: (): string[] => {
@@ -166,7 +229,10 @@ export function registerPhotoIpcHandlers(
         const buf = clipboard.readBuffer('NSFilenamesPboardType')
         if (buf && buf.length > 0) {
           const text = buf.toString('utf8')
-          const segs = text.match(/[\x20-\x7e/_.()-\s]+/g)
+          // NSFilenamesPboardType 里是 plist，路径含中文时任何 ASCII 白名单都会把
+          // 一条路径截成几段不存在的路径，⌘V 静默导入 0 个文件，所以只能按控制字符切
+          // eslint-disable-next-line no-control-regex
+          const segs = text.match(/[^\x00-\x1f<>]+/g)
           if (segs) {
             for (const m of segs) {
               const p = m.trim()
@@ -195,11 +261,46 @@ export function registerPhotoIpcHandlers(
       }
       return Array.from(new Set(out))
     },
+    /** ⌘V 粘贴内存位图（截图/网页图，无磁盘路径）直接入库：
+     *  渲染层把 blob 转 base64 传来，落盘库 clips/ 后走常规管线 */
+    importBlob: async (payload: { mime?: string; base64: string }) => {
+      const base64 = String(payload?.base64 ?? '')
+      const MIME_EXT: Record<string, string> = {
+        'image/png': 'png',
+        'image/jpeg': 'jpg',
+        'image/gif': 'gif',
+        'image/webp': 'webp',
+        'image/bmp': 'bmp',
+        'image/avif': 'avif'
+      }
+      const ext =
+        MIME_EXT[
+          String(payload?.mime ?? '')
+            .split(';')[0]
+            .trim()
+        ] ?? 'png'
+      const buf = Buffer.from(base64, 'base64')
+      if (buf.length === 0) return { ok: false, error: '剪贴板里没有图像数据' }
+      if (buf.length > 32 * 1024 * 1024) return { ok: false, error: '图像超过 32MB' }
+      try {
+        const dir = activeSubdir('clips')
+        mkdirSync(dir, { recursive: true })
+        const outPath = join(dir, `paste-${Date.now()}.${ext}`)
+        writeFileSync(outPath, buf)
+        const photo = photoStore.addPhoto(outPath)
+        getAssetProcessing()?.enqueue(photo.id)
+        return { ok: true, photo }
+      } catch (err) {
+        return { ok: false, error: sanitizeIpcMessage(err) }
+      }
+    },
     // —— §3 L4 / §2.B 固定入口：未分类 / 最近添加 / 最近查看 ——
     getUnsorted: () => photoStore.getUnsortedPhotos(),
     getRecent: (limit?: number) => photoStore.getRecentPhotos(limit),
     getRecentViewed: (limit?: number) => photoStore.getRecentViewedPhotos(limit),
     setLastViewed: (id: string) => photoStore.setLastViewed(id),
+    /** 侧栏固定项计数（全部/未标签/最近查看）：走 SQL 聚合，不吃分页窗口 */
+    getSidebarCounts: () => photoStore.sidebarCounts(),
     /** §2.D 导出/打包：选目录后把选中素材拷贝出去 */
     exportSelected: async (photoIds: string[]): Promise<number> => {
       if (photoIds.length === 0) return 0
@@ -452,6 +553,20 @@ export function registerPhotoIpcHandlers(
       return ocrService.status()
     },
     runOcr: () => ({ queued: ocrService.runPending() }),
+
+    // —— 文档正文抽取（officeparser，D 轴「可检索」）——
+    docTextStatus: () => ({
+      ...docTextService.status(),
+      pendingTotal: photoRepository.countDocTextPending()
+    }),
+    setDocTextEnabled: (on: boolean) => {
+      docTextService.setEnabled(Boolean(on))
+      return {
+        ...docTextService.status(),
+        pendingTotal: photoRepository.countDocTextPending()
+      }
+    },
+    runDocText: () => ({ queued: docTextService.runPending() }),
 
     // —— 手动相册（四期） ——
     listAlbums: () => photoStore.listAlbums(),
@@ -989,6 +1104,34 @@ export function registerPhotoIpcHandlers(
         console.error('[photos:fontInfo] parse failed:', filePath, err)
         return null
       }
+    },
+    /** 字形覆盖检查（Eagle「已安装/未安装」那一档的本地半区）：
+     *  不走「渲染再量像素」那套：Chromium 按**字符**做字体回退，
+     *  缺字形的字符会被系统里别的字体画出来，像素永远有墨——实测 Arial 的 2000 个
+     *  常用汉字只报「缺 1 字」，检测形同虚设。 */
+    fontGlyphs: (filePath: string, codePoints: number[]) => {
+      if (typeof filePath !== 'string' || !photoStore.getPhotoByPathIncludingDeleted(filePath)) {
+        return { ok: false as const, error: '素材未入库' }
+      }
+      if (
+        !Array.isArray(codePoints) ||
+        codePoints.length === 0 ||
+        codePoints.length > 8192 ||
+        !codePoints.every((cp) => Number.isInteger(cp) && cp >= 0 && cp <= 1114111)
+      ) {
+        return { ok: false as const, error: 'codePoints 需为 1-8192 个合法码点' }
+      }
+      try {
+        const opened = fontkit.openSync(filePath)
+        const font = 'fonts' in opened ? opened.fonts[0] : opened
+        if (!font || typeof font.hasGlyphForCodePoint !== 'function') {
+          return { ok: false as const, error: '该字体没有可查的 cmap' }
+        }
+        const missing = codePoints.filter((cp) => !font.hasGlyphForCodePoint(cp))
+        return { ok: true as const, missing }
+      } catch (err) {
+        return { ok: false as const, error: sanitizeIpcMessage(err) }
+      }
     }
   })
 
@@ -1059,6 +1202,32 @@ export function registerPhotoIpcHandlers(
     }
     return result.filePaths
   })
+
+  /** 「导入文件夹」：镜像磁盘层级建夹入库（Eagle 口径）。
+   *  目录白名单同 getFilesFromFolder——只放行用户对话框选过的目录 */
+  ipcMain.handle(
+    'photos:importFolderTree',
+    async (_event, folderPath: string, parentId?: string | null) => {
+      if (typeof folderPath !== 'string' || !folderPath || !isScanDirAllowed(folderPath)) {
+        throw new Error('目录不在允许扫描的白名单内（请通过「选择文件夹」对话框选取）')
+      }
+      const r = await importDirectoryTree(folderPath, resolveParentFolder(parentId), importDeps())
+      if (r.truncated) {
+        console.warn(
+          `[photos:importFolderTree] 扫描达到上限 ${FOLDER_SCAN_LIMIT}，已截断（目录可能远大于此）`
+        )
+      }
+      if (r.failedDirs > 0) {
+        console.warn(`[photos:importFolderTree] ${r.failedDirs} 个子目录读取失败（可能未授权）`)
+      }
+      return {
+        photos: r.photos,
+        folders: r.folders,
+        truncated: r.truncated,
+        fileCount: r.fileCount
+      }
+    }
+  )
 
   // 扫描文件夹获取图片文件列表
   ipcMain.handle('photos:getFilesFromFolder', async (_event, folderPath: string) => {
