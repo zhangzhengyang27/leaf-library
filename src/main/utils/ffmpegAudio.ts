@@ -19,9 +19,11 @@ export const MAX_ANALYZE_DURATION_MS = 45 * 60_000
 /** 节拍只看开头这一段：与 DJ 工具同理，且 ACF 的代价随帧数线性涨 */
 const BPM_WINDOW_SEC = 120
 
-const PCM_SAMPLE_RATE = 4000
+export const AUDIO_PCM_SAMPLE_RATE = 4000
 const ENVELOPE_FRAME = 64
 const ENVELOPE_HOP = 32
+/** 包络帧率 = 采样率 / 跳数（节拍分析用它换算周期） */
+export const ENVELOPE_FPS = AUDIO_PCM_SAMPLE_RATE / ENVELOPE_HOP
 /** 归一化自相关的搜索区间（40–220 BPM），再折叠到 70–180 */
 const BPM_LO = 40
 const BPM_HI = 220
@@ -56,17 +58,19 @@ export async function decodeMonoPcm(filePath: string): Promise<Float32Array | nu
         '-ac',
         '1',
         '-ar',
-        String(PCM_SAMPLE_RATE),
+        String(AUDIO_PCM_SAMPLE_RATE),
         '-f',
         's16le',
         '-'
       ],
-      { timeout: 120_000, maxBuffer: 96 * 1024 * 1024 }
+      // encoding 必须是 buffer：默认 utf8 会把二进制按字符串解出来，PCM 直接废掉
+      { timeout: 120_000, maxBuffer: 96 * 1024 * 1024, encoding: 'buffer' }
     )
-    const n = Math.floor(stdout.length / 2)
+    const buf = stdout
+    const n = Math.floor(buf.length / 2)
     if (n === 0) return null
     const out = new Float32Array(n)
-    for (let i = 0; i < n; i++) out[i] = stdout.readInt16LE(i * 2) / 32768
+    for (let i = 0; i < n; i++) out[i] = buf.readInt16LE(i * 2) / 32768
     return out
   } catch {
     return null
@@ -98,7 +102,7 @@ export function buildPeaks(pcm: Float32Array, buckets = WAVEFORM_BUCKETS): Uint8
 
 /** 能量包络（帧 RMS 的半波整流差分）。返回的帧率 = sampleRate / hop */
 function onsetEnvelope(pcm: Float32Array): { v: Float64Array; fps: number } {
-  const fps = PCM_SAMPLE_RATE / ENVELOPE_HOP
+  const fps = ENVELOPE_FPS
   const frames: number[] = []
   for (let s = 0; s + ENVELOPE_FRAME <= pcm.length; s += ENVELOPE_HOP) {
     let e = 0
@@ -125,8 +129,8 @@ function onsetEnvelope(pcm: Float32Array): { v: Float64Array; fps: number } {
  * 八度歧义在界面上用 ×2/÷2 两颗键交还给用户，不假装算法能裁决。
  */
 export function estimateBpm(pcm: Float32Array): { bpm: number; confidence: number } | null {
-  const windowed = pcm.length > BPM_WINDOW_SEC * PCM_SAMPLE_RATE
-    ? pcm.subarray(0, BPM_WINDOW_SEC * PCM_SAMPLE_RATE)
+  const windowed = pcm.length > BPM_WINDOW_SEC * AUDIO_PCM_SAMPLE_RATE
+    ? pcm.subarray(0, BPM_WINDOW_SEC * AUDIO_PCM_SAMPLE_RATE)
     : pcm
   const { v, fps } = onsetEnvelope(windowed)
   if (v.length < 8) return null

@@ -179,27 +179,6 @@ export class ClipServer {
     return { port: this.config.port, token: this.config.token }
   }
 
-  /**
-   * 重新生成 token（设置页「重新生成」用，审查修复）：
-   * 必须同步更新运行中服务的内存 token 并按 P0-8 语义重写落盘文件
-   * （safeStorage 可用则加密落盘）。旧 IPC 实现只写明文文件、不通知服务，
-   * 导致新 token 无效且落盘格式退回明文。
-   */
-  regenerateToken(): { port: number | null; token: string | null } {
-    if (!this.config) return { port: null, token: null }
-    this.config.token = randomBytes(24).toString('hex')
-    const cfgPath = join(app.getPath('userData'), 'clip-server.json')
-    try {
-      const persisted = safeStorage.isEncryptionAvailable()
-        ? { port: this.config.port, token: safeStorage.encryptString(this.config.token).toString('base64') }
-        : { port: this.config.port, token: this.config.token }
-      writeFileSync(cfgPath, JSON.stringify(persisted))
-    } catch (persistErr) {
-      console.error('[ClipServer] persist regenerated config failed:', persistErr)
-    }
-    return { port: this.config.port, token: this.config.token }
-  }
-
   private authorized(req: IncomingMessage): boolean {
     if (!this.config) return false
     // 代码审查 P0-8：常量时间比较，防时序侧信道探测 token

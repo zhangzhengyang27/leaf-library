@@ -37,28 +37,6 @@ function assertImportablePath(p: string): void {
   if (isSensitiveImportPath(p)) {
     throw new Error(`出于安全考虑，不允许导入凭据/私钥类文件：${basename(p)}`)
   }
-  if (!isRegularFile(p)) {
-    throw new Error(`不是可导入的普通文件：${p}`)
-  }
-}
-
-/** 路径存在且是普通文件（非目录/设备/失效路径）；目录拖入库会成为无法预览的死条目 */
-function isRegularFile(p: string): boolean {
-  try {
-    return lstatSync(p).isFile()
-  } catch {
-    return false
-  }
-}
-
-/** 单条入库的路径防线：必须是绝对路径的普通文件，且非凭据/私钥类敏感文件 */
-function assertImportablePath(p: string): void {
-  if (typeof p !== 'string' || !isAbsolute(p)) {
-    throw new Error(`导入路径必须是绝对路径：${p}`)
-  }
-  if (isSensitiveImportPath(p)) {
-    throw new Error(`出于安全考虑，不允许导入凭据/私钥类文件：${basename(p)}`)
-  }
   if (!isRegularFile(p) && !isBundlePath(p)) {
     throw new Error(`不是可导入的普通文件：${p}`)
   }

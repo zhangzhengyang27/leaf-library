@@ -4,6 +4,7 @@
 
 // 窗口相关
 export { createWindow as createAppWindow } from './windows'
+export { registerDeepLinkHandlers } from './deepLink'
 
 // 协议注册（image:// thumb:// rawfile:// video://）
 export { registerProtocols } from './protocols'

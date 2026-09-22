@@ -9,3 +9,15 @@ export function sanitizeFileNameBase(name: string): string {
   const illegal = new RegExp('[\\\\/:*?"<>|\\p{Cc}]', 'gu')
   return name.replace(illegal, '-').trim()
 }
+
+/**
+ * 批量重命名模板校验：占位符以外的字面量必须本身就是合法文件名。
+ * 模板可以来自 AI 生成的结果，不挡就等于把「带路径分隔符 / 多余花括号」的名字直接送进 renameFiles。
+ */
+export function isSafeRenamePattern(pattern: string): boolean {
+  const p = pattern.trim()
+  if (!p || p.length > 120) return false
+  const literal = p.replace(/\{(name|n|date|time|parent|rand)\}/g, '')
+  if (/[{}]/.test(literal)) return false
+  return sanitizeFileNameBase(literal) === literal
+}

@@ -39,7 +39,7 @@ describe('004 置顶', () => {
     const p = photos.addPhoto('/tmp/pin-test-b.png')
     photos.setPinned(p.id, true)
     photos.deletePhoto(p.id)
-    const bin = photos.getRecycleBin()
+    const bin = photos.getRecycleBinPhotos()
     expect(bin.some((x) => x.id === p.id)).toBe(true)
   })
 })

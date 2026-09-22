@@ -421,7 +421,7 @@ export interface API {
       lon: number
     ) => Promise<{ city: string; displayName: string } | null>
     lockIsEnabled: () => Promise<boolean>
-    lockSetPassword: (password: string) => Promise<void>
+    lockSetPassword: (password: string, oldPassword?: string) => Promise<void>
     lockVerify: (password: string) => Promise<boolean>
     lockClear: (password: string) => Promise<boolean>
     listAlbums: () => Promise<Album[]>

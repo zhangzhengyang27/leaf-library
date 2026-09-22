@@ -57,41 +57,6 @@ export function isScanDirAllowed(dir: string): boolean {
   return false
 }
 
-// ── 敏感文件导入黑名单 ──
-// 入库接口（importPaths/addMultiple/add）本身接受渲染层传来的任意路径——这是
-// 拖拽/粘贴导入的固有信任模型（与 Eagle 一致）。但它同时构成「先入库、再经
-// image://rawfile:// 协议读内容」的绕过链（协议白名单只校验“已入库素材”）。
-// 无法在主进程区分真实用户手势与被利用的 renderer 调用，因此按内容敏感度
-// 兜底：已知凭据/私钥类文件拒绝入库，读取链对这些文件不再成立。
-const SENSITIVE_BASENAMES = new Set([
-  'id_rsa',
-  'id_dsa',
-  'id_ecdsa',
-  'id_ed25519',
-  'netrc',
-  '.netrc',
-  'env',
-  '.env',
-  'credentials',
-  'secure-note'
-])
-const SENSITIVE_EXTS = new Set(['env', 'pem', 'p12', 'pfx', 'jks', 'keystore', 'kdbx'])
-const SENSITIVE_DIR_SEGMENTS = new Set(['.ssh', '.gnupg', '.aws', '.kube', '.docker'])
-
-/** 是否属于凭据/私钥类敏感文件（拒绝导入；.pub 公钥放行） */
-export function isSensitiveImportPath(p: string): boolean {
-  const segs = p.split(/[\\/]/).filter(Boolean)
-  if (segs.some((s) => SENSITIVE_DIR_SEGMENTS.has(s.toLowerCase()))) return true
-  const base = segs[segs.length - 1] ?? ''
-  const lower = base.toLowerCase()
-  const dot = lower.lastIndexOf('.')
-  const ext = dot > 0 ? lower.slice(dot + 1) : ''
-  if (ext === 'pub') return false
-  if (SENSITIVE_EXTS.has(ext)) return true
-  const stem = dot > 0 ? lower.slice(0, dot) : lower
-  return SENSITIVE_BASENAMES.has(lower) || SENSITIVE_BASENAMES.has(stem)
-}
-
 // ── 应用包（macOS bundle）识别 ──
 // 目录扫描把 .app 等包按「单个素材项」收集（不进包内枚举），而入库守卫只放
 // 普通文件——两处规则必须同源，否则扫出来的 bundle 会被守卫静默丢掉。

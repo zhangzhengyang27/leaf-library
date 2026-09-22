@@ -10,7 +10,6 @@ import { app, ipcMain } from 'electron'
 import Database from 'better-sqlite3'
 import { existsSync } from 'node:fs'
 import { installAppMenu } from '../modules/appMenu'
-import { installAppMenu } from '../modules/appMenu'
 import {
   createLibrary,
   dbPathOf,

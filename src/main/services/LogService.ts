@@ -187,6 +187,12 @@ class LogService {
     }
   }
 
+  /** 立即落盘未写入的错误日志（will-quit / 崩溃兜底时调用）——
+   *  攒批阈值意味着不足 50 条时平时不会 flush，退出/崩溃前不补一刀就全丢 */
+  flushPending(): void {
+    if (this.unflushed.length > 0) void this.flushToDisk()
+  }
+
   /** 用户触发：导出为 json。即便 telemetryMode='off' 也允许（用户主动行为不受模式限制） */
   async export(): Promise<string> {
     await this.flushToDisk()
