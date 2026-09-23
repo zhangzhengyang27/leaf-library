@@ -10,7 +10,21 @@
     "src/preload/index.ts",
     "src/shared/**/*"
   ],
-  "exclude": ["src/**/*.bundle.ts"],
+  "exclude": [
+    "src/**/*.bundle.ts",
+    // 自研截图 overlay 的骨架（docs/截图功能实施计划-P0.md §2.1）：这 6 个组件与
+    // core/snapshot.ts 目前零引用（capture/App.vue 只挂 PinWindow），调的
+    // window.api.screenshot.popSnapshot/ready/cancel 三座桥在 21:22 产物里也不存在
+    // ——即它们从写出来那天起就不可达。留着是因为那是排期里的功能，
+    // 但别让 `pnpm build` 为一个未接线的前端骨架卡住。接线完成后请删掉这段。
+    "src/renderer/src/capture/components/AnnotateCanvas.vue",
+    "src/renderer/src/capture/components/CaptureScreen.vue",
+    "src/renderer/src/capture/components/EditToolbar.vue",
+    "src/renderer/src/capture/components/EditorLayer.vue",
+    "src/renderer/src/capture/components/Magnifier.vue",
+    "src/renderer/src/capture/components/SelectionLayer.vue",
+    "src/renderer/src/capture/core/snapshot.ts"
+  ],
 
   "compilerOptions": {
     "composite": true,
