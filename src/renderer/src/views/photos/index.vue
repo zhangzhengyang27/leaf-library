@@ -291,6 +291,8 @@ import { useDialogs } from './composables/useDialogs'
 import { usePhotoImport } from './composables/usePhotoImport'
 import { usePhotoClipboard } from './composables/usePhotoClipboard'
 import { usePhotoSelection } from './composables/usePhotoSelection'
+import { useDeepLink } from './composables/useDeepLink'
+import type { DeepLinkTarget } from '@shared/deepLink'
 import { MODE_LABEL, useWallpaper } from './composables/useWallpaper'
 import type { WallpaperMode } from '@shared/wallpaper'
 
@@ -1121,6 +1123,28 @@ function openFolderFromInspector(folderId: string): void {
   const folder = data.folders.value.find((f) => f.id === folderId)
   tabs.setView(`folder:${folderId}`, folder?.name ?? '文件夹')
   router.push('/photos').catch(() => {})
+}
+
+/** leaf://item/<id> · leaf://folder/<id>：冷启动（argv）与热启动（open-url）都汇到这一个回调。
+ *  校验一律在跳之前做——链接是外部可控输入，id 查不到就是不在本库，不能拿它去猜路径 */
+useDeepLink((target) => void openFromDeepLink(target))
+
+async function openFromDeepLink(target: DeepLinkTarget): Promise<void> {
+  if (target.kind === 'folder') {
+    if (!data.folders.value.some((f) => f.id === target.id)) {
+      toast.warning('链接里的文件夹不在当前资源库')
+      return
+    }
+    openFolderFromInspector(target.id)
+    return
+  }
+  const photo = await window.api.photos.getById(target.id)
+  if (!photo) {
+    toast.warning('链接里的素材不在当前资源库')
+    return
+  }
+  router.push('/photos').catch(() => {})
+  onPreviewPhoto(photo)
 }
 
 function onPreviewFindSimilar(photoId: string): void {

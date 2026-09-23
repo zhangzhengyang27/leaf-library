@@ -72,10 +72,14 @@ test('UI 走查', async () => {
 
   // 素材：竖图（→ 模糊底）、透明抠图（→ 模糊底 + 主色底）、同比例图（→ 原图直设）
   const portrait = join(assetDir, 'portrait.png')
-  const strip = await sharp({ create: { width: 900, height: 80, channels: 3, background: '#ffffff' } })
+  const strip = await sharp({
+    create: { width: 900, height: 80, channels: 3, background: '#ffffff' }
+  })
     .png()
     .toBuffer()
-  await sharp({ create: { width: 900, height: 1800, channels: 3, background: { r: 12, g: 12, b: 12 } } })
+  await sharp({
+    create: { width: 900, height: 1800, channels: 3, background: { r: 12, g: 12, b: 12 } }
+  })
     .composite([{ input: strip, top: 1720, left: 0 }])
     .png()
     .toFile(portrait)
@@ -85,7 +89,9 @@ test('UI 走查', async () => {
   })
     .composite([
       {
-        input: await sharp({ create: { width: 700, height: 700, channels: 3, background: '#e05555' } })
+        input: await sharp({
+          create: { width: 700, height: 700, channels: 3, background: '#e05555' }
+        })
           .png()
           .toBuffer(),
         top: 250,
@@ -95,14 +101,15 @@ test('UI 走查', async () => {
     .png()
     .toFile(cutout)
   const wide = join(assetDir, 'wide.png')
-  await sharp({ create: { width: 3840, height: 2160, channels: 3, background: { r: 40, g: 60, b: 80 } } })
+  await sharp({
+    create: { width: 3840, height: 2160, channels: 3, background: { r: 40, g: 60, b: 80 } }
+  })
     .png()
     .toFile(wide)
-  await page.evaluate(async (paths) => await window.api.photos.addMultiple(paths), [
-    portrait,
-    cutout,
-    wide
-  ])
+  await page.evaluate(
+    async (paths) => await window.api.photos.addMultiple(paths),
+    [portrait, cutout, wide]
+  )
   await page.evaluate(() => {
     window.location.hash = '#/photos'
   })
@@ -122,7 +129,9 @@ test('UI 走查', async () => {
   await wpButton.click()
   await page.waitForTimeout(600)
   await page.screenshot({ path: `${SHOTS}/02-检查器策略菜单.png` })
-  const menuText = (await page.locator('[role="menu"] [role="menuitem"]').allInnerTexts()).join(' / ')
+  const menuText = (await page.locator('[role="menu"] [role="menuitem"]').allInnerTexts()).join(
+    ' / '
+  )
   console.log('ui: 检查器菜单 =', menuText)
   await page.keyboard.press('Escape')
 
@@ -130,7 +139,7 @@ test('UI 走查', async () => {
   await portraitCard.dblclick()
   await page.waitForTimeout(1000)
   await page.screenshot({ path: `${SHOTS}/03-预览面板按钮.png` })
-  await page.locator('button[title^="选择适配方式"]').click()
+  await page.locator('button.pv-icon[title="找相似 / 设为壁纸 / 重命名 / 导出 / 移除"]').click()
   await page.waitForTimeout(600)
   await page.screenshot({ path: `${SHOTS}/04-预览面板菜单.png` })
   await page.keyboard.press('Escape')
@@ -160,7 +169,10 @@ test('UI 走查', async () => {
     await page.locator('[role="menuitem"]', { hasText: '自动适配' }).click()
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${SHOTS}/06-设置成功toast.png` })
-    const toast = await page.locator('[role="status"], .u-toast, [class*="toast"]').last().innerText()
+    const toast = await page
+      .locator('[role="status"], .u-toast, [class*="toast"]')
+      .last()
+      .innerText()
     console.log('ui: toast =', JSON.stringify(toast))
     expect(toast).toContain('已设为桌面壁纸')
     expect(toast).toContain('模糊留白')
@@ -173,7 +185,10 @@ test('UI 走查', async () => {
     await page.locator('[role="menuitem"]', { hasText: '自动适配' }).click()
     await page.waitForTimeout(900)
     await page.screenshot({ path: `${SHOTS}/07-透明图toast.png` })
-    console.log('ui: 透明图 toast =', JSON.stringify(await page.locator('[class*="toast"]').last().innerText()))
+    console.log(
+      'ui: 透明图 toast =',
+      JSON.stringify(await page.locator('[class*="toast"]').last().innerText())
+    )
     console.log('ui: 当前壁纸 =', await wpGet())
   } finally {
     await wpSet(before)

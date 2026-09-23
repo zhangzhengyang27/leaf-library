@@ -40,6 +40,17 @@ export default defineConfig({
         '@shared': resolve('src/shared')
       }
     },
-    plugins: [vue()]
+    plugins: [vue()],
+    // 第二个渲染入口：截图/贴图小窗（src/renderer/capture.html，由 capture/main.ts 挂 PinWindow）。
+    // 21:22 的产物里有 out/renderer/capture.html，恢复出来的这份配置一度丢了它 ——
+    // 少了它 dev 还能靠 Vite 直接发 html，但打包后 capture.html 根本不存在，贴图窗口静默打不开
+    build: {
+      rollupOptions: {
+        input: {
+          index: resolve('src/renderer/index.html'),
+          capture: resolve('src/renderer/capture.html')
+        }
+      }
+    }
   }
 })

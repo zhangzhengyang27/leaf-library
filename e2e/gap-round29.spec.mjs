@@ -233,6 +233,7 @@ test('G3：color_close 在生产构建的主进程里注册成功（单测走的
     )
     .toBeTruthy()
 
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- .mjs 无法写 TS 返回类型
   const hitsFor = async (hex) =>
     page.evaluate(
       async (h) =>

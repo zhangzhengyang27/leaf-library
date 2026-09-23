@@ -42,7 +42,10 @@ test.beforeAll(async () => {
   delete env.ELECTRON_RUN_AS_NODE
   userDataDir = mkdtempSync(join(tmpdir(), 'leaf-wp-probe-profile-'))
   assetDir = mkdtempSync(join(tmpdir(), 'leaf-wp-probe-assets-'))
-  app = await electron.launch({ args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`], launchOptions: { env } })
+  app = await electron.launch({
+    args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
+    launchOptions: { env }
+  })
 }, 120000)
 
 test.afterAll(async () => {
@@ -62,10 +65,14 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   // 竖图（底部白条：cover 必裁）+ 与主屏同比例的宽图
   const portrait = join(assetDir, 'portrait.png')
   const wide = join(assetDir, 'wide.png')
-  const strip = await sharp({ create: { width: 900, height: 60, channels: 3, background: '#ffffff' } })
+  const strip = await sharp({
+    create: { width: 900, height: 60, channels: 3, background: '#ffffff' }
+  })
     .png()
     .toBuffer()
-  await sharp({ create: { width: 900, height: 1800, channels: 3, background: { r: 10, g: 10, b: 10 } } })
+  await sharp({
+    create: { width: 900, height: 1800, channels: 3, background: { r: 10, g: 10, b: 10 } }
+  })
     .composite([{ input: strip, top: 1740, left: 0 }])
     .png()
     .toFile(portrait)
@@ -81,7 +88,9 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   // 与主屏同比例、同尺寸（长边不超封顶）→ 应判原图直设
   const wideW = Math.min(primary.width, 4096)
   const wideH = Math.round((wideW * primary.height) / primary.width)
-  await sharp({ create: { width: wideW, height: wideH, channels: 3, background: { r: 40, g: 60, b: 80 } } })
+  await sharp({
+    create: { width: wideW, height: wideH, channels: 3, background: { r: 40, g: 60, b: 80 } }
+  })
     .png()
     .toFile(wide)
 
@@ -97,8 +106,14 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   expect(pRow.filePath).not.toBe(portrait)
   expect(pRow.sourcePath).toBe(portrait)
 
-  const pFit = await page.evaluate(async (fp) => await window.api.assessWallpaper(fp), pRow.filePath)
-  const wFit = await page.evaluate(async (fp) => await window.api.assessWallpaper(fp), wRow.filePath)
+  const pFit = await page.evaluate(
+    async (fp) => await window.api.assessWallpaper(fp),
+    pRow.filePath
+  )
+  const wFit = await page.evaluate(
+    async (fp) => await window.api.assessWallpaper(fp),
+    wRow.filePath
+  )
   console.log('probe: portrait fit =', JSON.stringify(pFit))
   console.log('probe: wide fit =', JSON.stringify(wFit?.assessments?.[0] ?? wFit))
   expect(pFit.ok).toBe(true)
@@ -131,7 +146,9 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
 
   // 非素材路径必须被拒（协议级：assess 与 set 同一口径）
   const outside = join(assetDir, 'not-in-library.png')
-  await sharp({ create: { width: 10, height: 10, channels: 3, background: '#123456' } }).png().toFile(outside)
+  await sharp({ create: { width: 10, height: 10, channels: 3, background: '#123456' } })
+    .png()
+    .toFile(outside)
   const rejected = await page.evaluate(async (p) => await window.api.assessWallpaper(p), outside)
   expect(rejected.ok).toBe(false)
   expect(rejected.error).toContain('素材库')
@@ -144,7 +161,9 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   await page.waitForFunction(() => !!document.querySelector('#app .LeafAppShell'), undefined, {
     timeout: 20000
   })
-  const card = page.locator('[data-photo-id]').first()
+  // 必须点竖图那张：网格首张是 wide.png（与主屏同比例），
+  // 对它 auto 判定就是「原图直设」，而下面断言的是竖图落到模糊底
+  const card = page.locator('[data-photo-id]').filter({ hasText: 'portrait.png' }).first()
   await card.waitFor({ timeout: 20000 })
   await card.click()
   await page.waitForTimeout(600)

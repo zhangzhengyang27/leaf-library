@@ -49,7 +49,10 @@ test.beforeAll(async () => {
   delete env.ELECTRON_RUN_AS_NODE
   userDataDir = mkdtempSync(join(tmpdir(), 'leaf-wp-probe-profile-'))
   assetDir = mkdtempSync(join(tmpdir(), 'leaf-wp-probe-assets-'))
-  app = await electron.launch({ args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`], launchOptions: { env } })
+  app = await electron.launch({
+    args: [MAIN_ENTRY, `--user-data-dir=${userDataDir}`],
+    launchOptions: { env }
+  })
 }, 120000)
 
 test.afterAll(async () => {
@@ -69,10 +72,14 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   // 竖图（底部白条：cover 必裁）+ 与主屏同比例的宽图
   const portrait = join(assetDir, 'portrait.png')
   const wide = join(assetDir, 'wide.png')
-  const strip = await sharp({ create: { width: 900, height: 60, channels: 3, background: '#ffffff' } })
+  const strip = await sharp({
+    create: { width: 900, height: 60, channels: 3, background: '#ffffff' }
+  })
     .png()
     .toBuffer()
-  await sharp({ create: { width: 900, height: 1800, channels: 3, background: { r: 10, g: 10, b: 10 } } })
+  await sharp({
+    create: { width: 900, height: 1800, channels: 3, background: { r: 10, g: 10, b: 10 } }
+  })
     .composite([{ input: strip, top: 1740, left: 0 }])
     .png()
     .toFile(portrait)
@@ -88,7 +95,9 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   // 与主屏同比例、同尺寸（长边不超封顶）→ 应判原图直设
   const wideW = Math.min(primary.width, 4096)
   const wideH = Math.round((wideW * primary.height) / primary.width)
-  await sharp({ create: { width: wideW, height: wideH, channels: 3, background: { r: 40, g: 60, b: 80 } } })
+  await sharp({
+    create: { width: wideW, height: wideH, channels: 3, background: { r: 40, g: 60, b: 80 } }
+  })
     .png()
     .toFile(wide)
 
@@ -99,6 +108,7 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   console.log('wp-e2e: imported =', JSON.stringify(imported?.added ?? imported))
 
   // D-020：入库即拷贝，素材指的是库内那份副本（这条以前断言 filePath === 原路径）
+  // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- .mjs 无法写 TS 返回类型
   const rowOf = (name) => imported.find((x) => x.fileName === name)
   const pRow = rowOf('portrait.png')
   expect(pRow.filePath, '素材指向库内副本').not.toBe(portrait)
@@ -107,7 +117,10 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   expect(pRow.sourcePath, '原件路径记在 source_path').toBe(portrait)
   expect(existsSync(portrait), '原件仍在原处').toBe(true)
 
-  const pFit = await page.evaluate(async (fp) => await window.api.assessWallpaper(fp), pRow.filePath)
+  const pFit = await page.evaluate(
+    async (fp) => await window.api.assessWallpaper(fp),
+    pRow.filePath
+  )
   const wFit = await page.evaluate(
     async (fp) => await window.api.assessWallpaper(fp),
     rowOf('wide.png').filePath
@@ -135,7 +148,9 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
 
   // 非素材路径必须被拒（协议级：assess 与 set 同一口径）
   const outside = join(assetDir, 'not-in-library.png')
-  await sharp({ create: { width: 10, height: 10, channels: 3, background: '#123456' } }).png().toFile(outside)
+  await sharp({ create: { width: 10, height: 10, channels: 3, background: '#123456' } })
+    .png()
+    .toFile(outside)
   const rejected = await page.evaluate(async (p) => await window.api.assessWallpaper(p), outside)
   expect(rejected.ok).toBe(false)
   expect(rejected.error).toContain('素材库')
@@ -163,18 +178,24 @@ test('assess 判定与真实屏幕一致，策略菜单可开出', async () => {
   expect(items.join('|')).toMatch(/｜/)
   await page.keyboard.press('Escape')
 
-  // 预览面板入口：双击卡片进预览 → ▾ 展开同一套策略菜单
+  // 预览面板入口：D-019 之后预览里不再有独立的壁纸键，两颗键收进 ⋯ 菜单
+  // （旧断言写的是 D-019 之前工具栏的 title 文案，那条文案在 21:22 产物里也找不到）
   await card.dblclick()
   await page.waitForTimeout(600)
-  const autoButton = page.locator('button[title="按屏幕比例适配后设为桌面壁纸"]')
-  await expect(autoButton).toHaveCount(1)
-  const menuButton = page.locator('button[title^="选择适配方式"]')
-  await expect(menuButton).toHaveCount(1)
-  await menuButton.click()
+  const moreButton = page.locator(
+    'button.pv-icon[title="找相似 / 设为壁纸 / 重命名 / 导出 / 移除"]'
+  )
+  await expect(moreButton, '预览 ⋯ 那颗键必须在').toHaveCount(1)
+  await moreButton.click()
   await page.waitForTimeout(500)
   const previewItems = await page.locator('[role="menu"] [role="menuitem"]').allInnerTexts()
   console.log('wp-e2e: 预览面板菜单 =', JSON.stringify(previewItems))
-  expect(previewItems.join('|')).toContain('自动适配 → 模糊留白（不裁内容）')
+  // 策略明细（居中裁切/模糊留白/原图直设）由上面工具栏那条与右键菜单那条覆盖，
+  // 这里只验预览入口把两粒壁纸键带出来了
+  expect(previewItems.join('|'), '预览 ⋯ 里要有「设为壁纸（按屏适配）」').toContain(
+    '设为壁纸（按屏适配）'
+  )
+  expect(previewItems.join('|'), '预览 ⋯ 里要有「壁纸适配方式…」').toContain('壁纸适配方式')
   await page.keyboard.press('Escape')
   await page.keyboard.press('Escape')
 
@@ -226,10 +247,14 @@ test('真设桌面：派生 JPEG 落盘 + 缓存命中 + 还原原壁纸', async
   const page = await getMainWindow()
 
   const portrait = join(assetDir, 'set-portrait.png')
-  const strip = await sharp({ create: { width: 900, height: 80, channels: 3, background: '#ffffff' } })
+  const strip = await sharp({
+    create: { width: 900, height: 80, channels: 3, background: '#ffffff' }
+  })
     .png()
     .toBuffer()
-  await sharp({ create: { width: 900, height: 1800, channels: 3, background: { r: 12, g: 12, b: 12 } } })
+  await sharp({
+    create: { width: 900, height: 1800, channels: 3, background: { r: 12, g: 12, b: 12 } }
+  })
     .composite([{ input: strip, top: 1720, left: 0 }])
     .png()
     .toFile(portrait)
@@ -239,7 +264,9 @@ test('真设桌面：派生 JPEG 落盘 + 缓存命中 + 还原原壁纸', async
   })
     .composite([
       {
-        input: await sharp({ create: { width: 500, height: 500, channels: 3, background: '#2266aa' } })
+        input: await sharp({
+          create: { width: 500, height: 500, channels: 3, background: '#2266aa' }
+        })
           .png()
           .toBuffer(),
         top: 200,
@@ -345,7 +372,9 @@ test('真设桌面：派生 JPEG 落盘 + 缓存命中 + 还原原壁纸', async
     // 描述区是 max-w-72 + truncate（288px 就出省略号），必须量真实宽度而不是只读 innerText
     const desc = await toast.evaluate((el) => {
       const span = [...el.querySelectorAll('span')].find((s) => s.className.includes('truncate'))
-      return span ? { scroll: span.scrollWidth, client: span.clientWidth, text: span.textContent } : null
+      return span
+        ? { scroll: span.scrollWidth, client: span.clientWidth, text: span.textContent }
+        : null
     })
     console.log('wp-e2e: 描述区 =', JSON.stringify(desc))
     expect(desc?.text).toContain('cutout.png')
