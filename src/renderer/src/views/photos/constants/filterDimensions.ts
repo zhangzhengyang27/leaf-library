@@ -12,6 +12,9 @@
 export type DimensionId =
   | 'color'
   | 'aiImage'
+  /** 语义搜索档：FilterBar 的 chip 与 isDimActive/clearDim 已按这个 id 分支，
+   *  但还没进 FILTER_DIMENSIONS 注册表（不进池就没有这张 chip） */
+  | 'aiSemantic'
   | 'tags'
   | 'folders'
   | 'shape'

@@ -15,7 +15,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from '@components/AppIcon.vue'
 import { useLibraryTabs, type OrientationValue } from '@renderer/stores/libraryTabs'
-import type { SmartAlbumRules } from '@shared/smartAlbumRules'
+import type { SmartAlbumRules } from '../../../types/photo'
 import { buildFiltersSpec } from '../composables/usePhotoFilterSpec'
 import { rulesToFilters } from '../composables/rulesToFilters'
 import { saveSearchScopes } from '../constants/searchScopes'
@@ -51,12 +51,14 @@ import { useDuplicateScan } from '../composables/useDuplicateScan'
 const tabs = useLibraryTabs()
 const actions = usePhotoActions()
 const filters = usePhotoFilters()
+const semantic = useSemanticSearch()
 const scan = useDuplicateScan()
 
 const tab = computed(() => tabs.active)
-const semantic = useSemanticSearch()
 const pool = filters.currentPool
-const showKindChips = computed(() => filters.showFilters.value && tab.value.view !== 'map')
+const showKindChips = computed(
+  () => filters.showFilters.value && tab.value.view !== 'map' && !tab.value.aiSearchMode
+)
 
 /** 相册/文件夹/智能夹上下文操作（原筛选条内联按钮） */
 const showAlbumActions = computed(() => !!filters.activeAlbum.value)
@@ -533,6 +535,10 @@ function clearUrlKeyword(): void {
   tab.value.urlKeyword = ''
   tabs.persist()
 }
+function toggleAiSearchMode(): void {
+  tab.value.aiSearchMode = !tab.value.aiSearchMode
+  tabs.persist()
+}
 
 // ── 生效态（Eagle：负向 token + 行尾 保存/锁定/清除；漏斗蓝点判定源在 filters） ──
 
@@ -626,7 +632,7 @@ function applySavedFilterRules(rules: SmartAlbumRules): void {
 
 const unpinnedActive = computed<DimensionId[]>(() => {
   return dimOrder.value.filter(
-    (id) => !pinned.value.includes(id) && id !== 'aiImage' && isDimActive(id)
+    (id) => !pinned.value.includes(id) && id !== 'aiImage' && id !== 'aiSemantic' && isDimActive(id)
   )
 })
 
@@ -669,6 +675,7 @@ function isDimActive(id: DimensionId): boolean {
     case 'modifiedDate':
       return !!tab.value.modifiedTimeRange
     case 'aiImage':
+    case 'aiSemantic':
       return false
   }
 }
@@ -725,6 +732,7 @@ function clearDim(id: DimensionId): void {
       tab.value.modifiedTimeRange = null
       break
     case 'aiImage':
+    case 'aiSemantic':
       break
   }
   tabs.persist()
@@ -1209,6 +1217,26 @@ watch(
           </template>
         </DimensionChip>
 
+        <!-- AI 维度：动作 chip（触发搜索模式，无取值面板） -->
+        <button
+          v-else-if="dimId === 'aiSemantic'"
+          type="button"
+          class="flex h-6 items-center gap-1 rounded-sm border px-1.5 text-[11px] transition-colors duration-fast"
+          :class="
+            tab.aiSearchMode
+              ? 'border-brand-500 bg-brand-500/10 text-brand-600 dark:text-brand-400'
+              : 'border-transparent text-fg-secondary hover:bg-surface-hover hover:text-fg-primary'
+          "
+          title="切换 AI 语义搜索（自然语言找图）"
+          @click="toggleAiSearchMode"
+        >
+          <AppIcon icon="context-menu/ic-filter-item-semantic" :size="14" />
+          语义搜索
+          <span
+            class="rounded-sm bg-brand-500/15 px-0.5 text-[9px] leading-3 text-brand-600 dark:text-brand-400"
+            >AI</span
+          >
+        </button>
         <button
           v-else-if="dimId === 'aiImage'"
           type="button"
