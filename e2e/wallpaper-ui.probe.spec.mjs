@@ -187,7 +187,9 @@ test('UI 走查', async () => {
     await page.screenshot({ path: `${SHOTS}/07-透明图toast.png` })
     console.log(
       'ui: 透明图 toast =',
-      JSON.stringify(await page.locator('[class*="toast"]').last().innerText())
+      JSON.stringify(
+        await page.locator('[role="status"], .u-toast, [class*="toast"]').last().innerText()
+      )
     )
     console.log('ui: 当前壁纸 =', await wpGet())
   } finally {

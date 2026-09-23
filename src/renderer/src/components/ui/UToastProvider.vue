@@ -52,6 +52,7 @@ const accentFor = (kind: ToastItem['kind']): string => {
         <div
           v-for="t in items"
           :key="t.id"
+          role="status"
           class="pointer-events-auto flex items-center gap-2 rounded-lg border border-line-default bg-glass-bg-strong py-2 pl-3 pr-2 shadow-lg backdrop-blur-[var(--glass-blur)]"
         >
           <span v-if="t.kind === 'loading'" class="shrink-0">
