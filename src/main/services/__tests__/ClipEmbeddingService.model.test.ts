@@ -47,7 +47,12 @@ const MODEL_DIR_CANDIDATES = [
 const SRC = MODEL_DIR_CANDIDATES.find(
   (d) => existsSync(join(d, 'model.onnx')) && existsSync(join(d, 'tokenizer.json'))
 )
-const IMG_DIR = '/tmp/ai-probe/img'
+// 评测图优先读仓库内路径：/tmp 会被系统清（09-22 就是这么把 SEMANTIC_MIN_SCORE 的
+// 标定依据一起弄丢的——当时没有任何地方能找回那 5 张图）。放不进仓库就继续用探针目录。
+const IMG_DIR =
+  [join(process.cwd(), 'e2e', 'fixtures', 'ai-probe', 'img'), '/tmp/ai-probe/img'].find((d) =>
+    existsSync(d)
+  ) ?? join(process.cwd(), 'e2e', 'fixtures', 'ai-probe', 'img') // 缺图时由 havePool 安静 skip
 const POOL = ['cats.jpg', 'bread.png', 'pikachu.png', 'moraine-lake.png', 'sam-car.png']
 const havePool = existsSync(IMG_DIR) && POOL.every((f) => existsSync(join(IMG_DIR, f)))
 

@@ -31,16 +31,22 @@ import sharp from 'sharp'
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const MAIN_ENTRY = join(ROOT, 'out/main/index.js')
 const MODEL_ID = 'chinese-clip-vit-b-16'
-const PHOTO_SRC = '/tmp/ai-probe/img'
+// 同一条理由：探针图放 /tmp 等于把判据寄存在会被清的目录里，仓库内路径优先
+const PHOTO_SRC =
+  [join(ROOT, 'e2e', 'fixtures', 'ai-probe', 'img'), '/tmp/ai-probe/img'].find((d) =>
+    existsSync(d)
+  ) ?? join(ROOT, 'e2e', 'fixtures', 'ai-probe', 'img') // 都不在时指向仓库内路径，让下面的闸安静 skip
 
 const modelDir = process.env.LEAF_MODEL_DIR || '/tmp/cc-probe'
 const haveModel =
   existsSync(join(modelDir, 'model.onnx')) && existsSync(join(modelDir, 'tokenizer.json'))
 const PHOTOS = ['cats.jpg', 'bread.png', 'pikachu.png', 'moraine-lake.png']
 /** 库外查询图：一张暹罗猫（Oxford-IIIT Pets class 33），库里没有它，只能靠语义命中 */
-const EXT_CAT = '/tmp/ai-probe/ext-cat.webp'
-const havePhotos =
-  PHOTOS.every((f) => existsSync(join(PHOTO_SRC, f))) && existsSync(EXT_CAT)
+const EXT_CAT =
+  [join(ROOT, 'e2e', 'fixtures', 'ai-probe', 'ext-cat.webp'), '/tmp/ai-probe/ext-cat.webp'].find(
+    (f) => existsSync(f)
+  ) ?? join(ROOT, 'e2e', 'fixtures', 'ai-probe', 'ext-cat.webp')
+const havePhotos = PHOTOS.every((f) => existsSync(join(PHOTO_SRC, f))) && existsSync(EXT_CAT)
 
 const withMarker = process.env.LEAF_VECTORS_NO_READY !== '1'
 
@@ -284,14 +290,12 @@ test('搜索框开 AI 语义档后打中文，网格只剩那张猫', async () =
   await page.fill('#library-search', '一只猫')
   const catIds = await page.evaluate(
     () =>
-      window.api.photos
-        .getByDateSection()
-        .then((s) =>
-          s
-            .flatMap((x) => x.photos)
-            .filter((p) => p.fileName.startsWith('cats'))
-            .map((p) => p.id)
-        ),
+      window.api.photos.getByDateSection().then((s) =>
+        s
+          .flatMap((x) => x.photos)
+          .filter((p) => p.fileName.startsWith('cats'))
+          .map((p) => p.id)
+      ),
     []
   )
   expect(catIds.length).toBe(2)
@@ -342,16 +346,13 @@ test('语义条件存进智能文件夹后仍能生效（存文本、每次求�
     expect(Array.isArray(stored.semanticIds)).toBe(false)
 
     // 池子里没有的描述：fail-closed 出空，而不是"条件被忽略、整库都算命中"
-    const none = await page.evaluate(
-      async (id) => {
-        await window.api.photos.updateSmartAlbum(id, {
-          name: 'e2e-语义条件',
-          rules: { semanticQuery: '一架黑色三角钢琴' }
-        })
-        return (await window.api.photos.getSmartAlbumPhotos(id)).length
-      },
-      album.id
-    )
+    const none = await page.evaluate(async (id) => {
+      await window.api.photos.updateSmartAlbum(id, {
+        name: 'e2e-语义条件',
+        rules: { semanticQuery: '一架黑色三角钢琴' }
+      })
+      return (await window.api.photos.getSmartAlbumPhotos(id)).length
+    }, album.id)
     expect(none).toBe(0)
   } finally {
     if (album?.id) await page.evaluate((id) => window.api.photos.deleteSmartAlbum(id), album.id)
