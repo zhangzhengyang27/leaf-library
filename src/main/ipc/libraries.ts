@@ -3,12 +3,14 @@
  *
  * - list/create/rename/unregister：注册表读写
  * - switch：写激活库后 relaunch（重启切库，D-013 记录的稳健语义）
- * - mergeFrom：把另一库的素材并入当前库（文件为绝对路径引用，无文件搬运；
- *   按 file_path 去重；标签按名称映射进 tag_tags；soft-deleted 行不迁移）
+ * - mergeFrom：把另一库的素材并入当前库。**D-020 起文件字节一并搬进当前库**
+ *   （以前只搬 DB 行、file_path 仍指着源库目录，于是"在源库里清空回收站"或
+ *   源库被删/移动，都会把刚合并过来的素材当场删空）；
+ *   按 file_path 与 source_path 双重去重；标签按名称映射进 tag_tags；soft-deleted 行不迁移
  */
 import { app, ipcMain } from 'electron'
 import Database from 'better-sqlite3'
-import { existsSync } from 'node:fs'
+import { existsSync, unlinkSync } from 'node:fs'
 import { installAppMenu } from '../modules/appMenu'
 import {
   createLibrary,
@@ -20,6 +22,7 @@ import {
   unregisterLibrary
 } from '../modules/libraryRegistry'
 import { database } from '../db/database'
+import { photoStore } from '../stores'
 import { log } from '../services/LogService'
 
 export interface LibraryView {
@@ -130,25 +133,52 @@ export function registerLibrariesIpcHandlers(): void {
         }
       }
 
-      // 素材：按 file_path 去重
+      // 素材：按 file_path + source_path 双重去重
       const existsByPath = target.prepare(`SELECT 1 FROM photo_photos WHERE file_path = ? LIMIT 1`)
+      const existsBySource = target.prepare(
+        `SELECT 1 FROM photo_photos WHERE source_path = ? LIMIT 1`
+      )
       const insertPhoto = target.prepare(
         `INSERT INTO photo_photos (id, file_path, file_name, file_size, width, height, mime_type,
                                    taken_at, imported_at, updated_at, hash, is_favorite, deleted_at,
                                    thumb_status, source, kind, source_url, description, rating,
-                                   fs_created_at, fs_modified_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, ?, ?, ?)`
+                                   fs_created_at, fs_modified_at, source_path)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, 0, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
       const insertPhotoTag = target.prepare(
         `INSERT OR IGNORE INTO photo_tags (photo_id, tag_id, created_at) VALUES (?, ?, ?)`
       )
-      const photos = source.prepare(buildSourcePhotoSelect(source, 'deleted_at IS NULL')).all() as
-        Array<Record<string, unknown>>
+      const photos = source
+        .prepare(buildSourcePhotoSelect(source, 'deleted_at IS NULL'))
+        .all() as Array<Record<string, unknown>>
       const tagLinks = source.prepare(`SELECT tag_id FROM photo_tags WHERE photo_id = ?`)
+
+      /** 本次搬进当前库的副本；事务失败时只删确实没落库的那些 */
+      const copiedTargets: string[] = []
+      let copied = 0
+      let copyFailed = 0
 
       const tx = target.transaction((): void => {
         for (const row of photos) {
-          const filePath = String(row.file_path)
+          const original = String(row.file_path)
+          // 先去重再拷贝：反过来会为一条本来就在库里的素材白拷一份字节
+          if (existsByPath.get(original) || existsBySource.get(original)) {
+            result.photosSkipped += 1
+            continue
+          }
+          let filePath = original
+          let sourcePath: string | null = null
+          if (!photoStore.isInsideLibrary(original) && existsSync(original)) {
+            const dest = photoStore.copyIntoLibrary(original)
+            if (dest) {
+              filePath = dest
+              sourcePath = original
+              copiedTargets.push(dest)
+              copied += 1
+            } else {
+              copyFailed += 1
+            }
+          }
           if (existsByPath.get(filePath)) {
             result.photosSkipped += 1
             continue
@@ -173,7 +203,8 @@ export function registerLibrariesIpcHandlers(): void {
             row.description,
             row.rating ?? 0,
             row.fs_created_at,
-            row.fs_modified_at
+            row.fs_modified_at,
+            sourcePath
           )
           result.photosAdded += 1
           const links = tagLinks.all(String(row.id)) as Array<{ tag_id: string }>
@@ -183,10 +214,26 @@ export function registerLibrariesIpcHandlers(): void {
           }
         }
       })
-      tx()
+      try {
+        tx()
+      } catch (err) {
+        const stillInDb = target.prepare(`SELECT 1 FROM photo_photos WHERE file_path = ? LIMIT 1`)
+        for (const t of copiedTargets) {
+          try {
+            // better-sqlite3 的 transaction 抛错即整体回滚，这里回滚后所有副本都是孤儿；
+            // 但仍按"有没有落库"过一遍——万一将来这里改成分批提交（像 addPhotos 那样），
+            // 无脑删就会把已提交行的文件删掉，那正是 D-020 审查在导入链上抓到的同一个错
+            if (existsSync(t) && !stillInDb.get(t)) unlinkSync(t)
+          } catch {
+            /* 删不掉的留给断链扫描 */
+          }
+        }
+        throw err
+      }
       log.info(
         'libraries',
-        `merged from ${sourceId}: +${result.photosAdded} photos, ${result.photosSkipped} skipped, +${result.tagsAdded} tags`
+        `merged from ${sourceId}: +${result.photosAdded} photos, ${result.photosSkipped} skipped, ` +
+          `+${result.tagsAdded} tags, 搬入副本 ${copied} 个（拷贝失败 ${copyFailed} 个，仍按原路径并入）`
       )
       return result
     } finally {
