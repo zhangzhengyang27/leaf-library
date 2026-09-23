@@ -25,7 +25,7 @@ import { _electron as electron } from 'playwright'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import sharp from 'sharp'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -37,9 +37,28 @@ const PHOTO_SRC =
     existsSync(d)
   ) ?? join(ROOT, 'e2e', 'fixtures', 'ai-probe', 'img') // 都不在时指向仓库内路径，让下面的闸安静 skip
 
-const modelDir = process.env.LEAF_MODEL_DIR || '/tmp/cc-probe'
-const haveModel =
-  existsSync(join(modelDir, 'model.onnx')) && existsSync(join(modelDir, 'tokenizer.json'))
+// 模型两件套的来源，与 ClipEmbeddingService.model.test.ts 同一条序：
+// LEAF_MODEL_DIR → 应用自己下载的落点 → 探针目录。只认 /tmp 的话，
+// 模型装好了这条电池也永远静默 skip（09-22 之后就是这状态）。
+const MODEL_CANDIDATES = [
+  process.env.LEAF_MODEL_DIR ?? '',
+  join(
+    homedir(),
+    process.platform === 'darwin'
+      ? 'Library/Application Support/leaf-library'
+      : process.platform === 'win32'
+        ? 'AppData/Roaming/leaf-library'
+        : '.config/leaf-library',
+    'models',
+    MODEL_ID
+  ),
+  '/tmp/cc-probe',
+  '/tmp/jina-text-probe'
+].filter(Boolean)
+const modelDir = MODEL_CANDIDATES.find(
+  (d) => existsSync(join(d, 'model.onnx')) && existsSync(join(d, 'tokenizer.json'))
+)
+const haveModel = Boolean(modelDir)
 const PHOTOS = ['cats.jpg', 'bread.png', 'pikachu.png', 'moraine-lake.png']
 /** 库外查询图：一张暹罗猫（Oxford-IIIT Pets class 33），库里没有它，只能靠语义命中 */
 const EXT_CAT =
