@@ -7,11 +7,12 @@
   "homepage": "https://leaf.app",
   "scripts": {
     "format": "prettier --write .",
-    "lint": "eslint --cache . && node scripts/check-sfc-integrity.mjs",
+    "lint": "eslint --cache . && node scripts/check-sfc-integrity.mjs && node scripts/check-source-integrity.mjs",
     "lint:css": "stylelint \"src/**/*.{css,less,vue}\" --max-warnings 99999",
     "lint:css:changed": "node scripts/lint-css-changed.mjs",
     "check:light": "node scripts/check-light-mode-readiness.mjs",
     "check:sfc": "node scripts/check-sfc-integrity.mjs",
+    "check:source": "node scripts/check-source-integrity.mjs",
     "lint:all": "pnpm run lint && pnpm run lint:css",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json --composite false",
