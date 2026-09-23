@@ -127,8 +127,15 @@ test('导入即复制入库：库内有副本、原件不动、重复导入不�
     expect(readFileSync(photo.filePath, 'utf8'), '副本字节与原文件一致').toBe(originalBody)
     expect(existsSync(original), '原文件必须还在').toBe(true)
 
-    // ── 1b. 界面那一半：拷贝行的「原始路径」必须看得见，且带一颗「显示」
-    // （只验到"露出来"——真点一下会拉起 Finder 窗口留在用户桌面上，不放进自动跑里）
+    // ── 1b. 界面那一半：拷贝行的「原始路径」必须看得见，且那颗「显示」真点得动
+    // 不真拉起 Finder：在主进程把 shell.showItemInFolder 换成记账的假件
+    // （handler 每次调用时才查这个属性，所以换对象成员就能截住）。
+    // 这一条同时验两件事：按钮接得上，且 pathPolicy 认 source_path
+    // ——若白名单不放行原件路径，showItemInFolder 根本不会被调用。
+    await app.evaluate(({ shell }) => {
+      globalThis.__reveal = []
+      shell.showItemInFolder = (p) => globalThis.__reveal.push(p)
+    })
     await page.reload()
     await page.waitForFunction(() => !!document.querySelector('#app .LeafAppShell'), undefined, {
       timeout: 25_000
@@ -139,7 +146,11 @@ test('导入即复制入库：库内有副本、原件不动、重复导入不�
     await page.keyboard.press('F8')
     const originRow = page.locator('div.contents', { hasText: '原始路径' })
     await expect(originRow, '检查器高级模式要露出「原始路径」那一行').toBeVisible()
-    await expect(originRow.getByRole('button', { name: '显示' })).toHaveCount(1)
+    await originRow.getByRole('button', { name: '显示' }).click()
+    const revealed = await app.evaluate(() => globalThis.__reveal)
+    expect(revealed, `显示按钮没把 Finder 指到原件（实际：${JSON.stringify(revealed)}）`).toEqual([
+      original
+    ])
     await page.keyboard.press('Escape')
 
     // ── 1c. 右键「复制… → 复制文件夹路径」给的必须是**出处**目录，不是库内公共桶。
