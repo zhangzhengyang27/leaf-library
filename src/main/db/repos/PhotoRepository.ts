@@ -378,6 +378,17 @@ export class PhotoRepository {
     return !!this.db.prepare(`SELECT 1 FROM photo_photos WHERE file_path = ? LIMIT 1`).get(filePath)
   }
 
+  /**
+   * 这条路径是否是某条素材的**出处**（source_path，D-020 拷贝入库时记下）。
+   * 白名单需要它：检查器「在访达中显示原件」跳的是这里，而拷贝行的 file_path 已经是库内副本，
+   * 只查 hasPhotoByPath 会让那颗键点了没反应。025 迁移正好给 source_path 建了索引。
+   */
+  hasPhotoBySourcePath(sourcePath: string): boolean {
+    return !!this.db
+      .prepare(`SELECT 1 FROM photo_photos WHERE source_path = ? LIMIT 1`)
+      .get(sourcePath)
+  }
+
   /** 按路径取行，含回收站软删行（回收站素材预览 image://video://rawfile:// 用） */
   getPhotoByPathIncludingDeleted(filePath: string): Photo | undefined {
     const rows = this.db

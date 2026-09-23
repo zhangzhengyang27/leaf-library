@@ -431,12 +431,12 @@ const hasExif = computed(() => {
   if (!p) return false
   return Boolean(
     p.cameraModel ||
-      p.lensModel ||
-      p.iso ||
-      p.aperture ||
-      p.shutter ||
-      p.focalLength ||
-      hasGps.value
+    p.lensModel ||
+    p.iso ||
+    p.aperture ||
+    p.shutter ||
+    p.focalLength ||
+    hasGps.value
   )
 })
 
@@ -469,11 +469,15 @@ const exifRows = computed<Array<{ label: string; value: string }>>(() => {
 })
 
 /** R5 高级模式：250px 窄栏常态放不下、也不该占位的排障字段 */
-const advancedRows = computed<Array<{ label: string; value: string }>>(() => {
+const advancedRows = computed<Array<{ label: string; value: string; reveal?: boolean }>>(() => {
   const p = single.value
   if (!p || !props.expanded) return []
-  const rows: Array<{ label: string; value: string }> = [{ label: '文件路径', value: p.filePath }]
-  if (p.sourcePath) rows.push({ label: '原始路径', value: p.sourcePath })
+  const rows: Array<{ label: string; value: string; reveal?: boolean }> = [
+    { label: '文件路径', value: p.filePath }
+  ]
+  // D-020 后拷贝行的 file_path 只是库里那份副本；用户真正想跳的是它在磁盘上的出处，
+  // 所以这行多给一颗「显示」（主进程按 source_path 过白名单，不是任意路径）
+  if (p.sourcePath) rows.push({ label: '原始路径', value: p.sourcePath, reveal: true })
   if (p.width && p.height) {
     rows.push({
       label: '像素总数',
@@ -609,6 +613,13 @@ async function copyFiles(): Promise<void> {
   } catch (error) {
     toast.error('复制失败', { description: (error as Error).message })
   }
+}
+
+/** 在访达里打开出处所在目录。主进程按"有没有素材把这个路径登记为 source_path"过白名单，
+ *  所以这里不需要（也不应该）自己判断路径合法性 */
+function revealSourcePath(sourcePath: string): void {
+  if (!sourcePath) return
+  void window.api.photos.showInFolder(sourcePath)
 }
 
 /** 复制文档正文（officeparser 抽取） */
@@ -1066,11 +1077,19 @@ function pickWallpaper(event: MouseEvent): void {
             <div v-for="row in advancedRows" :key="row.label" class="contents">
               <dt class="shrink-0 text-fg-tertiary">{{ row.label }}</dt>
               <dd
-                class="break-all select-text text-fg-secondary"
+                class="flex min-w-0 items-start gap-2 break-all select-text text-fg-secondary"
                 :title="row.value"
                 data-inspector-advanced-row
               >
-                {{ row.value }}
+                <span class="min-w-0 flex-1">{{ row.value }}</span>
+                <button
+                  v-if="row.reveal"
+                  type="button"
+                  class="shrink-0 text-[11px] text-fg-brand hover:underline"
+                  @click="revealSourcePath(row.value)"
+                >
+                  显示
+                </button>
               </dd>
             </div>
           </dl>

@@ -37,6 +37,40 @@ describe('PhotoRepository · 回收站软删行重新导入', () => {
   })
 })
 
+describe('PhotoRepository · hasPhotoBySourcePath（检查器「显示原件」的白名单依据）', () => {
+  let db: Database.Database
+  let photos: PhotoRepository
+
+  beforeEach(() => {
+    db = createTestDb()
+    photos = new PhotoRepository(db)
+  })
+  afterEach(() => closeTestDb(db))
+
+  it('只认被登记为出处的路径；file_path 与 source_path 各查各的', () => {
+    photos.addPhoto('/lib/images/2609/海报.png', { sourcePath: '/Users/xiaoye/Desktop/海报.png' })
+    // 拷贝行的 file_path 是库内副本，用户要跳的是磁盘上那个出处
+    expect(photos.hasPhotoBySourcePath('/Users/xiaoye/Desktop/海报.png')).toBe(true)
+    expect(photos.hasPhotoBySourcePath('/lib/images/2609/海报.png')).toBe(false)
+    // 白名单不是"任意路径都放行"：没登记过的出处必须为假
+    expect(photos.hasPhotoBySourcePath('/Users/xiaoye/.ssh/id_rsa')).toBe(false)
+  })
+
+  it('迁移过的行（updateMigrationBatch 换绑）也能按出处查到', () => {
+    const p = photos.addPhoto('/Users/xiaoye/Desktop/旧位置.txt')
+    photos.updateMigrationBatch([
+      {
+        id: p.id,
+        filePath: '/lib/images/2609/旧位置.txt',
+        fileName: '旧位置.txt',
+        sourcePath: '/Users/xiaoye/Desktop/旧位置.txt'
+      }
+    ])
+    expect(photos.hasPhotoBySourcePath('/Users/xiaoye/Desktop/旧位置.txt')).toBe(true)
+    expect(photos.hasPhotoByPath('/Users/xiaoye/Desktop/旧位置.txt')).toBe(false)
+  })
+})
+
 describe('pathPolicy · isSensitiveImportPath', () => {
   it('凭据/私钥类文件命中黑名单', () => {
     expect(isSensitiveImportPath('/home/u/.ssh/id_rsa')).toBe(true)

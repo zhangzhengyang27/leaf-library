@@ -26,7 +26,10 @@ export function isOpenPathAllowed(p: string): boolean {
     }
     // 必须用含软删行的判定：回收站素材（引用模式下文件在库外）仍允许
     // 「在访达中打开」——getPhotoByPath 会把它们漏掉
-    if (photoRepository.hasPhotoByPath(p)) return true
+    // source_path 同权：D-020 后拷贝行的 file_path 是库内副本，用户要点开的是它在磁盘上的出处，
+    // 只认 file_path 会让检查器「在访达中显示原件」点了没反应。依然不是任意路径——
+    // 必须真有条素材把这个路径登记为出处才放行
+    if (photoRepository.hasPhotoByPath(p) || photoRepository.hasPhotoBySourcePath(p)) return true
   } catch (e) {
     log.warn('system', `openPath allowlist check failed: ${(e as Error).message}`)
   }
