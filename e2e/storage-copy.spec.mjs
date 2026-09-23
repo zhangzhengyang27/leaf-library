@@ -142,6 +142,23 @@ test('导入即复制入库：库内有副本、原件不动、重复导入不�
     await expect(originRow.getByRole('button', { name: '显示' })).toHaveCount(1)
     await page.keyboard.press('Escape')
 
+    // ── 1c. 右键「复制… → 复制文件夹路径」给的必须是**出处**目录，不是库内公共桶。
+    // 拷贝式入库后 file_path 全是 images/2609，把它复制到剪贴板等于给用户一把没用的钥匙。
+    const clipBefore = await app.evaluate(({ clipboard }) => clipboard.readText())
+    try {
+      await card.click({ button: 'right' })
+      await page.locator('[role="menuitem"]').filter({ hasText: '复制…' }).first().hover()
+      await page.locator('[role="menuitem"]').filter({ hasText: '复制文件夹路径' }).first().click()
+      const dir = await app.evaluate(({ clipboard }) => clipboard.readText())
+      expect(dir, '复制到的是库内桶路径，不是原件出处').toBe(dirname(original))
+      await expect(
+        page.locator('[role="status"], [class*="toast"]').last(),
+        'toast 要把实际复制的内容回显出来'
+      ).toContainText(dirname(original))
+    } finally {
+      await app.evaluate(({ clipboard }, text) => clipboard.writeText(text), clipBefore || ' ')
+    }
+
     // ── 2. 同一个原文件再导入一次：认旧行，不拷第二份、不建第二行 ──
     const again = await page.evaluate(
       async (p) => await window.api.photos.importPaths([p]),

@@ -962,13 +962,12 @@ async function handleMenuAction(rawKey: string, ids: string[], photo: Photo): Pr
       if (child === 'custom') convertIds.value = ids
       else void actions.convertTo(ids, child as 'webp' | 'png' | 'jpg' | 'avif')
     } else if (key === 'copy-folder-path') {
-      // ④-3：复制所在文件夹路径
+      // ④-3：复制所在文件夹路径。D-020 之后 file_path 是库内公共桶（images/2609），
+      // 复制出去没有导航意义；知道原件出处就给出处，丢了桶这把钥匙也少给一把。
       const p = byIds(ids)[0]
       if (p) {
-        const dir = p.filePath.slice(
-          0,
-          Math.max(p.filePath.lastIndexOf('/'), p.filePath.lastIndexOf('\\'))
-        )
+        const from = p.sourcePath || p.filePath
+        const dir = from.slice(0, Math.max(from.lastIndexOf('/'), from.lastIndexOf('\\')))
         const ok = await window.api.photos.copyText(dir)
         if (ok) useToast().success('已复制文件夹路径', { description: dir })
       }
