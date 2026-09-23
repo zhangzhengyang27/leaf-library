@@ -44,6 +44,15 @@ export function registerStorageIpcHandlers(): void {
     }
   })
 
+  // 断链素材批量处置：软删进回收站（可还原），给"库里几千条丢失"一个出口
+  ipcMain.handle('storage:moveMissingToTrash', () => {
+    try {
+      return { ok: true, removed: photoStore.moveMissingToTrash() }
+    } catch (err) {
+      return { ok: false, removed: 0, error: sanitizeIpcMessage(err) }
+    }
+  })
+
   ipcMain.handle('storage:migrateIntoLibrary', async (_e, dryRun: boolean) => {
     try {
       return { ok: true, ...(await photoStore.migrateIntoLibrary({ dryRun: Boolean(dryRun) })) }

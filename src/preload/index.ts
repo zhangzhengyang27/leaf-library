@@ -38,6 +38,7 @@ const api: API = {
   storage: {
     scanMissing: () => ipcRenderer.invoke('storage:scanMissing'),
     relinkPhoto: (id) => ipcRenderer.invoke('storage:relinkPhoto', id),
+    moveMissingToTrash: () => ipcRenderer.invoke('storage:moveMissingToTrash'),
     migrateIntoLibrary: (dryRun) => ipcRenderer.invoke('storage:migrateIntoLibrary', dryRun),
     repairMovedLibrary: (oldRoot, dryRun) =>
       ipcRenderer.invoke('storage:repairMovedLibrary', oldRoot, dryRun)

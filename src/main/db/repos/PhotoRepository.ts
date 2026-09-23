@@ -1900,6 +1900,17 @@ export class PhotoRepository {
     return rows.map((r) => ({ id: r.id, filePath: r.file_path }))
   }
 
+  /**
+   * 只要 id 的断链清单：「把丢失素材移入回收站」是一次对全库的批量操作，
+   * 走 listMissing() 会把 5,001 条 filePath 一起 IPC 传回渲染层，纯浪费。
+   */
+  listMissingIds(): string[] {
+    const rows = this.db
+      .prepare(`SELECT id FROM photo_photos WHERE deleted_at IS NULL AND missing_at IS NOT NULL`)
+      .all() as Array<{ id: string }>
+    return rows.map((r) => r.id)
+  }
+
   /** F17：批量换绑（事务；newPath 换绑 + 清 missing_at）。file_ext 同步维护（审查 P2-10） */
   relinkBatch(batch: Array<{ id: string; newPath: string }>): number {
     const stmt = this.db.prepare(

@@ -247,7 +247,13 @@ export class PhotoDataStore {
   }
 
   /** 断链扫描：标记丢失/恢复出现，分批让出事件循环 */
-  async scanMissing(): Promise<{ missing: number; restored: number; scanned: number }> {
+  async scanMissing(): Promise<{
+    missing: number
+    restored: number
+    scanned: number
+    /** 扫完之后**当前**断链条目总数：missing 只报本次新标记的，重复扫描时会是 0 */
+    remaining: number
+  }> {
     const rows = photoRepository.listAllForStorageScan()
     let missing = 0
     let restored = 0
@@ -263,7 +269,26 @@ export class PhotoDataStore {
       }
       if (i % 500 === 499) await new Promise((res) => setTimeout(res, 0))
     }
-    return { missing, restored, scanned: rows.length }
+    return {
+      missing,
+      restored,
+      scanned: rows.length,
+      remaining: photoRepository.listMissingIds().length
+    }
+  }
+
+  /**
+   * 把所有断链条目软删进回收站（可还原，不是真删）。
+   *
+   * 为什么要这个入口：一次误删/换盘之后库里可能几千条 missing_at，用户只能逐条看到
+   * 「⚠ 丢失」徽章，没有任何办法把这一堆清出视野。软删是可逆的——东西还在回收站，
+   * 日后从备份找回文件还能「重新定位」；等真要清空回收站时，missing 的行磁盘上本来就
+   * 没有文件，D-020 那道"只删库内副本"的守卫不会被绕过。
+   */
+  moveMissingToTrash(): number {
+    const ids = photoRepository.listMissingIds()
+    if (ids.length === 0) return 0
+    return photoRepository.deletePhotos(ids)
   }
 
   /**

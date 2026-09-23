@@ -138,9 +138,12 @@ export interface API {
       missing?: number
       restored?: number
       scanned?: number
+      /** 扫完仍然缺文件的那几条 —— 处置按钮只在它 > 0 时出现 */
+      remaining?: number
       error?: string
     }>
     relinkPhoto: (id: string) => Promise<{ ok: boolean; photo?: unknown; error?: string }>
+    moveMissingToTrash: () => Promise<{ ok: boolean; removed: number; error?: string }>
     migrateIntoLibrary: (dryRun: boolean) => Promise<{
       ok: boolean
       scanned?: number
@@ -603,9 +606,9 @@ export interface API {
   }
   // P1：视频同目录字幕（主进程只认 photoId，路径由它自己从库里取）
   video: {
-    subtitles: (photoId: string) => Promise<
-      Array<{ label: string; srclang?: string; vtt: string; isDefault: boolean }>
-    >
+    subtitles: (
+      photoId: string
+    ) => Promise<Array<{ label: string; srclang?: string; vtt: string; isDefault: boolean }>>
   }
   // 搜索链：中文分词
   search: {

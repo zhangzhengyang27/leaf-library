@@ -310,18 +310,53 @@ async function toggleWatchedEnabled(on: boolean): Promise<void> {
 const storageMsg = ref('')
 const scanningMissing = ref(false)
 const migrating = ref(false)
+/** 最近一次扫描得到的断链总数：决定「移入回收站」那颗按钮露不露 */
+const missingTotal = ref(0)
 
 async function onScanMissing(): Promise<void> {
   scanningMissing.value = true
   try {
     const r = await window.api.storage.scanMissing()
-    storageMsg.value = r.ok
-      ? `扫描 ${r.scanned ?? 0} 个素材：${r.missing ?? 0} 个文件丢失，自动恢复 ${r.restored ?? 0} 个。`
-      : `扫描失败：${r.error ?? '未知错误'}`
+    if (!r.ok) {
+      storageMsg.value = `扫描失败：${r.error ?? '未知错误'}`
+      missingTotal.value = 0
+      return
+    }
+    missingTotal.value = r.remaining ?? 0
+    storageMsg.value =
+      `扫描 ${r.scanned ?? 0} 个素材：本次新标记 ${r.missing ?? 0} 个丢失、恢复 ${r.restored ?? 0} 个；` +
+      `当前共 ${missingTotal.value} 个断链。`
   } catch (error) {
     storageMsg.value = `扫描失败：${(error as Error).message}`
   } finally {
     scanningMissing.value = false
+  }
+}
+
+/** 断链素材批量移入回收站：软删可还原，找回文件后仍可从回收站还原 + 重新定位 */
+async function onMoveMissingToTrash(): Promise<void> {
+  const n = missingTotal.value
+  if (n === 0) return
+  const ok = window.confirm(
+    `将把 ${n} 个「文件已丢失」的素材移入回收站（软删，可还原）。\n\n` +
+      '素材记录与标签、评分等元数据都保留在回收站里；日后从备份找回文件，' +
+      '还原后再「重新定位」即可。不删除磁盘上的任何文件。'
+  )
+  if (!ok) {
+    storageMsg.value = '已取消。'
+    return
+  }
+  migrating.value = true
+  try {
+    const r = await window.api.storage.moveMissingToTrash()
+    storageMsg.value = r.ok
+      ? `已把 ${r.removed} 个丢失素材移入回收站。`
+      : `操作失败：${r.error ?? '未知错误'}`
+    missingTotal.value = 0
+  } catch (error) {
+    storageMsg.value = `操作失败：${(error as Error).message}`
+  } finally {
+    migrating.value = false
   }
 }
 
@@ -1130,6 +1165,16 @@ onBeforeUnmount(() => {
                 </UButton>
                 <UButton size="sm" variant="ghost" @click="onRepairMovedLibrary">
                   库目录已移动？修复…
+                </UButton>
+                <!-- 只有扫出断链才出现：这条入口的存在意义就是处理那一堆 -->
+                <UButton
+                  v-if="missingTotal > 0"
+                  size="sm"
+                  variant="secondary"
+                  :loading="migrating"
+                  @click="onMoveMissingToTrash"
+                >
+                  把 {{ missingTotal }} 个丢失素材移入回收站
                 </UButton>
                 <UButton
                   size="sm"

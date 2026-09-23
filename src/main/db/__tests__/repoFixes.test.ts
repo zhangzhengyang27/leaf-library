@@ -262,6 +262,33 @@ describe('PhotoRepository · IN 参数分块', () => {
   })
 })
 
+describe('PhotoRepository · listMissingIds（断链批量处置的取数）', () => {
+  let db: Database.Database
+  let photos: PhotoRepository
+
+  beforeEach(() => {
+    db = createTestDb()
+    photos = new PhotoRepository(db)
+  })
+  afterEach(() => closeTestDb(db))
+
+  it('只数活跃且已标断链的；软删与正常行都不进清单', () => {
+    photos.addPhoto('/lib/a.png')
+    const b = photos.addPhoto('/lib/b.png')
+    const c = photos.addPhoto('/lib/c.png')
+    photos.setMissing(b.id, Date.now())
+    photos.setMissing(c.id, Date.now())
+    photos.deletePhotos([c.id]) // 回收站里的丢失行不该被这次批量操作带走
+
+    expect(photos.listMissingIds()).toEqual([b.id])
+    // 只给 id：批量入口要把整库 filePath 传过 IPC 是纯浪费
+    expect(photos.listMissing()).toEqual([{ id: b.id, filePath: '/lib/b.png' }])
+
+    photos.setMissing(b.id, null)
+    expect(photos.listMissingIds()).toEqual([])
+  })
+})
+
 describe('PhotoRepository · sidebarCounts（侧栏徽章走 SQL 聚合）', () => {
   let db: Database.Database
   let photos: PhotoRepository
