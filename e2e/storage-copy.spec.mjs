@@ -127,6 +127,21 @@ test('导入即复制入库：库内有副本、原件不动、重复导入不�
     expect(readFileSync(photo.filePath, 'utf8'), '副本字节与原文件一致').toBe(originalBody)
     expect(existsSync(original), '原文件必须还在').toBe(true)
 
+    // ── 1b. 界面那一半：拷贝行的「原始路径」必须看得见，且带一颗「显示」
+    // （只验到"露出来"——真点一下会拉起 Finder 窗口留在用户桌面上，不放进自动跑里）
+    await page.reload()
+    await page.waitForFunction(() => !!document.querySelector('#app .LeafAppShell'), undefined, {
+      timeout: 25_000
+    })
+    const card = page.locator('[data-photo-id]').filter({ hasText: '原始素材.txt' }).first()
+    await card.waitFor({ timeout: 20_000 })
+    await card.click()
+    await page.keyboard.press('F8')
+    const originRow = page.locator('div.contents', { hasText: '原始路径' })
+    await expect(originRow, '检查器高级模式要露出「原始路径」那一行').toBeVisible()
+    await expect(originRow.getByRole('button', { name: '显示' })).toHaveCount(1)
+    await page.keyboard.press('Escape')
+
     // ── 2. 同一个原文件再导入一次：认旧行，不拷第二份、不建第二行 ──
     const again = await page.evaluate(
       async (p) => await window.api.photos.importPaths([p]),
