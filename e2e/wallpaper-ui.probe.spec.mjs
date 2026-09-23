@@ -158,7 +158,14 @@ test('UI 走查', async () => {
   await page.keyboard.press('Escape')
   await page.waitForTimeout(400)
 
-  // ④ 真设一次看 toast（竖图 auto → 模糊底），随后还原
+  // ④ 真设一次看 toast（竖图 auto → 模糊底），随后还原。
+  // 这一段会改写用户桌面的 macOS 壁纸，与 wallpaper-fit 同档：默认不跑，WP_REAL_SET=1 才跑。
+  // （之前只有那条被闸住，这段没闸，于是每次整目录跑电池都动一次桌面；
+  // 中断在 try 之前还会把壁纸留在临时 profile 的 JPEG 上。）
+  if (!process.env.WP_REAL_SET) {
+    console.log('ui: 跳过 ④「真设壁纸 + 读 toast」（会改桌面壁纸；WP_REAL_SET=1 才跑）')
+    return
+  }
   const before = await wpGet()
   console.log('ui: 原壁纸 =', before)
   try {
