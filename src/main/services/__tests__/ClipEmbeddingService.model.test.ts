@@ -14,7 +14,7 @@
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { copyFileSync, existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import sharp from 'sharp'
 import type Database from 'better-sqlite3'
@@ -25,8 +25,22 @@ import { cosine, vectorToBlob } from '@shared/vectors'
 
 // /tmp/cc-probe 是探针目录：model.onnx + 配套的那份 tokenizer.json（21,128 条中文词表）。
 // 别拿 jina 的 tokenizer.json 混进来——服务在 warm-up 里会按词表条数拒掉它。
+// 第三个来源是**应用自己下载模型的落点**：装好了却只认 /tmp 的话，
+// 日常 `pnpm test` 会一直静默 skip 这 6 条，"模型在位"这件事就永远不出证据。
+// 与 ClipEmbeddingService.modelDir() 同源（那边是 app.getPath('userData')，
+// vitest 里没有 electron 上下文，按平台拼同一条路径）。
+const userDataModels = join(
+  homedir(),
+  process.platform === 'darwin'
+    ? 'Library/Application Support/leaf-library'
+    : process.platform === 'win32'
+      ? 'AppData/Roaming/leaf-library'
+      : '.config/leaf-library',
+  'models'
+)
 const MODEL_DIR_CANDIDATES = [
   process.env.LEAF_MODEL_DIR ?? '',
+  join(userDataModels, CLIP_MODEL_ID),
   '/tmp/cc-probe',
   '/tmp/jina-text-probe'
 ].filter(Boolean)
@@ -141,7 +155,10 @@ describe.skipIf(!SRC)('ClipEmbeddingService · 真模型', () => {
       const f = POOL[0]
       const original = await svc.embedBuffer(await sharp(join(IMG_DIR, f)).toBuffer())
       const variant = await svc.embedBuffer(
-        await sharp(join(IMG_DIR, f)).resize(640, 640, { fit: 'cover' }).jpeg({ quality: 72 }).toBuffer()
+        await sharp(join(IMG_DIR, f))
+          .resize(640, 640, { fit: 'cover' })
+          .jpeg({ quality: 72 })
+          .toBuffer()
       )
       const others = await Promise.all(
         POOL.filter((x) => x !== f).map(async (x) =>
@@ -150,7 +167,9 @@ describe.skipIf(!SRC)('ClipEmbeddingService · 真模型', () => {
       )
       const near = cosine(original!, variant!)
       const far = Math.max(...others.map((o) => cosine(original!, o!)))
-      console.log(`  [真照片] cos(原图,jpeg变体)=${near.toFixed(4)} cos(原图,池内最像的别的图)=${far.toFixed(4)}`)
+      console.log(
+        `  [真照片] cos(原图,jpeg变体)=${near.toFixed(4)} cos(原图,池内最像的别的图)=${far.toFixed(4)}`
+      )
       expect(near).toBeGreaterThan(0.95)
       expect(far).toBeLessThan(near - 0.15)
     }, 300_000)
