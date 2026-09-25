@@ -886,6 +886,11 @@ export class PhotoRepository {
         this.db
           .prepare(`DELETE FROM photo_annotations WHERE photo_id IN (${placeholders})`)
           .run(...chunk)
+        // 021 语义向量也是无外键的关联数据（docstring 一直声称清它，事务里此前漏了）：
+        // 孤儿向量会被 ClipEmbeddingService 的全量比对当真命中，以图搜图返回幽灵 id
+        this.db
+          .prepare(`DELETE FROM photo_vectors WHERE photo_id IN (${placeholders})`)
+          .run(...chunk)
         this.db.prepare(`DELETE FROM photo_photos WHERE id IN (${placeholders})`).run(...chunk)
         for (const t of tagCounts) this.tagRepo.bumpUsage(t.tag_id, -t.n)
       }

@@ -27,6 +27,8 @@
 - [ ] **NotificationCenter 挂载**：组件完整但从未挂载，通知开关形同虚设；批量任务完成感知弱。
 - [ ] **图片裁切**（要框选交互）、**自定义缩略图**（协议层 + 派生数据两个硬结，等 protocols 落地）。
 - [ ] **拼音搜索与繁简互转**（Eagle 用 pinyinlite）。
+- [ ] **OcrService / PdfRasterizer 等剩余零单测服务的测试补齐**：破坏性路径的 PhotoRepository
+  删除分支与 BackupScheduler 已于 09-25 补上（并钓出幽灵向量 bug），这两个因依赖外部二进制仍未测。
 - [ ] **CI lint 存量清零**：ESLint/Stylelint 的 `|| true` 与 946 条存量 warning 渐进清掉后转必过；
   `lint:css:changed` 在 CI 干净工作树上恒空转的问题一并处理。
 
