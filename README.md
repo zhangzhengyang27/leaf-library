@@ -7,7 +7,7 @@
 
 - **多类型入库**：位图/SVG/HEIC、视频（ffmpeg 抽帧 + 时长）、音频（时长探测）、字体（fontkit 真实名 + 样张）、任意文件兜底卡片、**书签**（og:title 抓取 + offscreen 截图存档）、**PDF/AI**（pdfjs 首页渲染）
 - **组织**：日期分组、收藏、评分、全局标签（颜色 + 分组树）、手动相册、智能收藏夹（含类型条件）、文件夹分组、回收站 + 撤销；`docs/DECISIONS.md` D-008
-- **检索**：关键词、AI 语义搜索（CLIP，按机器能力优雅降级）、pHash 以图搜图、相似查重（MIH 多索引哈希，5 万+ 库秒级）、9 色相桶、格式/分辨率/时间快筛、类型 chips
+- **检索**：关键词、AI 语义搜索（Chinese-CLIP 中文文搜图 + 以图搜图，模型就绪前优雅降级，D-021）、pHash 以图搜图、相似查重（MIH 多索引哈希，5 万+ 库秒级）、9 色相桶、格式/分辨率/时间快筛、类型 chips
 - **体验**：Eagle 式布局（D-011：单行工具栏 + 树形侧栏 + 卡片常驻元信息），瀑布流/方格/列表三布局 + 排序，右键菜单、键盘导航（方向键/⌘A/⌘F）、拖拽入相册/文件夹/标签、⌘/Shift 连选、空格快速预览、视频悬停即播 + 逐帧步进/倍速、EXIF 地图（城市反解）、密码锁（safeStorage）
 - **收集**：浏览器剪藏插件（MV3，`extension/`）+ 本地 MCP 接入（`/mcp`，3 个只读工具）
 
@@ -23,7 +23,8 @@ pnpm exec playwright test e2e/extension-real.spec.mjs   # 剪藏插件真机验�
 node scripts/check-ai-env.mjs   # AI（onnxruntime）环境自查
 ```
 
-> 仓库当前无远端；`.github/workflows/ci.yml` 为接入 GitHub 后的即用配置。
+> 仓库当前无远端；`.github/workflows/ci.yml` 为接入 GitHub 后的即用配置（master/main 双认）。
+> License：MIT（见根目录 `LICENSE`）。
 
 ## 数据
 

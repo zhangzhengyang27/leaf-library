@@ -1,9 +1,9 @@
 # Leaf · 数据库 Schema 设计文档
 
-> 版本：v11（migration 累计到 `017_bookmarks_geo`）
+> 版本：v15（migration 累计到 `025_source_path_index`；2026-09-25 与代码对齐）
 > 引擎：SQLite via `better-sqlite3`
 > 模式：WAL + `foreign_keys = ON` + `synchronous = NORMAL`
-> 路径：`<userData>/leaf.db`
+> 路径：`<userData>/leaf.db`（多资源库后为 `<库路径>/library.db`）
 
 本文档是 Leaf 应用所有持久化表结构的**唯一真理来源**。修改表结构必须：①先追加新 migration，②更新本文档。
 
@@ -178,11 +178,13 @@ Eagle 式智能收藏夹：`rules_json` 存条件集（标签 id / 收藏 / 最�
 时间区间 / 关键词），查询时由 `smartAlbumRules.ts` 编译为 photo_photos 上的 WHERE。
 软删除 `deleted_at`。
 
-#### `photo_embeddings`（015）
+#### `photo_vectors`（021）
 
-CLIP 图像语义向量。`photo_id` 主键；`model`（如 `Xenova/clip-vit-base-patch32`）+ `dim` +
-`embedding`（float32 BLOB）。检索采用「全量载入 + 暴力余弦」（EmbeddingService），
-万级库毫秒级；库到 5 万+ 可迁 sqlite-vec，本表结构沿用。
+图像向量表（D-021 Chinese-CLIP 回归）。与 001 建、019 删掉的那张 `photo_embeddings`
+同用途但不同形状，刻意不重用：带 `model` 列——换模型/换量化档位时旧向量能被判出来并
+排除比对，不会新旧混算。`photo_id` 主键 + `model` + `dim`（512）+ `embedding`
+（float32 BLOB）+ 状态字段。检索仍是「全量载入 + 暴力余弦」，万级库毫秒级。
+注意 015 编号如今是回收站部分索引，不是向量表——旧文档把向量表记在 015 名下，已纠正。
 
 ### 5.2 Recording
 
@@ -325,23 +327,41 @@ migration 版本表。`version` 主键，`applied_at` 是落地时间。
 
 `database.ts` 把每个 migration 包在 `db.transaction()` 里，单条失败整个回滚。
 
-### 8.4 迁移历史（v1 → v7）
+### 8.4 迁移历史（独立版 001 → 025）
 
-| 版本 | 文件                                      | 关键变更                                                                                                                                           |
-| ---- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 001  | `001_init.ts`                             | 24 张业务表 + 索引 + WAL/foreign_keys PRAGMA                                                                                                       |
-| 002  | `002_tag_softdelete.ts`                   | `tag_tags` 加 `deleted_at` + 索引，标签支持软删除                                                                                                  |
-| 003  | `003_lib_files_and_wall_meta.ts`          | 新增 `lib_files` 表（本地文件库）；`wall_files` 加元数据列                                                                                         |
-| 004  | `004_snippet_contents_and_folder_meta.ts` | 拆出 `snip_snippet_contents`（body 单独存）+ folder 元数据                                                                                         |
-| 005  | `005_snippet_fts_triggers.ts`             | `snip_snippets_fts` 加 INSERT / UPDATE / DELETE trigger                                                                                            |
-| 006  | `006_online_music_schema.ts`              | 在线音乐表（`music_online_*`）+ 收藏/最近                                                                                                          |
-| 007  | `007_usage_schema.ts`                     | `usage_modules` + `usage_history`（Hub 最近/收藏来源）                                                                                             |
-| 014  | `014_assets_v1.ts`                        | 素材库一期：photo_photos 加 `phash`/`color_dominant`/`thumb_status`/`source`；新增 `photo_smart_albums`；`photo_tags` 裸字符串迁移为 `tag_tags.id` |
-| 015  | `015_photo_embeddings.ts`                 | 素材库三期：新增 `photo_embeddings`（CLIP 语义向量，float32 BLOB）                                                                                 |
-| 016  | `016_asset_kinds.ts`                      | 素材库五期：photo_photos 加 `kind`/`duration_ms`/`folder_id`；新建 `photo_folders`；历史数据按扩展名回填 kind                                      |
-| 017  | `017_bookmarks_geo.ts`                    | 素材库六期：photo_photos 加 `source_url`（书签来源）；新建 `geo_cache`（反地理编码缓存）                                                           |
+> 独立版从工具箱拆出时，schema 取自母项目共享链 001→017 演进后的**最终累计状态**，
+> 由 `001_library_init` 一次性建齐——所以下表 001 是"结果快照"，002 起才是本仓自己的演进。
+> **011 编号断档**：从未被注册，断档原因在 2026-09-22 事故后已不可考，仅存档说明。
 
-> 字段细节以每个 migration 文件为准；本文档 §5 模块说明反映**最新累计**状态（v11）。
+| 版本 | 文件                              | 关键变更                                                                                             |
+| ---- | --------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| 001  | `001_library_init.ts`             | 独立版初始化：photo 全家桶 + 偏好表一次性建齐（`photo_embeddings` 也在其中，后由 019 删除）         |
+| 002  | `002_photo_gaps.ts`               | `last_viewed_at`（最近查看入口）                                                                     |
+| 003  | `003_file_dates.ts`               | `fs_created_at` / `fs_modified_at`（排列方式对齐 Eagle）                                             |
+| 004  | `004_folder_cover_pin.ts`         | 文件夹密码、封面素材                                                                                 |
+| 005  | `005_folder_view_settings.ts`     | 每文件夹独立布局/排列/显示覆盖（含 freeform 枚举位）                                                 |
+| 006  | `006_photo_palette.ts`            | 检查器主色板 `palette`（3~5 色 JSON）                                                                |
+| 007  | `007_folder_color.ts`             | 文件夹颜色                                                                                           |
+| 008  | `008_folder_icon_auto_tags.ts`    | 文件夹 emoji 图标、自动标签                                                                          |
+| 009  | `009_freeform_positions.ts`       | 自由网格画布摆放（`photo_freeform_pos`）                                                             |
+| 010  | `010_storage_copy.ts`             | `source_path`（拷贝入库溯源）+ `missing_at`（断链标记）                                              |
+| 012  | `012_ocr_text.ts`                 | OCR 文字检索（`ocr_text`，tesseract.js chi_sim+eng）                                                 |
+| 013  | `013_file_path_index.ts`          | `file_path` 索引（导入去重与路径白名单热路径）                                                       |
+| 014  | `014_photo_fts.ts`                | FTS5 trigram 全文索引（`photo_fts`，CJK 子串命中）                                                   |
+| 015  | `015_deleted_at_index.ts`         | 回收站 keyset 分页部分索引                                                                           |
+| 016  | `016_color_hue_ext.ts`            | 色相桶 `color_hue` 等筛选下推落库前提                                                                |
+| 017  | `017_pin_sort_index.ts`           | 置顶分组的分页 ORDER BY 索引                                                                         |
+| 018  | `018_doc_text.ts`                 | 文档正文抽取落库（`doc_text`，officeparser 主线）                                                    |
+| 019  | `019_drop_photo_embeddings.ts`    | 丢弃 `photo_embeddings`（D-017 下线 CLIP；派生数据可重算）                                           |
+| 020  | `020_normalize_ocr_text.ts`       | 回填存量 OCR 文本的汉字间空白                                                                        |
+| 021  | `021_photo_vectors.ts`            | 图像向量表 `photo_vectors`（D-021 Chinese-CLIP 回归，512 维 + model 列）                             |
+| 022  | `022_photo_fps.ts`                | 视频实测帧率（逐帧步进按真实 fps）                                                                   |
+| 023  | `023_photo_annotations.ts`        | 标注 comments[]（Eagle 招牌差异）                                                                    |
+| 024  | `024_audio_facts.ts`              | 音频波形（400B 降采样包络）+ BPM 事实列                                                              |
+| 025  | `025_source_path_index.ts`        | `source_path` 索引（D-020 重复导入判定）                                                             |
+
+> 字段细节以每个 migration 文件为准；本文档 §5 模块说明反映**最新累计**状态。
+> 2026-09-25 对齐前本文档停在 v11/017，且 014–017 三行还是母项目时代的旧条目——已按实际文件重写。
 
 ---
 
@@ -349,7 +369,7 @@ migration 版本表。`version` 主键，`applied_at` 是落地时间。
 
 预留但未实现：
 
-- **`photo_embeddings` 表（photo_id + model + BLOB）**：CLIP 特征向量，语义搜索（二期，transformers.js）
+- **向量检索升级**：库到 5 万+ 时把「全量载入 + 暴力余弦」迁 sqlite-vec（`photo_vectors` 结构沿用，D-021）
 - **`rec_recordings.transcript`**：录音转写
 - **`tag_tags.icon`**：已有字段，等 UI 接入（color 已随素材库一期接入）
 - **`usage_history` 多设备同步**：当前只本地使用，云同步时另起 migration
