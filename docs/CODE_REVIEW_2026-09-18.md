@@ -1,3 +1,122 @@
+# Leaf 素材库 · 全库代码审查报告
+
+- **日期**：2026-09-18
+- **范围**：全仓库（src/main、src/preload、src/renderer、native/macos-share、extension（含 chrome/ 双实现）、plugins、scripts、e2e、根配置），约 290 个源文件 / 5 万行
+- **方法**：按模块分 9 组并行逐文件深读（每个文件完整读取），五维检查清单（正确性 / 资源 / 性能 / 安全 / 可维护性），发现须沿调用链交叉验证后才可上报；**全部 P0/P1 再由主审逐条亲读源码复核**，P2/P3 保留原始证据（行号 + 置信度），未逐条二次复核
+- **统计**：去重后 **129 条** —— P0×2、P1×13、P2×34、P3×80
+
+## 严重级别定义
+
+| 级别 | 含义 |
+|---|---|
+| P0 | 核心功能失效 / 任意代码或 SQL 执行 |
+| P1 | 功能整体失效（静默）/ 明确安全漏洞 / 明确 bug |
+| P2 | 安全隐患（需组合条件）/ 性能缺陷 / 非默认路径的功能错误 |
+| P3 | 边界 bug、可维护性、死代码、测试有效性 |
+
+---
+
+## 一、Top 10 优先修复清单
+
+| # | 问题 | 级别 | 类型 | 预估 |
+|---|---|---|---|---|
+| 1 | 全局搜索链路整体失效：spec 不带 searchKeyword + 主进程忽略 query + advancedAst 被 gating 吞掉 | P0 | 正确性 | 0.5~1 天 |
+| 2 | 分页游标 `e` 字段渲染层可控 SQL 片段 → 任意 SQL 执行 | P0 | 安全 | 0.5 天 |
+| 3 | `tagNamesExact` 漏推 N 个绑定参数 → 标签「完全匹配」必抛 RangeError | P1 | 正确性 | 10 分钟 |
+| 4 | preload 漏暴露 `convertPhotos`（批量转换 100% 失效）+ `getDuplicateGroups` 丢 opts（查重模式失真） | P1 | 正确性 | 1 小时 |
+| 5 | 分页加载无请求序号守卫：快速切换筛选/页签显示过期数据（家族性，含 8 处同型） | P1 | 正确性 | 1 天 |
+| 6 | `onPaste` 依赖 Electron 38 已移除的 `File.path` → 粘贴导入静默失效 | P1 | 正确性 | 1 小时 |
+| 7 | PhotoGrid `renamingId` 死属性 → 右键/F2/⌘R 重命名静默失效 | P1 | 正确性 | 1 小时 |
+| 8 | 安全面三连：`renameFiles` pattern 未消毒（任意文件移动）、`storage:relinkPhoto` 任意换绑（绕过 pathPolicy 读任意文件）、`system:openWith` appPath 未白名单（变相 RCE） | P1 | 安全 | 1 天 |
+| 9 | 打包正确性：files 只负向模式夹带 170MB 开发目录；extension 未进 extraResources（打包版扩展引导失效） | P1/P2 | 正确性 | 0.5 天 |
+| 10 | PluginSandbox CSP 注入可被构造 HTML 绕过（`</head>` 首个匹配落在注释内） | P1 | 安全 | 0.5 天 |
+
+---
+
+## 二、P0（2 条，均经主审亲读源码复核）
+
+### P0-1 全局搜索链路整体失效：默认分页路径返回全库，昨日的「高级语法下推」未生效
+
+**位置**（四处叠加，缺一不成立，均已核实）：
+- 渲染端 `src/renderer/src/views/photos/composables/usePhotoFilterSpec.ts:50-53`——`buildFiltersSpec()` 注释自述「不含搜索词；搜索词由调用方单独传」，spec 永远不带 `searchKeyword`；
+- `usePhotoSearch.ts:48-56`——防抖回调只把 `advancedAst` 塞进 spec，`query` 仅作为独立参数传 `loadSearchPage(true, query, spec)`；
+- 主进程 `src/main/ipc/photos.ts:305-307`——`case 'search': where = 'deleted_at IS NULL'`，声明的 `req.query`（:260）在整个 handler 中从未使用；
+- 主进程 `src/main/db/smartAlbumRules.ts:281、301`——关键词与 `advancedAst` 的编译整体 gating 在 `if (rules.searchKeyword && ...)` 内，因此 spec 中仅有 `advancedAst` 也是死代码。
+
+**展示端闭环**：`usePhotoFilters.ts:646-651`——分页搜索开启（默认）且池关键词比对一致时，直接返回分页池内容、不再做客户端关键词过滤。
+
+**影响**：键入任何关键词，先短暂显示客户端过滤的正确结果，约 250ms 后被「未过滤的全库 imported_at DESC 前 N 条」覆盖。搜索（含高级语法）实质失效且具有误导性。回滚开关 `leaf:use-paged-search` 是唯一可用路径。
+
+**建议**：三处择一，推荐 a)：
+- a) 渲染端把 `spec.searchKeyword = query`（及 searchScopes）并入 spec，主进程 search 分支保持 `buildSmartAlbumWhere(req.filters)` 即可生效；
+- b) 主进程 search 分支把 `req.query` 并入 filters 后再 `buildSmartAlbumWhere({ ...filters, searchKeyword: req.query })`——注意同时修复 P3-71 的 advancedAst gating；
+- c) 无论如何补一条集成测试：`getPage({ view:'search', query, filters })` 断言结果不含未命中关键词的素材。
+
+### P0-2 分页游标自描述键表达式 `e` 直接内插 SQL——渲染层可构造游标执行任意 SQL
+
+**位置**：
+- `src/main/db/pageCursor.ts:36`——`decodePageCursor` 只校验 `e` 是数组，不校验元素内容；
+- `src/main/db/repos/PhotoRepository.ts:945-948`——`decoded.e` 非空即作为 `keyExprs` 传给 `buildKeyChainCond`；
+- `PhotoRepository.ts:190-197`——`sql = \`(${expr} ${cmp} ?)\``，`expr` 即注入点（WHERE 内子查询可执行）。
+
+**证据链**：渲染端 `cursor` 经 `photos:getPage`（photos.ts:326）原样透传 → base64url(JSON) 解码 → `e` 数组元素直接拼进 WHERE。注入示例 `{r:1, e:["CASE WHEN (SELECT COUNT(*) FROM photo_photos)>0 THEN 1 ELSE 0 END"]}` 可按行差分盲读全库（photo_photos / tag_tags / pref_preferences）。与 photos.ts:254-255 与 PhotoRepository.ts:908 两处注释自述的信任模型「渲染层不可传 SQL 片段 / where 由主进程构造」直接矛盾。附带缺陷：`ks`/`e` 长度与元素类型不校验，旧格式 `{c,r}` 游标配双键排序时以 `undefined` 绑定报错；跨 sort 复用游标会漏/重页。
+
+**建议**：游标不再携带 `e`（续页按本次请求的 `sort` 重新查 `PAGE_SORT_KEYS` 取表达式）——最小改动且消除整类问题；若保留兼容，`decodePageCursor` 后校验 `e` 每个元素严格等于 `PAGE_SORT_KEYS` 登记的表达式，且 `ks.length === e.length`。补「占位符数 == 参数数」不变量测试（见 P3-6）。
+
+---
+
+## 三、P1（13 条，均经主审亲读源码复核）
+
+### P1-1 `tagNamesExact` 漏推 N 个绑定参数，「完全匹配」查询必抛 RangeError
+
+`src/main/db/smartAlbumRules.ts:260-267`：`NOT EXISTS (... NOT IN (LOWER(?),...))` 生成 N 个占位符，但循环里 push 的参数全部被前面的 EXISTS 条件消费，NOT IN 的 N 个占位无参数。better-sqlite3 抛 `Too few parameter values were provided`。真实 UI 路径：标签筛选「完全匹配」（TagsFilterPanel → `usePhotoFilterSpec.ts:74`）与智能收藏夹同规则。**建议**：NOT EXISTS 后补 `params.push(...rules.tagNamesExact)`。
+
+### P1-2 `renameFiles` pattern 分支未消毒，可把库内文件移动到任意路径
+
+`src/main/db/repos/PhotoRepository.ts:1107-1119`：`{id,name}` 分支过了 `sanitizeFileNameBase`，`{id,pattern,start}` 分支的 `pattern` 原样 `replace(/\{n\}/g)` 后拼进 `joinPath(dir, newName)`，`../` 可逃出素材目录并 `renameSync`。IPC 入口 `ipc/photos.ts:510` 无字段校验。**建议**：pattern 同样过 sanitizer；落盘前 `path.relative(dir, target)` 校验不越出 `dir`。
+
+### P1-3 `storage:relinkPhoto` 接受任意路径换绑，架空 pathPolicy 形成任意文件读取链
+
+`src/main/ipc/storage.ts:25-32` → `PhotoDataStore.ts:159-162` → `PhotoRepository.ts:1648-1657`：仅校验 `existsSync`，无对话框、无 `isOpenPathAllowed`。换绑后该路径即成「已入库素材」，下游 `photos:readTextFile`（photos.ts:77-129）、`photos:copyBase64`（:696-706，≤5MB 任意字节回传）、`photos:openWithDefault`（:708-718）全部放行——可读取 `~/.ssh/id_rsa` 等。**建议**：改为主进程弹 `showOpenDialog`（对齐 replaceFile），或至少过 `isOpenPathAllowed`。
+
+### P1-4 `system:openWith` 的 `appPath` 未白名单——变相 RCE
+
+`src/main/ipc/system.ts:112-141`：filePath 有白名单，`appPath` 仅 `existsSync`。darwin `execFile('open', ['-a', appPath, filePath])` 可指定 Terminal.app 打开已入库的任意脚本（`photos:add('/tmp/evil.sh')` 即可通过 filePath 白名单）；win/linux `execFile(appPath, [filePath])` 直接执行任意二进制。代码注释（:108-111）自述此威胁，但缓解只覆盖 filePath。`system:revealInApp`（:165-181）同病，风险略低。**建议**：appPath 必须来自 `system:pickApp` / `system:listFileManagers` 的会话级白名单。
+
+### P1-5 preload 漏暴露 `photos.convertPhotos`，批量格式转换 100% 失效
+
+`src/preload/index.d.ts:349` 声明、`usePhotoActions.ts:624` 实际调用，但 `src/preload/index.ts` photos 块只有 `convertPhotosToWebP`（:360），无 `convertPhotos`。调用即抛 `not a function`，用户只看到「转换失败」。主进程 handler 存在（ipc/photos.ts:668）。**建议**：补一行透传；并加 CI 比对 d.ts 键集与实现键集防再漂移（本组另有一条同型：P1-6）。
+
+### P1-6 preload `getDuplicateGroups` 丢弃 `opts`，查重模式与范围被静默改写
+
+`src/preload/index.ts:329-330` 只透传 `threshold`；`index.d.ts:298-301` 声明 `{ mode, photoIds }`；`useDuplicateScan.ts:79-82` 实际传参；主进程支持（photos.ts:363-367、PhotoRepository.ts:1511-1516）。UI 显示「相同文件 · 已选/当前视图」，实际永远 phash 全库扫描——hash 精确匹配变相似匹配 + 大库卡顿。**建议**：补 opts 透传。
+
+### P1-7 分页加载无请求序号守卫，重置请求在飞行中被丢弃、旧响应以新筛选身份展示
+
+`src/renderer/src/views/photos/composables/usePhotoData.ts:116`（`if (mainPageInFlight) return`，布尔在飞标记）、同模式 ：231-233 / :290-292 / :316-319 / :370-371；spec watch（usePhotoFilters.ts:557-566）只 `void data.loadPhotos()`，被丢弃后无重试；展示端（usePhotoFilters.ts:742-747）仅凭 `mainPagedActive` 就跳过 matchAll。筛选 A 在途时切到筛选 B，B 的重载被静默丢弃，网格持续显示 A 的结果。**建议**：每池引入单调递增 seq（落地时比对，过期即弃）或 AbortController；重置请求在飞行中应替换而非丢弃；显示层可附带 spec 指纹兜底。相关同型：P2-11（useDuplicateScan）、P2-13（FolderInspector loadStats）、P2-14（FreeformCanvas 文件夹切换）、P2-15（PhotoPreview zip/字体）、P3-33（usePhotoSearch 防抖跨页签）。
+
+### P1-8 `deleteWithUndo` 异步失败静默，撤销链路同样无错误处理
+
+`src/renderer/src/views/photos/composables/usePhotoActions.ts:175-198`：`void promise.then(...)` 外包同步 try/catch，catch 捕获不到异步拒绝——删除 IPC 失败时无 toast、选中集不清理；撤销回调 `restoreMultiple(...).then(...)` 无 `.catch`，且撤销成功后未刷新回收站计数。**建议**：改 await + try/catch，或补 `.catch(toast.error)`；撤销成功后补 `loadRecycleBin()`。
+
+### P1-9 `photoIndex` 只覆盖主池，回收站/收藏/文件夹池的 `byIds` 返回空，多个右键操作静默失效
+
+`usePhotoData.ts:40-50` 索引仅在主池加载（:129-130、:164-167）与 replacePhotoLocal（:491）维护；trash/favorites/folder/search 池不写入。回收站素材永不在 allPhotos → index.vue:484「在访达中打开」必然空转；:763-771 分享、:913-917 复制文件、:804-810 复制路径同因；文件夹分页窗口外的素材同样命中；:553 拼图 disabled 判定 `[].every(...)===true` 恒假值。**建议**：`byIds` 回退线性查各内容池，或各池加载时同步维护索引。
+
+### P1-10 ⌘V 粘贴文件导入在 Electron 38 下静默失效（仍读取已移除的 `File.path`）
+
+`usePhotoImport.ts:174-176`：`Array.from(dt.files).map(f => f.path)`——Electron ≥32 已移除 `File.path`（同文件 ：108 注释自证并在 onDrop 迁移到了 `webUtils.getPathForFile`，onPaste 漏迁）。paths 为空 → `importPaths([])` 直接 return，且走不进 IPC 回退分支。**建议**：onPaste 复用 onDrop 的 preload 解析；全失败时给出显式提示。
+
+### P1-11 PhotoGrid `renamingId` 是死属性，就地重命名整体失效
+
+`PhotoGrid.vue:327` 声明 prop、:337 默认值，但全文件只用本地 `renamingPhotoId`（:506-509，仅 `startRename` 赋值），模板判定 :155/:212/:271 均用本地值，无 `watch(props.renamingId)`。父层 index.vue:781（右键）与 ：1108-1110（F2/⌘R）只写 `renamingId.value`，从未调用 `startRename`。PhotoListView 连 prop 都没有。**建议**：PhotoGrid 内 watch prop 触发 `startRename`，或父层直调暴露的方法。
+
+### P1-12 PluginSandbox CSP 注入可被构造 HTML 绕过，插件网络封禁失效
+
+`src/renderer/src/components/plugins/PluginSandbox.vue:36-40`：`html.replace(/<\/head>/i, ...)` 只替换第一个 `</head>`；恶意插件 HTML 让首个 `</head>` 出现在注释/属性中，meta 落入无效位置，插件回到「无 CSP」状态——`connect-src 'none'` 的封网目标失效，可 fetch/WebSocket 外传 payload（:47/:53 postMessage 注入的素材元数据）。前置条件是安装恶意插件（用户可安装目录）。**建议**：DOMParser 解析后向真实 `<head>` prepend；或改自定义协议加载、以 HTTP 响应头下发 CSP。另注：`connect-src 'none'` 拦不住 WebRTC，可注入置空 `RTCPeerConnection`。
+
+### P1-13 electron-builder files 只负向模式，安装包夹带约 170MB 开发内容
+
 `electron-builder.yml:5-15`：仅负向 ignore 时 electron-builder 自动补默认 `**/*`（dot:true），`.pnpm-store`（实测 170MB）、docs/、test-results/、.codebuddy/、native 构建中间产物等全部进 asar。**建议**：追加显式排除（`!**/.pnpm-store/**`、`!docs/**`、`!test-results/**`、`!.codebuddy/**`、`!e2e/**`、`!scripts/**`、`!extension/**`、`!native/**`），或改正向白名单 `['out/**','package.json',...]`。关联 P2-30：extension 未进 extraResources 导致打包版「安装扩展」引导失效。
 
 ---

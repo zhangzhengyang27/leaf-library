@@ -20,3 +20,16 @@ coverage
 .zcode
 .codebuddy
 references
+
+# ── 2026-09-25 清创：误删事故恢复产物与一次性探针，只留在盘上，不再进版本库 ──
+# （历史版本里仍在，需要考古时走 git log 旧路径；这些目录的来历见 docs/复盘-2026-09-21误删事故.md）
+/_compiled-from-cache/
+/_recovered-usable/
+/_recovery-partials/
+/_错位-src根/
+/_archive/
+/build-snapshot-*/
+/scripts/_probes/
+*.tsbuildinfo
+*.alt-from-snapshot
+*.bundle.ts
