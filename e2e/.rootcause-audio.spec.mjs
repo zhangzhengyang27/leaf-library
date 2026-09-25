@@ -286,6 +286,7 @@ test('长 mp3 / 短 mp3 / m4a 三份对照', async () => {
         const orig = proto.play
         proto.play = function () {
           const t0 = performance.now()
+          // eslint-disable-next-line @typescript-eslint/explicit-function-return-type -- .mjs 无法写 TS 返回类型
           const rec = () => ({
             src: (this.currentSrc || this.src).slice(0, 14),
             ms: Math.round(performance.now() - t0),

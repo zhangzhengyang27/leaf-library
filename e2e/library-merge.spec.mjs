@@ -18,7 +18,6 @@ import { _electron as electron } from 'playwright'
 import {
   copyFileSync,
   existsSync,
-  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
