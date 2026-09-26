@@ -652,8 +652,19 @@ export function registerPhotoIpcHandlers(
     getFolderPhotos: (folderId: string) => photoStore.getFolderPhotos(folderId),
 
     // —— 批量操作（五期） ——
-    renamePhotos: (items: Array<{ id: string; pattern?: string; start?: number; name?: string }>) =>
-      photoStore.renamePhotos(items),
+    renamePhotos: (
+      items: Array<{ id: string; pattern?: string; start?: number; name?: string }>
+    ) => {
+      // {library} token 的取值来源：库名在注册表（photo 库 DB 里没有），求值前取好。
+      // 注册表异常时按缺库处理（{library} 展开空串），不让改名被卡死
+      let libraryName: string | undefined
+      try {
+        libraryName = getActiveLibrary().name
+      } catch {
+        /* 注册表为空/损坏：走缺省 */
+      }
+      return photoStore.renamePhotos(items, { libraryName })
+    },
     // D-012：右键「复制文件」（macOS NSFilenamesPboardType，Finder 可直接粘贴）
     copyToClipboard: (filePaths: string[]): boolean => {
       if (!Array.isArray(filePaths) || filePaths.length === 0) return false

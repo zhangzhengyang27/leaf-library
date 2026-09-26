@@ -119,4 +119,14 @@ describe('正则与大小写的接线', () => {
     const sent = renamePhotos.mock.calls[0][0] as Array<{ name: string }>
     expect(sent[0].name).toBe('photo-1234')
   })
+
+  it('P2 新 token 接线：预览与提交值都按 shared 求值器展开', async () => {
+    // photo() 种子 fileSize: 1024 → {size} 展开为 '1KB'（确定性格式，见 shared filename 单测）
+    const w = mountModal([photo('IMG_1234.jpg')])
+    await w.find('input[placeholder^="例如："]').setValue('{name}-{size}')
+    expect(newNames(w)).toEqual(['IMG_1234-1KB.jpg'])
+    await click(w, '重命名')
+    const sent = renamePhotos.mock.calls[0][0] as Array<{ name: string }>
+    expect(sent[0].name).toBe('IMG_1234-1KB')
+  })
 })

@@ -29,7 +29,7 @@ import { buildSmartAlbumWhere, type SmartAlbumRules } from '../smartAlbumRules'
 import { extOfFileName, hueBucketOf } from '../../../shared/colorHue'
 import { clusterDuplicates, findSimilar, type PhashItem } from '../photoSimilarity'
 import { kindOfExt, DOC_TEXT_QUERY_EXTENSIONS, type AssetKind } from '@shared/assetTypes'
-import { sanitizeFileNameBase } from '@shared/filename'
+import { evaluateRenameTokens, sanitizeFileNameBase } from '@shared/filename'
 
 export interface Photo {
   id: string
@@ -359,7 +359,14 @@ export class PhotoRepository {
     const rows = this.db
       .prepare(`${PHOTO_SELECT} WHERE id = ? AND deleted_at IS NULL`)
       .all(id) as PhotoRow[]
-    return rows.length ? this.fromRow(rows[0], this.getTags(id)) : undefined
+    return rows.length ? this.fromRow(rows[0], this.getTags(rows[0].id)) : undefined
+  }
+
+  /** 批量重命名 {parent} token 用：folder 名单查一次；文件夹不存在/未分组返回 undefined */
+  private folderNameOf(folderId: string): string | undefined {
+    const row = this.db.prepare('SELECT name FROM photo_folders WHERE id = ?').get(folderId) as
+      { name: string } | undefined
+    return row?.name
   }
 
   getPhotoByPath(filePath: string): Photo | undefined {
@@ -1316,10 +1323,17 @@ export class PhotoRepository {
 
   /**
    * 批量重命名（磁盘改名 + DB 同步）。目标重名跳过。
-   * 两种 payload：`{id, name}` = 渲染端已渲染好的最终基础名（F2 模板引擎）；
-   * `{id, pattern, start}` = 兼容旧 {n} 序号路径。
+   * 两种 payload：`{id, name}` = 渲染端已渲染好的最终基础名（F2 模板引擎，
+   * 弹窗主路径——预览所见即提交值）；
+   * `{id, pattern, start}` = 模板路径，P2 token 扩容起支持全部 RENAME_TOKENS
+   * （shared evaluateRenameTokens 求值，渲染端预览与 AI 产出同一份实现）。
+   * `opts.libraryName` 供 {library} token：库名在注册表里，photo 库 DB 查不到，
+   * 由 IPC 层从 libraryRegistry 取好传入。
    */
-  renameFiles(items: Array<{ id: string; pattern?: string; start?: number; name?: string }>): {
+  renameFiles(
+    items: Array<{ id: string; pattern?: string; start?: number; name?: string }>,
+    opts?: { libraryName?: string }
+  ): {
     renamed: Array<{ id: string; fileName: string; filePath: string }>
     conflicts: Array<{ id: string; fileName: string }>
   } {
@@ -1336,8 +1350,26 @@ export class PhotoRepository {
         base = sanitizeFileNameBase(item.name.trim())
       } else {
         const seq = (item.start ?? 1) + renamed.length + conflicts.length
-        // pattern 与 name 同样消毒（审查 P1-2）：模板串来自渲染层，`../` 会逃出素材目录
-        base = sanitizeFileNameBase((item.pattern ?? '').replace(/\{n\}/g, String(seq)))
+        // pattern 与 name 同样消毒（审查 P1-2）：模板串来自渲染层，`../` 会逃出素材目录。
+        // 序号占号语义保持：冲突跳过的条目也占一个号，避免中途改名导致后续序号回退
+        const evaluated = evaluateRenameTokens(item.pattern ?? '', {
+          fileName: photo.fileName,
+          importedAt: photo.importedAt,
+          index: seq,
+          folderName: photo.folderId ? this.folderNameOf(photo.folderId) : undefined,
+          fsCreatedAt: photo.fsCreatedAt,
+          fsModifiedAt: photo.fsModifiedAt,
+          takenAt: photo.takenAt,
+          fileSize: photo.fileSize,
+          rating: photo.rating,
+          durationMs: photo.durationMs,
+          width: photo.width,
+          height: photo.height,
+          id: photo.id,
+          tags: photo.tags,
+          libraryName: opts?.libraryName
+        })
+        base = sanitizeFileNameBase(evaluated)
       }
       const newName = `${base || extname(photo.fileName).slice(1) || photo.fileName}${ext}`
       const target = joinPath(dir, newName)

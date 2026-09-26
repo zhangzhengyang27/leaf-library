@@ -750,7 +750,10 @@ export class PhotoDataStore {
    * 指向 ~/Desktop）——不改这一步，批量重命名等于在用户自己的目录里改他的文件名。
    * 收库失败（原文件已丢）的条目记进 conflicts，让弹窗如实显示"这条没改"。
    */
-  renamePhotos(items: Array<{ id: string; pattern?: string; start?: number; name?: string }>): {
+  renamePhotos(
+    items: Array<{ id: string; pattern?: string; start?: number; name?: string }>,
+    opts?: { libraryName?: string }
+  ): {
     renamed: Array<{ id: string; fileName: string; filePath: string }>
     conflicts: Array<{ id: string; fileName: string }>
   } {
@@ -770,7 +773,7 @@ export class PhotoDataStore {
       }
       safe.push(it)
     }
-    const r = photoRepository.renameFiles(safe)
+    const r = photoRepository.renameFiles(safe, opts)
     return { renamed: r.renamed, conflicts: [...conflicts, ...r.conflicts] }
   }
 

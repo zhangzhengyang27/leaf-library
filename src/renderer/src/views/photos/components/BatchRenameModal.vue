@@ -151,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted } from 'vue'
 import AppIcon from '@components/AppIcon.vue'
 import UButton from '@components/ui/UButton.vue'
 import UModal from '@components/ui/UModal.vue'
@@ -189,14 +189,31 @@ const pad = ref(3)
 const renaming = ref(false)
 const patternInput = ref<HTMLInputElement | null>(null)
 
-/** F2 token 清单（Eagle 命名规则变量） */
+/**
+ * F2 token 清单（P2 扩容：全集见 @shared/filename 的 RENAME_TOKENS，共 19 种）。
+ * 对齐 Eagle 4.0.0 批量重命名的可行子集 + Leaf 侧属性增强；
+ * 日期格式跟 Eagle：%D 家族连字符、%B/%M 家族下划线。
+ */
 const TOKENS: Array<{ token: string; hint: string }> = [
   { token: '{name}', hint: '原文件名（不含扩展名）' },
   { token: '{n}', hint: '序号（配合起始编号/位数）' },
   { token: '{date}', hint: '导入日期 YYYYMMDD' },
   { token: '{time}', hint: '导入时间 HHmmss' },
   { token: '{parent}', hint: '所在文件夹名' },
-  { token: '{rand}', hint: '6 位随机串' }
+  { token: '{rand}', hint: '6 位随机串（预览与实际值会不同）' },
+  { token: '{add date}', hint: '添加日期 YYYY-MM-DD（导入时间）' },
+  { token: '{today}', hint: '今天 YYYY-MM-DD（重命名当天）' },
+  { token: '{create date}', hint: '创建日期 YYYY_MM_DD（文件创建时间）' },
+  { token: '{modified date}', hint: '修改日期 YYYY_MM_DD（文件修改时间）' },
+  { token: '{taken date}', hint: '拍摄日期 YYYY_MM_DD（EXIF，缺失留空）' },
+  { token: '{size}', hint: '文件大小（如 1.5KB）' },
+  { token: '{rating}', hint: '评分（0-5）' },
+  { token: '{duration}', hint: '时长（如 3m05s，缺失留空）' },
+  { token: '{width}', hint: '像素宽（缺失留空）' },
+  { token: '{height}', hint: '像素高（缺失留空）' },
+  { token: '{id}', hint: '素材 id' },
+  { token: '{tags}', hint: '标签（排序后 - 连接，无标签留空）' },
+  { token: '{library}', hint: '库名' }
 ]
 
 /** 在光标处插入 token */
@@ -243,6 +260,20 @@ async function handleAiPattern(): Promise<void> {
 
 const previewList = computed(() => props.photos.slice(0, 3))
 
+/**
+ * {library} token 的库名：photo 列表里没有，从注册表 IPC 取一次。
+ * 取不到（测试代理/异常）按空串兜底——预览里 {library} 展开为空，不挡改名。
+ */
+const libraryName = ref('')
+onMounted(async () => {
+  try {
+    const r = await window.api.libraries.list()
+    libraryName.value = r?.libraries?.find((l) => l.id === r.activeId)?.name ?? ''
+  } catch {
+    /* 兜底空串 */
+  }
+})
+
 function renderBase(p: Photo, i: number): string {
   return renderRenameBase(
     pattern.value,
@@ -251,7 +282,19 @@ function renderBase(p: Photo, i: number): string {
       folderName: data.folders.value.find((f) => f.id === p.folderId)?.name,
       importedAt: p.importedAt,
       index: start.value + i,
-      pad: pad.value
+      pad: pad.value,
+      // P2 扩容字段：与 shared RenameContext 一一对齐；缺失即展开空串
+      fsCreatedAt: p.fsCreatedAt,
+      fsModifiedAt: p.fsModifiedAt,
+      takenAt: p.takenAt,
+      fileSize: p.fileSize,
+      rating: p.rating,
+      durationMs: p.durationMs,
+      width: p.width,
+      height: p.height,
+      id: p.id,
+      tags: p.tags,
+      libraryName: libraryName.value
     },
     { find: findPattern.value, replacement: findReplacement.value, caseMode: caseMode.value }
   )

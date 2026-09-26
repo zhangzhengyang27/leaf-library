@@ -73,3 +73,33 @@ describe('renderRenameBase token', () => {
     expect(renderRenameBase('{name}-v2', { ...BASE_CTX, fileName: 'logo.jpeg' })).toBe('logo-v2')
   })
 })
+
+// P2 token 扩容：求值统一在 @shared/filename（那边逐 token 有全集断言），
+// 这里只钉「新 token 经 renderRenameBase 委托可用 + 与后处理链的接力顺序」。
+describe('renderRenameBase · P2 新增 token（shared 求值委托）', () => {
+  const P2_CTX = {
+    ...BASE_CTX,
+    rating: 4,
+    tags: ['风景', '宠物'],
+    takenAt: new Date(2025, 11, 31).getTime()
+  }
+
+  it('属性族经委托可用', () => {
+    expect(renderRenameBase('{name}-{rating}', P2_CTX)).toBe('IMG_1234-4')
+    expect(renderRenameBase('{tags}', P2_CTX)).toBe('宠物-风景')
+    expect(renderRenameBase('{size}', { ...P2_CTX, fileSize: 1536 })).toBe('1.5KB')
+  })
+
+  it('日期族经委托可用，缺失 takenAt 展开空串', () => {
+    expect(renderRenameBase('{add date}', P2_CTX)).toBe('2026-09-16')
+    expect(renderRenameBase('[{taken date}]', { ...P2_CTX, takenAt: undefined })).toBe('[]')
+  })
+
+  it('大小写档作用于新 token 展开值之后（token → 替换 → 大小写 顺序不变）', () => {
+    expect(renderRenameBase('{name}-{rating}', P2_CTX, { caseMode: 'lower' })).toBe('img_1234-4')
+  })
+
+  it('未知 token 仍字面保留（约定不因扩容改变）', () => {
+    expect(renderRenameBase('{x}{n}', P2_CTX)).toBe('{x}001')
+  })
+})

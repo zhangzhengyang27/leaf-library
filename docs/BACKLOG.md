@@ -33,8 +33,6 @@
 - [ ] **图片裁切**（要框选交互）、**自定义缩略图**（协议层 + 派生数据两个硬结，等 protocols 落地）、
   **修复缩略图/缩略图背景**（Eagle fixUtils 一族）。
 - [ ] **字体安装态**：激活/未激活的标记与筛选（Eagle 字型安装状态维；Leaf 只有图标素材无逻辑）。
-- [ ] **批量重命名 token 扩容**：现 6 种（`@shared/filename.ts`，正则替换+大小写四态已有）→
-  Eagle 的 21 种；作用域从图片扩到全类型。
 - [ ] **拼音搜索与繁简互转**（Eagle 用 pinyinlite；注意 pinyin-pro 已在依赖里，先查现有用点再设计）。
 - [ ] **语义阈值大库复验**（D-021 自记边界）：0.40 是 6 张文生图小池的标定，大库/高 graphic
   占比库未复验；复验后把结论回填 D-021。
@@ -73,6 +71,15 @@
   欢迎引导 onboarding、IPTC 关键字转标签、代理设置。
 
 ## 已完成（近期批次）
+
+### 2026-09-26 批量重命名 token 扩容（P2 清偿）
+- [x] **批量重命名 token 扩容**：6 → 19 种，token 词表与求值统一进 `@shared/filename.ts`
+  （`RenameContext` + `evaluateRenameTokens`，渲染端预览 / 主进程 renameFiles pattern 路径 /
+  AI 产出闸口三端同一份实现）。对标 Eagle 4.0.0 实包（batch-rename-modal.js，22 种 % 形态）：
+  可行子集全部落地（`{add date}`/`{today}`/`{create date}`/`{modified date}`/`{taken date}`/
+  `{size}`/`{rating}`/`{duration}`/`{width}`/`{height}`/`{id}`/`{tags}`/`{library}`），
+  日期格式跟 Eagle（%D 家族连字符、%B/%M 家族下划线）；HM/HMS 时分秒变体与 %NNNNN+ 更长补零
+  留待需要时加。作用域天然全类型（token 求值不挑 kind）。
 
 ### 2026-09-26 小件批次（11 条真差距的一次性清偿）
 - [x] 反向图搜：卡片右键五引擎子菜单（Lens/Bing/Yandex/SauceNAO/TinEye），位图进剪贴板 + 打开引擎页；

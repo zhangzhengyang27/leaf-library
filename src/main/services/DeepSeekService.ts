@@ -403,7 +403,11 @@ export async function suggestRenamePattern(
       role: 'system',
       content:
         '你在为素材库的批量重命名生成模板。可用变量只有：{name} 原文件名（不含扩展名）、' +
-        '{n} 序号、{date} 导入日期 YYYYMMDD、{time} 导入时间 HHmmss、{parent} 所在文件夹名、{rand} 随机串。' +
+        '{n} 序号、{date} 导入日期 YYYYMMDD、{time} 导入时间 HHmmss、{parent} 所在文件夹名、{rand} 随机串、' +
+        '{add date} 添加日期 YYYY-MM-DD、{today} 今天 YYYY-MM-DD、{create date} 创建日期 YYYY_MM_DD、' +
+        '{modified date} 修改日期 YYYY_MM_DD、{taken date} 拍摄日期 YYYY_MM_DD、{size} 文件大小（如 1.5MB）、' +
+        '{rating} 评分 0-5、{duration} 时长（如 3m05s）、{width} 像素宽、{height} 像素高、{id} 素材 id、' +
+        '{tags} 标签（- 连接）、{library} 库名。' +
         '扩展名自动保留，不要写 {ext} 或任何后缀。变量之外是字面文本，不得含 / \\ : * ? " < > |。' +
         '示例文件名只是给你看现状的，不要把其中的名字写进模板——要引用原名就用 {name}。' +
         '输出严格 JSON：{"pattern":"…"}，不要解释。'

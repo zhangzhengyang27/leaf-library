@@ -4,29 +4,27 @@
  * 纯渲染函数：token 在渲染端展开为最终基础名（不含扩展名），主进程只负责
  * 落盘前的合法化兜底与冲突跳过。扩展名由主进程按原文件自动保留。
  *
- * 支持token：
- * - {name}   原文件名（不含扩展名）
- * - {n}      序号（index 直传，配合 pad 补零；Eagle 计数器）
- * - {date}   导入日期 YYYYMMDD（本地时区）
- * - {time}   导入时间 HHmmss
- * - {parent} 所在文件夹名（根级/未分组 = 未分类）
- * - {rand}   6 位随机串（预览与实际值会不同，Eagle 随机命名同理）
+ * P2 token 扩容起，token 词表与求值统一在 @shared/filename（渲染端预览、
+ * 主进程 renameFiles、AI 产出闸口三端同一份实现，新增 token 自动三端可用），
+ * 本文件只保留「token → 正则替换 → 大小写 → 合法化」的固定接力与 UI 校验。
+ * 支持token（全集见 RENAME_TOKENS）：
+ * - {name}   原文件名（不含扩展名）        {n}      序号（index 直传，配合 pad 补零）
+ * - {date}   导入日期 YYYYMMDD             {time}   导入时间 HHmmss
+ * - {parent} 所在文件夹名                  {rand}   6 位随机串（预览与实际值会不同）
+ * - {add date}/{today}/{create date}/{modified date}/{taken date} 日期族
+ * - {size}/{rating}/{duration}/{width}/{height}/{id}/{tags}/{library} 属性族
  * 未识别的 {x} 保持字面量。
  */
-import { sanitizeFileNameBase } from '@shared/filename'
+import {
+  evaluateRenameTokens,
+  sanitizeFileNameBase,
+  stripExt,
+  type RenameContext
+} from '@shared/filename'
 
-export interface RenameTokenContext {
-  /** 原文件名（含扩展名） */
-  fileName: string
-  /** 所在文件夹名；空 = 未分类 */
-  folderName?: string
-  /** 导入时间（epoch ms） */
-  importedAt: number
-  /** 序号值（调用方把起始编号加好再传） */
-  index: number
-  /** {n} 补零位数 */
-  pad?: number
-}
+/** 渲染端 token 上下文 = shared RenameContext（单一事实源在 shared，字段注释也在那边） */
+export type RenameTokenContext = RenameContext
+export { stripExt }
 
 /** 大小写四态（Eagle 的「转换大小写」） */
 export type CaseMode = 'none' | 'upper' | 'lower' | 'title'
@@ -41,15 +39,7 @@ export interface RenameOptions {
   caseMode?: CaseMode
 }
 
-/** 文件名去扩展名（无扩展名返回原名） */
-export function stripExt(fileName: string): string {
-  const idx = fileName.lastIndexOf('.')
-  return idx > 0 ? fileName.slice(0, idx) : fileName
-}
-
-function pad2(n: number): string {
-  return String(n).padStart(2, '0')
-}
+/** 文件名去扩展名：实现移至 @shared/filename，此处保留导出兼容既有消费方 */
 
 export function renderRenameBase(
   pattern: string,
@@ -57,25 +47,8 @@ export function renderRenameBase(
   opts?: RenameOptions
 ): string {
   const stem = stripExt(ctx.fileName)
-  const d = new Date(ctx.importedAt)
-  const out = pattern.replace(/\{(name|n|date|time|parent|rand)\}/g, (_, token: string) => {
-    switch (token) {
-      case 'name':
-        return stem
-      case 'n':
-        return String(ctx.index).padStart(Math.max(1, ctx.pad ?? 1), '0')
-      case 'date':
-        return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}`
-      case 'time':
-        return `${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`
-      case 'parent':
-        return ctx.folderName?.trim() || '未分类'
-      case 'rand':
-        return Math.random().toString(36).slice(2, 8).padEnd(6, '0')
-      default:
-        return _
-    }
-  })
+  // token 求值统一走 shared（与主进程落盘、AI 闸口同一份实现）
+  const out = evaluateRenameTokens(pattern, ctx)
   return sanitizeFileNameBase(applyPost(out, opts)) || stem
 }
 
