@@ -118,25 +118,16 @@
             />
           </video>
         </div>
-        <!-- M2：atMs 标注刻度条（有标注才出现；时长未知时不渲染，percent 恒 0 也不会画出假点） -->
-        <div
+        <!-- M2：atMs 标注刻度条（有标注才出现；时长未知时不渲染，percent 恒 0 也不会画出假点）。
+             hover 浮层用共用组件 AnnotationTickRail——原生 title 贴近边缘会被本容器 overflow-hidden 裁掉 -->
+        <AnnotationTickRail
           v-if="isVideoInline && videoDurationSec > 0 && videoAtMsAnnotations.length"
-          class="relative h-3 w-full max-w-2xl"
+          class="max-w-2xl"
           data-video-annotation-rail
-        >
-          <div
-            class="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-white/15"
-          ></div>
-          <button
-            v-for="a in videoAtMsAnnotations"
-            :key="a.id"
-            type="button"
-            class="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400 shadow transition-transform hover:scale-150"
-            :style="{ left: `${atMsToPercent(a.atMs, videoDurationSec)}%` }"
-            :title="`${fmtMsPosition(a.atMs)} · ${a.body}`"
-            @click="seekVideoToMs(a.atMs)"
-          ></button>
-        </div>
+          :annotations="videoAtMsAnnotations"
+          :duration-sec="videoDurationSec"
+          @seek="seekVideoToMs"
+        />
         <!-- 六期：视频逐帧步进 / 倍速；M2 追加「时间点笔记」小键 -->
         <div v-if="isVideo && canInlinePlay" class="flex items-center gap-2 text-white">
           <button
@@ -236,24 +227,15 @@
               @keydown.esc.stop.prevent="audioNoteOpen = false"
             />
           </div>
-          <div
+          <!-- 同一处共用刻度组件：hover 浮层近边缘收进 / 贴顶翻转，不再被裁 -->
+          <AnnotationTickRail
             v-if="audioDurationSec > 0 && audioAtMsAnnotations.length"
-            class="relative mt-1 h-3 w-full"
+            class="mt-1"
             data-audio-annotation-rail
-          >
-            <div
-              class="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-white/15"
-            ></div>
-            <button
-              v-for="a in audioAtMsAnnotations"
-              :key="a.id"
-              type="button"
-              class="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400 shadow transition-transform hover:scale-150"
-              :style="{ left: `${atMsToPercent(a.atMs, audioDurationSec)}%` }"
-              :title="`${fmtMsPosition(a.atMs)} · ${a.body}`"
-              @click="seekAudioToMs(a.atMs)"
-            ></button>
-          </div>
+            :annotations="audioAtMsAnnotations"
+            :duration-sec="audioDurationSec"
+            @seek="seekAudioToMs"
+          />
         </div>
         <!-- 字体：FontFace 样张（rawfile:// 加载原文件） -->
         <div
@@ -775,7 +757,6 @@ import { isArchiveFile, isFontFile, isPlayableVideoFile, isTextFile } from '@sha
 import { hasAiWorthyText } from '@shared/ocrText'
 // 标注消费端（M1 框选 / M2 时间点）：形状与校验单源在 @shared/annotations
 import { normalizeAnnotationInput, type PhotoAnnotation } from '@shared/annotations'
-import { atMsToPercent } from '../composables/useAnnotationOverlay'
 import type { Photo } from '../../../types/photo'
 import { useDialogs } from '../composables/useDialogs'
 import { highlightCodeFile, type CodeHighlight } from '@renderer/utils/codePreview'
@@ -785,6 +766,7 @@ import { useWallpaper } from '../composables/useWallpaper'
 import PluginSandbox from '@components/plugins/PluginSandbox.vue'
 import AppIcon from '@components/AppIcon.vue'
 import AudioPlayer from './AudioPlayer.vue'
+import AnnotationTickRail from './AnnotationTickRail.vue'
 import PhotoAnnotationOverlay from './PhotoAnnotationOverlay.vue'
 import { encodeMediaPath } from '@renderer/utils/mediaPath'
 import { renderMarkdown } from '@renderer/utils/markdownPreview'
@@ -2128,12 +2110,6 @@ async function commitAudioNote(): Promise<void> {
 
 function seekAudioToMs(atMs: number): void {
   audioPlayerRef.value?.seekToSec(atMs / 1000)
-}
-
-/** 刻度点 hover 提示的时间头（m:ss，与检查器 annotationStamp 同口径） */
-function fmtMsPosition(ms: number): string {
-  const total = Math.round(ms / 1000)
-  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
 }
 
 /** 谓词收窄：atMs 一定有值，模板里不必 `!`（TS 不跟丢） */
