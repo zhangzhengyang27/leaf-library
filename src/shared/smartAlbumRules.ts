@@ -184,6 +184,61 @@ export interface SmartAlbumRules {
   advancedAst?: SearchAstNode
   /** 文件夹排除（'none' = 未分类；matchFolderFilter exclude 语义） */
   folderExcludeIds?: string[]
+
+  // ── D-023 算子补齐（对齐 Eagle 字符串/数值/日期算子缺口；基准见 docs/DECISIONS.md）──
+
+  /** 文件名开头为（LIKE 前缀，通配符转义；ASCII 大小写不敏感与既有 LIKE 键同口径） */
+  nameBeginsWith?: string
+  /** 文件名结尾为（LIKE 后缀，同上） */
+  nameEndsWith?: string
+  /**
+   * 文件名正则（JS RegExp 语法，部分匹配语义，大小写敏感）。
+   * UDF `regexp(pattern, value)` 下推（D-023 裁决：分页/下推保留）；模式经绑定参数
+   * 传递，无 SQL 注入面。编译期 new RegExp 校验：非法正则抛明确错误，绝不带病进 SQL。
+   */
+  nameRegex?: string
+  /** 注释没有内容（description IS NULL 或空串；标签/标注维已有各自键，这里补注释维） */
+  descriptionEmpty?: boolean
+  /** 注释有内容（与 descriptionEmpty 互斥使用，同时给按「无内容」优先编译） */
+  descriptionHasContent?: boolean
+  /**
+   * 数值介于（闭区间 [min, max]，二元数组）：min/max 对在 AND 组已覆盖 between，
+   * 这组键是为 OR 组/组编辑器**单行表达**而设——any 组里拆成 min+max 两行会变成 OR，
+   * 语义就错了。脏形状（长度不为 2 / 非数字 / hi<lo）一律当没设。
+   */
+  widthBetween?: number[]
+  heightBetween?: number[]
+  fileSizeBetween?: number[]
+  durationMsBetween?: number[]
+  /**
+   * 日期在过去 N 天内（相对窗口，求值时取当前时间）：智能夹语义是**滚动窗口**，
+   * 与绝对区间的本质差异——存「7 天内添加」的相册永远显示最近一周。N≤0/非数字忽略。
+   */
+  importedWithinDays?: number
+  takenWithinDays?: number
+  modifiedWithinDays?: number
+}
+
+// ── D-023 正则算子 ──
+
+/** 防炸闸：正则模式长度上限（超长模式本身就是输入异常，编译/保存前拒掉） */
+export const SMART_ALBUM_MAX_REGEX_LEN = 256
+
+/**
+ * 正则模式编译校验（D-023）：合法返回 null，否则返回可念给人的错误文案。
+ * 编辑器行内即时校验与主进程编译期拒绝共用这一个口径——非法正则必须在
+ * SQL 执行**之前**被拦下，UDF 里的兜底只做纵深防御不负责报错。
+ */
+export function checkRegexPattern(pattern: string): string | null {
+  if (pattern.length > SMART_ALBUM_MAX_REGEX_LEN) {
+    return `正则过长（上限 ${SMART_ALBUM_MAX_REGEX_LEN} 字符）`
+  }
+  try {
+    new RegExp(pattern)
+    return null
+  } catch (e) {
+    return `非法正则：${(e as Error).message}`
+  }
 }
 
 /** v2 结构校验结果（照 annotations.normalizeAnnotationInput 的 {ok, error} 风格） */

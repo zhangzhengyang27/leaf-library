@@ -28,6 +28,7 @@ import {
   SEARCH_SCOPE_IDS,
   SMART_ALBUM_MAX_DEPTH,
   SMART_ALBUM_MAX_NODES,
+  checkRegexPattern,
   type SearchAstNode,
   type SmartAlbumRuleGroup,
   type SmartAlbumRules,
@@ -46,6 +47,20 @@ const SHORT_WORD_SCOPES: SearchScopeId[] = ['name', 'note', 'ocr', 'docText']
 
 function escapeLike(input: string): string {
   return input.replace(/[\\%_]/g, (c) => `\\${c}`)
+}
+
+/**
+ * D-023 between 形状的边界校验：[min, max] 数字闭区间。
+ * 值来自渲染层（IPC 边界），脏形状（长度不为 2 / 非数字 / hi<lo）一律当没设——
+ * 与 resolveSemanticIds 的「逐条验形状」同一纪律，不能让坏数组炸 SQL。
+ */
+function rangeOf(v: unknown): [number, number] | null {
+  if (!Array.isArray(v) || v.length !== 2) return null
+  const lo = v[0]
+  const hi = v[1]
+  if (typeof lo !== 'number' || typeof hi !== 'number') return null
+  if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo) return null
+  return [lo, hi]
 }
 
 /** 素材 id 形状（uuid v4）；语义档的 id 集来自渲染层，逐条按它筛 */
@@ -210,6 +225,76 @@ function compileFlatRules(rules: SmartAlbumRules, params: unknown[]): string[] {
       `(file_name LIKE ? ESCAPE '\\' OR (description IS NOT NULL AND description LIKE ? ESCAPE '\\'))`
     )
     params.push(kw, kw)
+  }
+
+  // ── D-023 算子补齐（对齐 Eagle 字符串/数值/日期算子缺口，盘点见 DECISIONS.md）──
+
+  // 数值介于（闭区间）：min/max 对在 AND 组已覆盖 between，这组键为 OR 组/组编辑器
+  // 单行表达而设（any 组里拆 min+max 两行会被 OR 拆散语义）。NULL 维度照旧不命中。
+  const widthRange = rangeOf(rules.widthBetween)
+  if (widthRange) {
+    conds.push(`(width IS NOT NULL AND width >= ? AND width <= ?)`)
+    params.push(widthRange[0], widthRange[1])
+  }
+  const heightRange = rangeOf(rules.heightBetween)
+  if (heightRange) {
+    conds.push(`(height IS NOT NULL AND height >= ? AND height <= ?)`)
+    params.push(heightRange[0], heightRange[1])
+  }
+  const sizeRange = rangeOf(rules.fileSizeBetween)
+  if (sizeRange) {
+    conds.push(`file_size >= ? AND file_size <= ?`)
+    params.push(sizeRange[0], sizeRange[1])
+  }
+  const durationRange = rangeOf(rules.durationMsBetween)
+  if (durationRange) {
+    conds.push(`(duration_ms IS NOT NULL AND duration_ms >= ? AND duration_ms <= ?)`)
+    params.push(durationRange[0], durationRange[1])
+  }
+
+  // 日期「过去 N 天」相对窗：求值时取当前时间 → 智能夹是滚动窗口（绝对区间会冻结）。
+  // 毫秒换算在这层做，渲染层只传天数。
+  if (typeof rules.importedWithinDays === 'number' && rules.importedWithinDays > 0) {
+    conds.push(`imported_at >= ?`)
+    params.push(Date.now() - Math.round(rules.importedWithinDays) * 86_400_000)
+  }
+  if (typeof rules.takenWithinDays === 'number' && rules.takenWithinDays > 0) {
+    conds.push(`(taken_at IS NOT NULL AND taken_at >= ?)`)
+    params.push(Date.now() - Math.round(rules.takenWithinDays) * 86_400_000)
+  }
+  if (typeof rules.modifiedWithinDays === 'number' && rules.modifiedWithinDays > 0) {
+    conds.push(`(fs_modified_at IS NOT NULL AND fs_modified_at >= ?)`)
+    params.push(Date.now() - Math.round(rules.modifiedWithinDays) * 86_400_000)
+  }
+
+  // 文件名开头/结尾（LIKE 前后缀）：转义纪律同 keyword，% _ \ 是字面量
+  if (rules.nameBeginsWith && rules.nameBeginsWith.trim() !== '') {
+    conds.push(`file_name LIKE ? ESCAPE '\\'`)
+    params.push(`${escapeLike(rules.nameBeginsWith.trim())}%`)
+  }
+  if (rules.nameEndsWith && rules.nameEndsWith.trim() !== '') {
+    conds.push(`file_name LIKE ? ESCAPE '\\'`)
+    params.push(`%${escapeLike(rules.nameEndsWith.trim())}`)
+  }
+
+  // 文件名正则（UDF 下推，注册处 registerFunctions）：编译期先过 checkRegexPattern，
+  // 非法正则抛明确错误——绝不能等到 SQL 执行中途由 UDF 抛出（那是查询期随机炸）。
+  // 模式走绑定参数，用户正则里的 ( * \ 引号都是数据，没有 SQL 注入面。
+  if (rules.nameRegex && rules.nameRegex.trim() !== '') {
+    const pattern = rules.nameRegex.trim()
+    const problem = checkRegexPattern(pattern)
+    if (problem) {
+      throw new Error(`[buildSmartAlbumWhere] 文件名正则未通过校验：${problem}`)
+    }
+    conds.push(`regexp(?, file_name)`)
+    params.push(pattern)
+  }
+
+  // 注释有无内容（Eagle 字符串算子「有内容/没有内容」；标签/标注维已有各自键）
+  if (rules.descriptionEmpty === true) {
+    conds.push(`(description IS NULL OR description = '')`)
+  } else if (rules.descriptionHasContent === true) {
+    conds.push(`(description IS NOT NULL AND description != '')`)
   }
 
   // ── 阶段 3 下推补齐 ──

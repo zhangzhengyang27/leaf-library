@@ -67,5 +67,6 @@ ClipServer token 复用把「剪藏写入口」和「AI 读图口」耦合（D-0
   `pnpm exec vitest run src/main` 全绿（McpHandler 单测 7→14 条，tools/list 断言改 8 工具）；
   `pnpm build` 过；`pnpm exec playwright test e2e/mcp-image.spec.mjs` 2 passed。
 
-**留给后续**：D-023 正式决策条目（token 档位/字节上限的背书）待与智能夹 regex 决策合并编号时顺延；
+**留给后续**：~~D-023 正式决策条目（token 档位/字节上限的背书）待与智能夹 regex 决策合并编号时顺延~~
+→ 已按内容量**拆为 D-024 单独立案**（2026-09-26，见 docs/DECISIONS.md，三个裁决正式背书）；
 M3（内置视觉打标 BYOK）独立决策；导入大图（>8MB）想看原图的场景若真实出现再议分档或分片。

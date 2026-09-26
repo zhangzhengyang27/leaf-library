@@ -500,3 +500,86 @@ Eagle 的右栏是固定宽度，所以「加宽」本来就不是对齐目标�
 
 **保留约束**：`semanticIds` 语义下推（D-021）在递归任何一层保持可用；筛选预设/保存的筛选器
 （savedFilters）与规则形状解耦不受影响；`OWNED_RULE_KEYS` 既有 43+ 键的键面不变，只加形状。
+
+## Decision-023 · 智能夹正则算子：UDF 下推（基准裁决）+ 缺口算子补齐
+
+**日期**：2026-09-26
+
+**决策**：SQLite 无原生 regexp，正则算子走**注册标量函数 `regexp(pattern, value)` 下推**
+（`WHERE regexp(?, file_name)`），否决「查询后 JS 过滤」。M3 同时补齐对照 Eagle 27 算子盘点出的
+其余缺口谓词。基准探针：`scripts/_probes/smart-album-regex-bench.mjs`。
+
+**依据（2026-09-26 内存库 photo_photos 合成数据，5 次取中位数；探针
+`scripts/_probes/smart-album-regex-bench.mjs` 属一次性不进 git，下表数字为裁决权威，
+场景口径已列全可随时复测）**：
+
+| 场景 | UDF 下推 | 全量取出+JS 过滤 | 结论 |
+| --- | --- | --- | --- |
+| A · 只取 id 纯过滤（5 万行） | 8.7–12.3 ms | 7.2–8.2 ms | 量级相同，纯过滤 JS 略快（内存库转输出便宜） |
+| B · 真实形态：宽行 14 列 + ORDER BY + LIMIT 200（5 万行） | 9.0–13.7 ms | 29.9–30.7 ms | JS 慢 **2.2–3.4 倍** |
+| B 同场景（20 万行） | 36.4–48.6 ms | 191.6–200.8 ms | JS 慢 **3.9–5.4 倍**，随库规模线性恶化 |
+
+JS 路径的成本是**固定的全量宽行转输出**（分页/排序被迫整体上移到应用层），库越大越亏；
+UDF 每行回调 ~0.2µs 恒定（约为内建 LIKE 参照 1.8–3ms 的 3–5 倍，绝对值可忽略）。
+非计时因素同权重：UDF 保住 LIMIT/OFFSET 分页、COUNT 计数、与既有谓词的组合下推；
+JS 过滤等于为正则一个算子复制一整套分页/排序/计数逻辑，还引入全量取出的内存面。数字与架构同向，**UDF 胜**。
+
+**实施要点**：
+
+1. **UDF 注册在 `registerSqlFunctions`**（生产 `database.ts` 与测试 `testDb.ts` 本就同处调用，
+   database.ts 无需改动）：模式编译结果按模式串缓存（上限 100 条，满则清空）；
+   非法模式返回 0（不命中）——UDF 只做纵深防御，**明确报错是编译期的职责**。
+2. **正则校验单源 `checkRegexPattern`**（`@shared/smartAlbumRules`）：长度 ≤256 +
+   `new RegExp` try/catch。编辑器行内即时校验（非法禁保存 + 行内报错）与
+   `buildSmartAlbumWhere` 编译期拒绝共用同一口径——非法正则在 SQL 执行**之前**抛明确错误。
+3. **缺口算子盘点**（Eagle 27 算子 × 引擎 43 键，已有的不重做）：
+   - 字符串：已有 包含/不包含/相等（keyword/excludeKeyword/sourceUrlExact/descriptionExact）；
+     补 **开头 `nameBeginsWith`、结尾 `nameEndsWith`、正则 `nameRegex`、注释为空
+     `descriptionEmpty` / 非空 `descriptionHasContent`**；
+   - 数值：min/max 对已覆盖 大于/小于/介于；补 **between 单行形态**
+     `widthBetween/heightBetween/fileSizeBetween/durationMsBetween`（[min,max] 闭区间）——
+     立项理由是 any 组里拆 min+max 两行会被 OR 拆散语义，单行 between 是 OR 组唯一表达方式；
+   - 日期：区间已有；补 **within 过去 N 天** `importedWithinDays/takenWithinDays/modifiedWithinDays`
+     （求值时取当前时间 → 智能夹成为**滚动窗口**，与绝对区间的本质差异）；
+   - 不追：颜色「几乎一样/黑白」中的黑白档、字型两算子（Leaf 无字型管理）。
+4. **编辑器**：顶层补 开头/结尾/正则/注释内容/添加 N 天 五个控件（「更多条件」区）；
+   组描述表 `GROUP_RULE_DEFS` 新增 13 行（between 双输入带 KB/秒换算、withinDays 单数字、
+   正则行带即时校验）。顶层沿用既有 min/max 对与日期区间，between 四键与拍摄/修改 within
+   只进组编辑器——顶层出现时经 passthrough 原样保留并在界面念出来。
+
+**保留约束**：
+
+- 正则语义：JS 部分匹配（Eagle 同口径）、大小写敏感、无 flags（无 g/y lastIndex 状态问题）；
+  模式经**绑定参数**传递，用户正则里的 `( * \` 引号分号都是数据，零 SQL 注入面；
+- LIKE 系键（开头/结尾）沿用 SQLite ASCII 大小写不敏感口径（与 keyword/formats 一致）；
+- 防炸闸沿用：正则长度闸 256 + 嵌套深度/节点闸不变；**灾难性回溯未防**（如 `(a+)+$` 对超长
+  文件名）是已知边界，靠长度闸与文件名天然有限兜着，写进案避免后人当成已解；
+- between 脏形状（IPC 边界：长度≠2/非数字/hi<lo）一律当没设；withinDays 非正数忽略；
+  `semanticIds` 下推与 v1/v2 形状兼容不受影响；零 schema 变更。
+
+## Decision-024 · MCP `leaf_get_image` 安全边界（随实现落定的背书条目）
+
+**日期**：2026-09-26（实现随 `20e9d9d` 落地，本条目补正式裁决）
+
+**决策**：AI 看图工作流 M1 的三个安全裁决随实现定版，正式立案：
+
+1. **token 复用 ClipServer 既有那把**：`/mcp` 路由本就过 `x-leaf-token` + Origin + Host 三关，
+   不为读图口引入第二把鉴权，也无 URL 过期策略——实现上弃用了计划里「返回本地 HTTP URL +
+   过期策略」的形态，改为**直接回 base64 image content**（MCP 规范原生支持，客户端零额外握手），
+   「第二把 token + 过期」这组风险随之消失而不是被解决。
+2. **original 位图扩展白名单 + 8MB 字节上限**：仅 `IMAGE_EXTENSIONS`/`RASTER_EXTENSIONS`
+   （`kindOfExt` 判 image 的同组口径）放行，mp4/ttf 等明确报错；超限返回 isError 并提示用
+   thumb。thumb 恒 image/jpeg（缩略图落盘恒为 jpg，不按素材扩展名标）。
+3. **路径只来自库内登记**：客户端只传 id，**绝不接受外部传路径**（与 resolveAssetPath 白名单
+   语义同源）；id 先过 uuid 形状守卫。`resolveImage` 注入位挂在 ClipServer 组装处，
+   McpHandler 保持纯分发可单测。
+
+**依据**：MCP 客户端是本机可信面（鉴权后），威胁模型是「别把 MCP 读图口变成任意文件读」——
+uuid 守卫 + id-only + 扩展白名单 + 8MB 上限四闸把口子收死；失败统一 isError 文本，
+无裸异常穿透 JSON-RPC。
+
+**验证**：`e2e/mcp-image.spec.mjs`（真启 app：thumb 解出 JPEG 魔数、original 解出 PNG 魔数、
+错误面、无/错 token 401）；McpHandler 单测 7→14 条。
+
+**保留约束**：导入大图（>8MB）想看原图的场景真实出现再议分档/分片；M3 内置视觉打标（BYOK）
+独立决策，不与本条绑定。

@@ -494,6 +494,65 @@
               <option value="none">无标注</option>
             </select>
           </div>
+
+          <!-- ── D-023 算子补齐：开头/结尾/正则/注释有无内容/添加日期相对窗 ──
+               between 四键与拍摄/修改 within 只进组编辑器（顶层沿用 min/max 对与日期区间） -->
+          <div>
+            <label class="mb-1 block text-xs text-fg-muted">文件名开头为</label>
+            <input
+              v-model="nameBeginsWith"
+              type="text"
+              placeholder="如 IMG_"
+              class="w-full px-2 py-1 text-xs rounded border border-line-default bg-surface-1 text-fg-primary"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs text-fg-muted">文件名结尾为</label>
+            <input
+              v-model="nameEndsWith"
+              type="text"
+              placeholder="如 .png"
+              class="w-full px-2 py-1 text-xs rounded border border-line-default bg-surface-1 text-fg-primary"
+            />
+          </div>
+          <div>
+            <label class="mb-1 block text-xs text-fg-muted"
+              >文件名正则（JS 语法，大小写敏感）</label
+            >
+            <input
+              v-model="nameRegex"
+              type="text"
+              placeholder="如 ^IMG_\d+\.png$"
+              :class="[
+                'w-full px-2 py-1 text-xs rounded border bg-surface-1 text-fg-primary',
+                topLevelRegexError ? 'border-danger' : 'border-line-default'
+              ]"
+            />
+            <p v-if="topLevelRegexError" class="mt-1 text-[11px] text-danger-500">
+              {{ topLevelRegexError }}
+            </p>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs text-fg-muted">注释内容</label>
+            <select
+              v-model="descriptionContentSel"
+              class="h-7 w-full rounded border border-line-default bg-surface-1 px-2 text-xs text-fg-primary"
+            >
+              <option value="">不限</option>
+              <option value="empty">没有内容</option>
+              <option value="has">有内容</option>
+            </select>
+          </div>
+          <div>
+            <label class="mb-1 block text-xs text-fg-muted">添加于过去 N 天（滚动窗口）</label>
+            <input
+              v-model.number="importedWithinDays"
+              type="number"
+              min="0"
+              placeholder="天数，如 7"
+              class="w-full px-2 py-1 text-xs rounded border border-line-default bg-surface-1 text-fg-primary"
+            />
+          </div>
         </div>
       </fieldset>
 
@@ -545,7 +604,7 @@
           </div>
 
           <div class="space-y-1.5">
-            <div v-for="(row, ri) in g.rows" :key="ri" class="flex items-center gap-1.5">
+            <div v-for="(row, ri) in g.rows" :key="ri" class="flex flex-wrap items-center gap-1.5">
               <select
                 v-model="row.key"
                 class="h-7 w-36 shrink-0 rounded border border-line-default bg-surface-1 px-1 text-xs text-fg-primary"
@@ -555,7 +614,7 @@
                   {{ d.label }}
                 </option>
               </select>
-              <!-- 值控件按键型分发：bool 勾选 / num 数字 / enum 下拉 / text、list 文本（逗号分隔） -->
+              <!-- 值控件按键型分发：bool 勾选 / num 数字 / enum 下拉 / between 双输入 / text、list 文本（逗号分隔） -->
               <input
                 v-if="rowDef(row.key)?.kind === 'bool'"
                 v-model="row.value"
@@ -567,6 +626,7 @@
                 v-model.number="row.value"
                 type="number"
                 min="0"
+                :placeholder="rowDef(row.key)?.placeholder ?? ''"
                 class="h-7 w-28 rounded border border-line-default bg-surface-1 px-2 text-xs text-fg-primary"
               />
               <select
@@ -582,6 +642,25 @@
                   {{ o.label }}
                 </option>
               </select>
+              <template v-else-if="rowDef(row.key)?.kind === 'between'">
+                <input
+                  type="number"
+                  min="0"
+                  :value="betweenParts(row)[0]"
+                  class="h-7 w-20 rounded border border-line-default bg-surface-1 px-2 text-xs text-fg-primary"
+                  placeholder="最小"
+                  @input="setBetweenPart(row, 0, ($event.target as HTMLInputElement).value)"
+                />
+                <span class="text-xs text-fg-muted">~</span>
+                <input
+                  type="number"
+                  min="0"
+                  :value="betweenParts(row)[1]"
+                  class="h-7 w-20 rounded border border-line-default bg-surface-1 px-2 text-xs text-fg-primary"
+                  placeholder="最大"
+                  @input="setBetweenPart(row, 1, ($event.target as HTMLInputElement).value)"
+                />
+              </template>
               <input
                 v-else
                 v-model="row.value"
@@ -597,6 +676,10 @@
               >
                 删除
               </button>
+              <!-- D-023：正则行即时校验，行内报错（禁保存在 handleSave / 保存按钮双兜底） -->
+              <p v-if="rowRegexError(row)" class="w-full text-[11px] text-danger-500">
+                {{ rowRegexError(row) }}
+              </p>
             </div>
           </div>
 
@@ -631,7 +714,12 @@
 
     <template #footer>
       <UButton variant="ghost" @click="$emit('close')">取消</UButton>
-      <UButton variant="primary" :disabled="!name.trim()" @click="handleSave">
+      <UButton
+        variant="primary"
+        :disabled="!name.trim() || hasRegexError"
+        :title="hasRegexError ? '存在非法正则表达式' : ''"
+        @click="handleSave"
+      >
         {{ album ? '保存' : '创建' }}
       </UButton>
     </template>
@@ -652,7 +740,11 @@ import {
 } from '@shared/assetTypes'
 import type { HueBucket } from '@utils/photoColor'
 import type { SmartAlbum, SmartAlbumRules, TagSummary } from '../../../types/photo'
-import { validateSmartAlbumRules, type SmartAlbumRuleGroup } from '@shared/smartAlbumRules'
+import {
+  validateSmartAlbumRules,
+  checkRegexPattern,
+  type SmartAlbumRuleGroup
+} from '@shared/smartAlbumRules'
 import ColorPalette from './ColorPalette.vue'
 import { useToast } from '@composables/useToast'
 
@@ -728,6 +820,13 @@ const takenFrom = ref('')
 const takenTo = ref('')
 const excludeKeyword = ref('')
 const semanticQuery = ref('')
+// —— D-023 算子补齐：文件名开头/结尾/正则、注释有无内容、添加日期相对窗 ——
+const nameBeginsWith = ref('')
+const nameEndsWith = ref('')
+const nameRegex = ref('')
+/** 注释内容三态：''=不限 / 'empty'=没有内容 / 'has'=有内容（映射 descriptionEmpty / descriptionHasContent） */
+const descriptionContentSel = ref<'' | 'empty' | 'has'>('')
+const importedWithinDays = ref<number | null>(null)
 const semantic = useSemanticSearch()
 /** 模型在不在位决定这条条件是「生效」还是「判定无匹配」，界面要说清 */
 const semanticReady = computed(() => semantic.state.value.ready)
@@ -791,6 +890,14 @@ const OWNED_RULE_KEYS: Array<keyof SmartAlbumRules> = [
   'resolutionMin',
   'excludeKeyword',
   'semanticQuery',
+  // D-023 算子补齐：顶层有控件的键（between 四键与拍摄/修改 within 无顶层控件——
+  // 顶层沿用 min/max 对与日期区间，故不入此表，脏规则经 passthrough 原样保留）
+  'nameBeginsWith',
+  'nameEndsWith',
+  'nameRegex',
+  'descriptionEmpty',
+  'descriptionHasContent',
+  'importedWithinDays',
   // D-022 条件组：由下方组容器接管（无组时不出该键，旧规则保存后形状不变）
   'groups',
   // 快照字段：编辑器不呈现它，但 passthrough 不能把它丢掉（下次保存要带走的是 semanticQuery）
@@ -807,7 +914,14 @@ const RULE_LABEL: Record<string, string> = {
   fileExtsExclude: '排除扩展名',
   tags: '标签（按 id）',
   notesKeyword: '注释关键词',
-  urlKeyword: '链接关键词'
+  urlKeyword: '链接关键词',
+  // D-023：between 四键与拍摄/修改 within 只有组内控件，顶层出现时念出来（原样保留）
+  widthBetween: '宽度介于',
+  heightBetween: '高度介于',
+  fileSizeBetween: '大小介于',
+  durationMsBetween: '时长介于',
+  takenWithinDays: '拍摄于过去 N 天',
+  modifiedWithinDays: '修改于过去 N 天'
 }
 
 const unownedLabels = computed<string[]>(() =>
@@ -836,14 +950,14 @@ const MAX_GROUPS = 30
 const MAX_GROUP_ROWS = 30
 const DEFAULT_ROW_KEY = 'keyword'
 
-type GroupValueKind = 'bool' | 'num' | 'text' | 'list' | 'enum'
+type GroupValueKind = 'bool' | 'num' | 'text' | 'list' | 'enum' | 'between'
 interface GroupRuleDef {
   key: keyof SmartAlbumRules
   label: string
   kind: GroupValueKind
   /** enum 行的下拉选项 */
   options?: Array<{ value: number | string; label: string }>
-  /** num 行的单位换算：界面 KB/秒 → 引擎 字节/毫秒 */
+  /** num 行的单位换算：界面 KB/秒 → 引擎 字节/毫秒（between 行同用） */
   scale?: number
   placeholder?: string
 }
@@ -851,6 +965,24 @@ interface GroupRuleDef {
 const GROUP_RULE_DEFS: GroupRuleDef[] = [
   { key: 'keyword', label: '文件名/描述含', kind: 'text', placeholder: '如 海报' },
   { key: 'excludeKeyword', label: '排除关键词', kind: 'text', placeholder: '如 临时' },
+  // ── D-023 算子补齐（组内单行表达；正则行即时校验，非法禁保存） ──
+  { key: 'nameBeginsWith', label: '文件名开头为', kind: 'text', placeholder: '如 IMG_' },
+  { key: 'nameEndsWith', label: '文件名结尾为', kind: 'text', placeholder: '如 .png' },
+  {
+    key: 'nameRegex',
+    label: '文件名正则',
+    kind: 'text',
+    placeholder: '如 ^IMG_\\d+\\.png$'
+  },
+  { key: 'descriptionEmpty', label: '注释没有内容', kind: 'bool' },
+  { key: 'descriptionHasContent', label: '注释有内容', kind: 'bool' },
+  { key: 'widthBetween', label: '宽度介于 (px)', kind: 'between' },
+  { key: 'heightBetween', label: '高度介于 (px)', kind: 'between' },
+  { key: 'fileSizeBetween', label: '大小介于 (KB)', kind: 'between', scale: 1024 },
+  { key: 'durationMsBetween', label: '时长介于 (秒)', kind: 'between', scale: 1000 },
+  { key: 'importedWithinDays', label: '添加于过去 N 天', kind: 'num', placeholder: '天数' },
+  { key: 'takenWithinDays', label: '拍摄于过去 N 天', kind: 'num', placeholder: '天数' },
+  { key: 'modifiedWithinDays', label: '修改于过去 N 天', kind: 'num', placeholder: '天数' },
   { key: 'favorite', label: '仅收藏', kind: 'bool' },
   {
     key: 'minRating',
@@ -922,6 +1054,33 @@ function onRowKeyChange(row: GroupRowDraft): void {
   row.value = def ? defaultValueFor(def) : ''
 }
 
+// ── D-023 between 行：值以 'min~max' 文本承载，两个数字输入各持一半 ──
+function betweenParts(row: GroupRowDraft): [string, string] {
+  const parts = typeof row.value === 'string' ? row.value.split('~') : []
+  return [parts[0] ?? '', parts[1] ?? '']
+}
+function setBetweenPart(row: GroupRowDraft, idx: 0 | 1, raw: string): void {
+  const parts = betweenParts(row)
+  parts[idx] = raw
+  row.value = `${parts[0]}~${parts[1]}`
+}
+
+// ── D-023 正则即时校验：顶层输入与组内正则行共用 checkRegexPattern 单源。
+//    非法正则行内报错并禁保存——不让一条查询期必炸的规则走进库 ──
+const topLevelRegexError = computed(() => {
+  const p = nameRegex.value.trim()
+  return p === '' ? null : checkRegexPattern(p)
+})
+function rowRegexError(row: GroupRowDraft): string | null {
+  return row.key === 'nameRegex' && typeof row.value === 'string' && row.value.trim() !== ''
+    ? checkRegexPattern(row.value.trim())
+    : null
+}
+const hasRegexError = computed(() => {
+  if (topLevelRegexError.value) return true
+  return groups.value.some((g) => g.rows.some((row) => rowRegexError(row) !== null))
+})
+
 /** 组内 list 行的拆分：trim 逗号分段；扩展名键再归一成无点小写（与顶层 fileExtsInclude 同口径） */
 function splitListValue(def: GroupRuleDef, raw: string): string[] {
   const arr = raw
@@ -954,6 +1113,16 @@ function rowToRuleValue(def: GroupRuleDef, row: GroupRowDraft): unknown {
       const arr = splitListValue(def, v)
       return arr.length > 0 ? arr : undefined
     }
+    case 'between': {
+      // 值形态 'min~max'（两个数字输入拼接的中间态允许留空）；两端齐且 hi≥lo 才下发
+      if (typeof v !== 'string') return undefined
+      const [loRaw, hiRaw] = v.split('~')
+      if (loRaw === '' || hiRaw === '') return undefined
+      const lo = Number(loRaw)
+      const hi = Number(hiRaw)
+      if (!Number.isFinite(lo) || !Number.isFinite(hi) || hi < lo || hi <= 0) return undefined
+      return def.scale ? [Math.round(lo * def.scale), Math.round(hi * def.scale)] : [lo, hi]
+    }
   }
 }
 
@@ -976,6 +1145,15 @@ function rowsFromGroupRules(rules: Record<string, unknown>): {
     else if (def.kind === 'text' && typeof v === 'string') consumed = v
     else if (def.kind === 'list' && Array.isArray(v) && v.every((x) => typeof x === 'string'))
       consumed = (v as string[]).join(', ')
+    else if (
+      def.kind === 'between' &&
+      Array.isArray(v) &&
+      v.length === 2 &&
+      v.every((x) => typeof x === 'number' && Number.isFinite(x))
+    )
+      consumed = (v as number[])
+        .map((x) => (def.scale ? Math.round((x / def.scale) * 100) / 100 : x))
+        .join('~')
     if (consumed === undefined) continue // 键认识、值型不认识 → 留在 extra 不动
     rows.push({ key: def.key, value: consumed })
     delete rest[def.key]
@@ -1145,6 +1323,13 @@ onMounted(async () => {
     takenTo.value = toDateInputValue(src.takenTo)
     excludeKeyword.value = src.excludeKeyword ?? ''
     semanticQuery.value = src.semanticQuery ?? ''
+    // D-023 算子补齐回填
+    nameBeginsWith.value = src.nameBeginsWith ?? ''
+    nameEndsWith.value = src.nameEndsWith ?? ''
+    nameRegex.value = src.nameRegex ?? ''
+    descriptionContentSel.value =
+      src.descriptionEmpty === true ? 'empty' : src.descriptionHasContent === true ? 'has' : ''
+    importedWithinDays.value = src.importedWithinDays ?? null
     closeHex.value = src.colorClose?.hex ?? ''
     closeAccuracy.value = src.colorClose?.accuracy ?? 20
     extExclude.value = [...(src.fileExtsExclude ?? [])]
@@ -1239,6 +1424,14 @@ const currentRules = computed<SmartAlbumRules>(() => {
   if (takenToMs !== null) rules.takenTo = takenToMs
   if (excludeKeyword.value.trim()) rules.excludeKeyword = excludeKeyword.value.trim()
   if (semanticQuery.value.trim()) rules.semanticQuery = semanticQuery.value.trim()
+  // D-023 算子补齐写回（正则只在通过校验时下发——非法时禁保存兜底，这里不放行脏值）
+  if (nameBeginsWith.value.trim()) rules.nameBeginsWith = nameBeginsWith.value.trim()
+  if (nameEndsWith.value.trim()) rules.nameEndsWith = nameEndsWith.value.trim()
+  if (nameRegex.value.trim() && !topLevelRegexError.value) rules.nameRegex = nameRegex.value.trim()
+  if (descriptionContentSel.value === 'empty') rules.descriptionEmpty = true
+  else if (descriptionContentSel.value === 'has') rules.descriptionHasContent = true
+  if (typeof importedWithinDays.value === 'number' && importedWithinDays.value > 0)
+    rules.importedWithinDays = Math.round(importedWithinDays.value)
   if (/^#?[0-9a-fA-F]{6}$/.test(closeHex.value.trim())) {
     const hex = closeHex.value.trim()
     rules.colorClose = { hex: hex.startsWith('#') ? hex : `#${hex}`, accuracy: closeAccuracy.value }
@@ -1309,6 +1502,11 @@ function toggleFormat(f: string): void {
 async function handleSave(): Promise<void> {
   const trimmed = name.value.trim()
   if (!trimmed) return
+  // D-023：非法正则禁保存（行内已报错，这里再挡一道防回车直提）
+  if (hasRegexError.value) {
+    toast.error('无法保存', { description: '存在非法正则表达式，请先修正标红的条件' })
+    return
+  }
   // D-022：保存前按 v2 结构校验（口径与主进程引擎一致：深度/组节点上限、组形状）。
   // 不能把一条查询期必炸的规则存进库——编辑器是嵌套规则的唯一合法写入方，
   // 这里挡住之后主进程保存链无需加第二道校验
