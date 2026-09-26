@@ -25,7 +25,7 @@
 | 预览高亮项                 | Enter                                        |
 | 空格快速预览               | Space                                        |
 | 关预览 / 退选择            | Esc                                          |
-| 移除选中（入回收站）       | Delete / Backspace                           |
+| 移除选中（入回收站）       | Delete / ⌘⌫（裸 Backspace 已禁删）           |
 | 单击 / 双击卡片            | 选中（检查器刷新）/ 打开预览（Eagle 模型）   |
 | 创建副本（单选）           | ⌘ D / Ctrl D                                 |
 | 复制文件路径               | ⌥ ⌘ C / Ctrl Alt C                           |

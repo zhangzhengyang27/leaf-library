@@ -5,7 +5,7 @@
  * - 二十六轮：维度顺序存 localStorage('leaf.filter-dimensions-order')，
  *   池内拖拽排序（Eagle ic-drag-help），筛选行按该顺序渲染已固定维度
  * - 每个维度的取值在 LibraryTab 上，激活判断/清除统一走 isDimensionActive/clearDimension
- * - 有意差异：Eagle「标注」无对应数据字段，不入池；「注释」对应描述字段；
+ * - 有意差异：Eagle「标注」在 023 迁移后有字段了（photo_annotations），但消费端还没接，暂不入池；「注释」对应描述字段；
  *   AI 维度（以图找图）固定后为动作 chip（触发搜索模式而非取值面板）
  */
 

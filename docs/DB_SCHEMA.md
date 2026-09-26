@@ -182,8 +182,9 @@ Eagle 式智能收藏夹：`rules_json` 存条件集（标签 id / 收藏 / 最�
 
 图像向量表（D-021 Chinese-CLIP 回归）。与 001 建、019 删掉的那张 `photo_embeddings`
 同用途但不同形状，刻意不重用：带 `model` 列——换模型/换量化档位时旧向量能被判出来并
-排除比对，不会新旧混算。`photo_id` 主键 + `model` + `dim`（512）+ `embedding`
-（float32 BLOB）+ 状态字段。检索仍是「全量载入 + 暴力余弦」，万级库毫秒级。
+排除比对，不会新旧混算。`photo_id` 主键 + `model` + `dim`（512）+ `vec`（float32 BLOB）。
+就绪状态不在表内——由磁盘上的 ready 标记文件承载（`ClipEmbeddingService` 的 `readyPath`）。
+检索仍是「全量载入 + 暴力余弦」，万级库毫秒级。
 注意 015 编号如今是回收站部分索引，不是向量表——旧文档把向量表记在 015 名下，已纠正。
 
 ### 5.2 Recording

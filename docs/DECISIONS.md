@@ -454,7 +454,8 @@ Eagle 的右栏是固定宽度，所以「加宽」本来就不是对齐目标�
    jina 那种 30,528 条英文词表混进来（词表配错不会报错、只会静默糊掉，这是 D-017 一轮里
    「模型在位但配错不响」教训的制度化）。
 2. 中文文本侧走 WordPieceTokenizer + jieba 分词下推（`querySegment`）；语义条件可下推进智能夹 SQL。
-3. 数据层：D-017 用迁移 `019` 丢掉的表，以 `021_photo_vectors` 重建（512 维向量 + 状态机字段）；
+3. 数据层：D-017 用迁移 `019` 丢掉的表，以 `021_photo_vectors` 重建（512 维向量，
+   `vec` BLOB；就绪状态不落库，由磁盘 ready 标记文件承载）；
    `@huggingface/transformers` 回到 dependencies。
 4. 阈值 `SEMANTIC_MIN_SCORE = 0.40` 沿用，但在**新评测集**上重量判据：原 5 张真照片随 /tmp
    丢失且无副本，改用文生图重造 6 张同题材图进仓 `e2e/fixtures/ai-probe/`——猫 0.4428 /

@@ -32,4 +32,5 @@ references
 /scripts/_probes/
 *.tsbuildinfo
 *.alt-from-snapshot
+# 反编译参考件专用后缀：真源码不得命名为 *.bundle.ts（会被这里静默忽略，见 AGENTS.md 第三节）
 *.bundle.ts
