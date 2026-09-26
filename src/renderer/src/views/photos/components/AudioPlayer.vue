@@ -306,7 +306,17 @@ watch(
   { immediate: true }
 )
 
-defineExpose({ toggle })
+defineExpose({
+  toggle,
+  // M2 标注消费端：时间点笔记要读当前播放位置（秒）、刻度点击要能 seek。
+  // 只加只读取数与既有 seekTo 的秒数包装，播放链本身不动
+  getTimeSec: (): number => (Number.isFinite(currentSec.value) ? Math.max(0, currentSec.value) : 0),
+  seekToSec: (sec: number): void => {
+    const dur = totalSec.value
+    if (!(dur > 0)) return
+    seekTo(Math.min(Math.max(0, Number.isFinite(sec) ? sec : 0), dur) / dur)
+  }
+})
 </script>
 
 <template>

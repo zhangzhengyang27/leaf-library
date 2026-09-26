@@ -102,6 +102,8 @@
             controls
             autoplay
             class="max-w-full max-h-full"
+            @loadedmetadata="onVideoMeta"
+            @timeupdate="onVideoTime"
           >
             <!-- 同目录 SRT/VTT（主进程只按 photoId 找兄弟文件）：blob: 喂给 <track>，
                  开关与语言选择交给 Chromium 原生 CC 菜单，不再自建一套 -->
@@ -116,7 +118,26 @@
             />
           </video>
         </div>
-        <!-- 六期：视频逐帧步进 / 倍速 -->
+        <!-- M2：atMs 标注刻度条（有标注才出现；时长未知时不渲染，percent 恒 0 也不会画出假点） -->
+        <div
+          v-if="isVideoInline && videoDurationSec > 0 && videoAtMsAnnotations.length"
+          class="relative h-3 w-full max-w-2xl"
+          data-video-annotation-rail
+        >
+          <div
+            class="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-white/15"
+          ></div>
+          <button
+            v-for="a in videoAtMsAnnotations"
+            :key="a.id"
+            type="button"
+            class="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400 shadow transition-transform hover:scale-150"
+            :style="{ left: `${atMsToPercent(a.atMs, videoDurationSec)}%` }"
+            :title="`${fmtMsPosition(a.atMs)} · ${a.body}`"
+            @click="seekVideoToMs(a.atMs)"
+          ></button>
+        </div>
+        <!-- 六期：视频逐帧步进 / 倍速；M2 追加「时间点笔记」小键 -->
         <div v-if="isVideo && canInlinePlay" class="flex items-center gap-2 text-white">
           <button
             class="rounded bg-white/10 px-2.5 py-1 text-xs hover:bg-white/20"
@@ -139,6 +160,27 @@
           >
             {{ playbackRateLabel }}
           </button>
+          <button
+            class="rounded bg-white/10 px-2.5 py-1 text-xs hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+            :disabled="!(videoDurationSec > 0)"
+            :title="videoDurationSec > 0 ? '在当前播放位置记一条笔记' : '时长未知，记不了时间点'"
+            @click="openVideoNoteEditor"
+          >
+            <AppIcon icon="ic-toolbar-comment" :size="12" class="mr-1 inline-block align-[-2px]" />
+            时间点笔记
+          </button>
+          <!-- 内联输入框：Enter 保存（带当前 currentTime）、Esc 取消 -->
+          <input
+            v-if="videoNoteOpen"
+            ref="videoNoteInputRef"
+            v-model="videoNoteDraft"
+            type="text"
+            data-video-note-editor
+            class="h-7 w-56 rounded bg-white/10 px-2 text-xs text-white placeholder-white/30 outline-none focus:bg-white/15"
+            placeholder="这条时间点记什么？"
+            @keydown.enter.prevent="commitVideoNote"
+            @keydown.esc.stop.prevent="videoNoteOpen = false"
+          />
         </div>
         <!-- 容器/编码 Chromium 播不了（avi/wmv/flv/mpeg/ts/裸 hevc 及 ProRes 等）：
              退化为封面 + 系统播放器入口，不再丢一个必坏的 <video> 空壳 -->
@@ -167,6 +209,51 @@
             :duration-ms="photo.durationMs"
             :bpm="photo.bpm"
           />
+          <!-- M2：音频时间点笔记（AudioPlayer 最小增补了 getTimeSec/seekToSec，播放链没动） -->
+          <div class="mt-1 flex items-center gap-2 text-white">
+            <button
+              class="rounded bg-white/10 px-2.5 py-1 text-xs hover:bg-white/20 disabled:cursor-not-allowed disabled:opacity-40"
+              :disabled="!(audioDurationSec > 0)"
+              :title="audioDurationSec > 0 ? '在当前播放位置记一条笔记' : '时长未知，记不了时间点'"
+              @click="openAudioNoteEditor"
+            >
+              <AppIcon
+                icon="ic-toolbar-comment"
+                :size="12"
+                class="mr-1 inline-block align-[-2px]"
+              />
+              时间点笔记
+            </button>
+            <input
+              v-if="audioNoteOpen"
+              ref="audioNoteInputRef"
+              v-model="audioNoteDraft"
+              type="text"
+              data-audio-note-editor
+              class="h-7 min-w-0 flex-1 rounded bg-white/10 px-2 text-xs text-white placeholder-white/30 outline-none focus:bg-white/15"
+              placeholder="这条时间点记什么？"
+              @keydown.enter.prevent="commitAudioNote"
+              @keydown.esc.stop.prevent="audioNoteOpen = false"
+            />
+          </div>
+          <div
+            v-if="audioDurationSec > 0 && audioAtMsAnnotations.length"
+            class="relative mt-1 h-3 w-full"
+            data-audio-annotation-rail
+          >
+            <div
+              class="absolute inset-x-0 top-1/2 h-0.5 -translate-y-1/2 rounded-full bg-white/15"
+            ></div>
+            <button
+              v-for="a in audioAtMsAnnotations"
+              :key="a.id"
+              type="button"
+              class="absolute top-1/2 size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-amber-400 shadow transition-transform hover:scale-150"
+              :style="{ left: `${atMsToPercent(a.atMs, audioDurationSec)}%` }"
+              :title="`${fmtMsPosition(a.atMs)} · ${a.body}`"
+              @click="seekAudioToMs(a.atMs)"
+            ></button>
+          </div>
         </div>
         <!-- 字体：FontFace 样张（rawfile:// 加载原文件） -->
         <div
@@ -383,6 +470,7 @@
           @wheel.prevent="onStageWheel"
         >
           <img
+            ref="stageImgRef"
             :src="previewSrc"
             :alt="photo.fileName"
             :class="[
@@ -397,6 +485,22 @@
             @error="handleImageError"
             @dblclick="toggleActualSize"
             @mousedown="onPanStart"
+          />
+          <!-- M1 标注 overlay：只在图片态、标注模式开着、自然尺寸已知时挂载。
+               不设 z-index（DOM 序在缩放 HUD 之前），滚轮缩放经 stage 的 wheel 照常生效 -->
+          <PhotoAnnotationOverlay
+            v-if="annotationMode && naturalKnown && isRasterImage"
+            ref="annotationOverlayRef"
+            :photo-id="photo.id"
+            :nat="nat"
+            :annotations="annotations"
+            :img-el="stageImgRef"
+            :display-scale="displayScale"
+            :pan-x="pan.x"
+            :pan-y="pan.y"
+            :stage-w="stageSize.w"
+            :stage-h="stageSize.h"
+            @refresh="loadAnnotations"
           />
           <!-- 缩放 HUD（简报模式下随 UI 一起隐藏）：Eagle 同款图标键，百分比保留可读 -->
           <div
@@ -435,6 +539,16 @@
               @click="zoomToFit"
             >
               <AppIcon icon="ic-toolbar-zoom-fit" :size="13" />
+            </button>
+            <span class="mx-1 h-4 w-px bg-white/20"></span>
+            <!-- M1 标注模式切换键：模式开着时 cursor-crosshair + 左键框选（平移让路），滚轮缩放不受影响 -->
+            <button
+              class="pv-hud"
+              :class="{ 'bg-white/15': annotationMode }"
+              :title="annotationMode ? '退出标注模式（Esc）' : '标注：拖拽圈注'"
+              @click="annotationMode = !annotationMode"
+            >
+              <AppIcon icon="ic-toolbar-comment" :size="13" />
             </button>
           </div>
         </div>
@@ -654,11 +768,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useToast } from '@composables/useToast'
 import { useContextMenu } from '@composables/useContextMenu'
 import { isArchiveFile, isFontFile, isPlayableVideoFile, isTextFile } from '@shared/assetTypes'
 import { hasAiWorthyText } from '@shared/ocrText'
+// 标注消费端（M1 框选 / M2 时间点）：形状与校验单源在 @shared/annotations
+import { normalizeAnnotationInput, type PhotoAnnotation } from '@shared/annotations'
+import { atMsToPercent } from '../composables/useAnnotationOverlay'
 import type { Photo } from '../../../types/photo'
 import { useDialogs } from '../composables/useDialogs'
 import { highlightCodeFile, type CodeHighlight } from '@renderer/utils/codePreview'
@@ -668,6 +785,7 @@ import { useWallpaper } from '../composables/useWallpaper'
 import PluginSandbox from '@components/plugins/PluginSandbox.vue'
 import AppIcon from '@components/AppIcon.vue'
 import AudioPlayer from './AudioPlayer.vue'
+import PhotoAnnotationOverlay from './PhotoAnnotationOverlay.vue'
 import { encodeMediaPath } from '@renderer/utils/mediaPath'
 import { renderMarkdown } from '@renderer/utils/markdownPreview'
 import type { InstalledPlugin } from '@renderer/types/plugin'
@@ -892,9 +1010,21 @@ watch(
 function onKeydown(e: KeyboardEvent): void {
   const field = (e.target as HTMLElement | null)?.closest?.('input, textarea, select')
   if (e.key === 'Escape' && !actions.locked.value) {
+    // 标注消费端的 Esc 优先级：输入框开着 → 先关输入框；标注模式开着 → 退标注模式；
+    // 都没有 → 既有关预览。（overlay 的输入框自带 esc 处理并 stop，这里是兜底路径）
+    if (annotationOverlayRef.value?.cancelEditorIfOpen()) return
+    if (videoNoteOpen.value) {
+      videoNoteOpen.value = false
+      return
+    }
+    if (audioNoteOpen.value) {
+      audioNoteOpen.value = false
+      return
+    }
     // 输入控件内按 ESC 语义是退出输入，不穿透关闭整个预览（审查 P3-52）；
     // blur 让描述的 @blur 提交落库
     if (field) (field as HTMLElement).blur()
+    else if (annotationMode.value) annotationMode.value = false
     else emit('close')
     return
   }
@@ -1032,8 +1162,12 @@ const isAudio = computed(() => props.photo?.kind === 'audio')
 
 // —— 六期：视频逐帧步进 / 倍速 ——
 const videoRef = ref<HTMLVideoElement | null>(null)
-/** 音频播放器（空格键走它暴露的 toggle） */
-const audioPlayerRef = ref<{ toggle: () => Promise<void> } | null>(null)
+/** 音频播放器：空格键走 toggle；M2 时间点笔记读 getTimeSec、刻度点击走 seekToSec */
+const audioPlayerRef = ref<{
+  toggle: () => Promise<void>
+  getTimeSec: () => number
+  seekToSec: (sec: number) => void
+} | null>(null)
 const playbackRate = ref(1)
 const playbackRateLabel = computed(() =>
   playbackRate.value === 1 ? '1x' : `${playbackRate.value}x`
@@ -1587,6 +1721,10 @@ const isRasterImage = computed(
 )
 
 const shortcutHint = computed((): string => {
+  // 标注模式是左键语义完全不同的状态，提示直接换一套，免得还写着「翻页」误导
+  if (annotationMode.value) {
+    return '标注模式：拖拽圈注 · 点框改词 · 滚轮缩放 · Esc 退出'
+  }
   if (isVideoInline.value) return '←→ 翻页 · ⇧←→ ±10 帧 · 空格 播放/暂停 · Esc 关闭'
   // 自然尺寸未知（SVG 无宽高 / 图未加载完）时不吹缩放能力
   const zoom = naturalKnown.value ? ' · 滚轮缩放 · 双击 100%' : ''
@@ -1799,6 +1937,8 @@ function onImgLoad(e: Event): void {
 
 function onPanStart(e: MouseEvent): void {
   if (!canPan.value || e.button !== 0) return
+  // 标注模式开着时左键归框选 overlay（它盖在 img 正上方），平移让路；滚轮缩放不受影响
+  if (annotationMode.value) return
   const startX = e.clientX
   const startY = e.clientY
   const base = { ...pan.value }
@@ -1832,6 +1972,196 @@ watch(stageEl, (el) => {
     clampPan()
   })
   stageObserver.observe(el)
+})
+
+// —— P1 标注消费端：M1 框选（rect） / M2 时间点笔记（atMs） ——
+// 列表加载/刷新收在 PhotoPreview（照检查器范式 watch photoId 重载），
+// overlay 与刻度条的增删改直接调 window.api 后 emit/调用 loadAnnotations 回流。
+
+/** 预览底图元素：overlay 贴位与换算都以它的 getBoundingClientRect 为准 */
+const stageImgRef = ref<HTMLImageElement | null>(null)
+
+const annotationMode = ref(false)
+const annotations = ref<PhotoAnnotation[]>([])
+const annotationOverlayRef = ref<{ cancelEditorIfOpen: () => boolean } | null>(null)
+
+async function loadAnnotations(): Promise<void> {
+  const id = props.photo?.id
+  if (!id) {
+    annotations.value = []
+    return
+  }
+  try {
+    const items = await window.api.annotations.list(id)
+    // await 期间可能已切换素材：过期响应不得写进当前列表（审查 P2-16 同口径）
+    if (props.photo?.id === id) annotations.value = items
+  } catch {
+    /* 读不到就当没有：标注加载失败不该盖掉整个预览（照检查器口径） */
+  }
+}
+// 注意：这个 watch 放在本段末尾（紧邻下方）——immediate 回调引用 videoNoteOpen 等
+// 后置 const，提前声明会踩 TDZ（setup 期间同步执行直接 ReferenceError）
+
+// —— M2 · 视频时间点笔记 ——
+// 09-26 刚修过 NaN clamp：时长一律「元素 duration 有限且 >0 才认」，否则退库里
+// 探测值，再不行就 0——0 的语义是「不可用」，刻度不渲染、笔记键禁用，不硬造位置。
+const videoDurationSec = ref(0)
+
+function refreshVideoDuration(): void {
+  const d = videoRef.value?.duration
+  // typeof 收窄 + isFinite 双保险：undefined / NaN / Infinity 都进不了赋值分支
+  if (typeof d === 'number' && Number.isFinite(d) && d > 0) {
+    videoDurationSec.value = d
+    return
+  }
+  const db = (props.photo?.durationMs ?? 0) / 1000
+  videoDurationSec.value = Number.isFinite(db) && db > 0 ? db : 0
+}
+
+function onVideoMeta(): void {
+  refreshVideoDuration()
+}
+
+function onVideoTime(): void {
+  // 元数据晚到时 timeupdate 先来：补一次时长探测
+  if (!(videoDurationSec.value > 0)) refreshVideoDuration()
+}
+
+const videoNoteOpen = ref(false)
+const videoNoteDraft = ref('')
+const videoNoteBusy = ref(false)
+const videoNoteInputRef = ref<HTMLInputElement | null>(null)
+
+function openVideoNoteEditor(): void {
+  if (!(videoDurationSec.value > 0)) return
+  videoNoteDraft.value = ''
+  videoNoteOpen.value = true
+}
+
+async function commitVideoNote(): Promise<void> {
+  const p = props.photo
+  const v = videoRef.value
+  if (!p || !v || videoNoteBusy.value) return
+  const body = videoNoteDraft.value.trim()
+  if (!body) {
+    videoNoteOpen.value = false
+    return
+  }
+  const t = Number.isFinite(v.currentTime) ? Math.max(0, v.currentTime) : 0
+  const check = normalizeAnnotationInput({ body, atMs: Math.round(t * 1000) })
+  if (!check.ok) {
+    useToast().error('笔记没存上', { description: check.error })
+    return
+  }
+  videoNoteBusy.value = true
+  try {
+    const r = await window.api.annotations.create(p.id, check.value)
+    if (!r.ok) {
+      useToast().error('笔记没存上', { description: r.error ?? '保存失败' })
+      return
+    }
+    videoNoteDraft.value = ''
+    videoNoteOpen.value = false
+    await loadAnnotations()
+  } catch (error) {
+    useToast().error('笔记没存上', { description: (error as Error).message })
+  } finally {
+    videoNoteBusy.value = false
+  }
+}
+
+function seekVideoToMs(atMs: number): void {
+  const v = videoRef.value
+  if (!v) return
+  // clamp 与 stepFrame 同口径：duration 没探到（NaN）时上界放开，下界钳 0
+  const duration = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Infinity
+  v.currentTime = Math.min(Math.max(0, atMs / 1000), duration)
+}
+
+// —— M2 · 音频时间点笔记（AudioPlayer 最小增补了 getTimeSec / seekToSec）——
+const audioDurationSec = computed(() => {
+  const db = (props.photo?.durationMs ?? 0) / 1000
+  return Number.isFinite(db) && db > 0 ? db : 0
+})
+
+const audioNoteOpen = ref(false)
+const audioNoteDraft = ref('')
+const audioNoteBusy = ref(false)
+const audioNoteInputRef = ref<HTMLInputElement | null>(null)
+
+function openAudioNoteEditor(): void {
+  if (!(audioDurationSec.value > 0)) return
+  audioNoteDraft.value = ''
+  audioNoteOpen.value = true
+}
+
+async function commitAudioNote(): Promise<void> {
+  const p = props.photo
+  if (!p || audioNoteBusy.value) return
+  const body = audioNoteDraft.value.trim()
+  if (!body) {
+    audioNoteOpen.value = false
+    return
+  }
+  const atMs = Math.round(Math.max(0, audioPlayerRef.value?.getTimeSec() ?? 0) * 1000)
+  const check = normalizeAnnotationInput({ body, atMs })
+  if (!check.ok) {
+    useToast().error('笔记没存上', { description: check.error })
+    return
+  }
+  audioNoteBusy.value = true
+  try {
+    const r = await window.api.annotations.create(p.id, check.value)
+    if (!r.ok) {
+      useToast().error('笔记没存上', { description: r.error ?? '保存失败' })
+      return
+    }
+    audioNoteDraft.value = ''
+    audioNoteOpen.value = false
+    await loadAnnotations()
+  } catch (error) {
+    useToast().error('笔记没存上', { description: (error as Error).message })
+  } finally {
+    audioNoteBusy.value = false
+  }
+}
+
+function seekAudioToMs(atMs: number): void {
+  audioPlayerRef.value?.seekToSec(atMs / 1000)
+}
+
+/** 刻度点 hover 提示的时间头（m:ss，与检查器 annotationStamp 同口径） */
+function fmtMsPosition(ms: number): string {
+  const total = Math.round(ms / 1000)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/** 谓词收窄：atMs 一定有值，模板里不必 `!`（TS 不跟丢） */
+const videoAtMsAnnotations = computed(() =>
+  annotations.value.filter((a): a is PhotoAnnotation & { atMs: number } => a.atMs !== undefined)
+)
+const audioAtMsAnnotations = computed(() =>
+  annotations.value.filter((a): a is PhotoAnnotation & { atMs: number } => a.atMs !== undefined)
+)
+
+// 换素材：列表重载；时间点输入框与视频时长都是旧素材的残留，一并清掉
+watch(
+  () => props.photo?.id,
+  () => {
+    annotations.value = []
+    videoNoteOpen.value = false
+    audioNoteOpen.value = false
+    videoDurationSec.value = 0
+    void loadAnnotations()
+  },
+  { immediate: true }
+)
+
+// 时间点输入框弹出即聚焦，省一次点击
+watch([videoNoteOpen, audioNoteOpen], async ([v, a]) => {
+  if (!v && !a) return
+  await nextTick()
+  ;(v ? videoNoteInputRef.value : audioNoteInputRef.value)?.focus()
 })
 
 const formatFileSize = (bytes: number): string => {
