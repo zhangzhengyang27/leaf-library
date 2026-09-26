@@ -35,6 +35,7 @@ const makeAlbum = (rules: SmartAlbumRules): SmartAlbum => ({
   id: 'sa1',
   name: '条件组',
   rules,
+  parentId: null,
   sortOrder: 0,
   createdAt: 0,
   updatedAt: 0
