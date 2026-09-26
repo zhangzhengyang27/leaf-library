@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
 import { describe, it, expect } from 'vitest'
+import { ref } from 'vue'
 import {
   clientToImagePoint,
   normalizeDragRect,
   isRectTooSmall,
-  atMsToPercent
+  atMsToPercent,
+  useAnnotationOverlay
 } from '../useAnnotationOverlay'
+import { useAnnotationFocus } from '../useAnnotationFocus'
 import { ANNOTATION_MIN_SIDE } from '@shared/annotations'
 
 /**
@@ -80,5 +83,98 @@ describe('useAnnotationOverlay · 时间点→进度百分比（atMsToPercent）
   it('越界值不硬造位置：负 atMs 与超时长都钳在 0~100', () => {
     expect(atMsToPercent(-100, 120)).toBe(0)
     expect(atMsToPercent(999_999, 120)).toBe(100)
+  })
+})
+
+// ── 消费端收尾：检查器 ↔ overlay 选中联动（useAnnotationFocus 单例 + 接线）──
+
+describe('useAnnotationFocus · 聚焦 id 单例', () => {
+  it('set/clear 直接可用；模块级单例——两处 useAnnotationFocus() 拿到同一份状态', () => {
+    const writer = useAnnotationFocus()
+    const reader = useAnnotationFocus()
+    expect(reader.activeAnnotationId.value).toBeNull()
+    writer.setAnnotationFocus('anno-x')
+    expect(reader.activeAnnotationId.value).toBe('anno-x')
+    reader.clearAnnotationFocus()
+    expect(writer.activeAnnotationId.value).toBeNull()
+  })
+})
+
+describe('useAnnotationOverlay · 选中态 → 联动单例接线', () => {
+  /** 一条带 rect 的标注（形状同 @shared/annotations 的 PhotoAnnotation） */
+  const rectAnno = {
+    id: 'anno-1',
+    photoId: 'p1',
+    body: 'logo 区',
+    rect: { x: 10, y: 10, w: 100, h: 80 },
+    createdAt: 0,
+    updatedAt: 0
+  }
+
+  /** 最小 deps：imgEl 给 1:1 显示矩形（640×480 源图铺满），其余只够类型成立 */
+  function makeOverlay(): ReturnType<typeof useAnnotationOverlay> {
+    const fakeImg = {
+      getBoundingClientRect: () =>
+        ({
+          left: 0,
+          top: 0,
+          width: 640,
+          height: 480
+        }) as unknown as DOMRect
+    } as unknown as HTMLImageElement
+    return useAnnotationOverlay(
+      {
+        photoId: () => 'p1',
+        nat: () => ({ w: 640, h: 480 }),
+        annotations: () => [rectAnno],
+        imgEl: () => fakeImg,
+        syncSignals: () => [],
+        onRefresh: () => {}
+      },
+      ref<HTMLElement | null>(null)
+    )
+  }
+
+  /** happy-dom 没有 PointerEvent 构造器也不影响：处理器只认 button/stopPropagation/clientX/Y */
+  const fakePointer = (x = 0, y = 0): PointerEvent =>
+    ({
+      button: 0,
+      clientX: x,
+      clientY: y,
+      // 处理器契约要求该方法存在；测试里不必真停传播，显式返回 undefined 免空函数体
+      stopPropagation: () => undefined
+    }) as unknown as PointerEvent
+
+  it('点已有框（第一击）：选中并把 id 写进联动单例（检查器列表据此高亮）', () => {
+    const overlay = makeOverlay()
+    const focus = useAnnotationFocus()
+    overlay.onBoxPointerDown(rectAnno, fakePointer())
+    expect(overlay.selectedId.value).toBe('anno-1')
+    expect(focus.activeAnnotationId.value).toBe('anno-1')
+  })
+
+  it('已选中再点：弹改词框，联动 id 保持不变', () => {
+    const overlay = makeOverlay()
+    const focus = useAnnotationFocus()
+    overlay.onBoxPointerDown(rectAnno, fakePointer())
+    overlay.onBoxPointerDown(rectAnno, fakePointer())
+    expect(overlay.editor.value?.mode).toBe('update')
+    expect(focus.activeAnnotationId.value).toBe('anno-1')
+    overlay.closeEditor()
+  })
+
+  it('点空白开拖：取消选中并清掉联动 id（拖太小则什么都不留）', () => {
+    const overlay = makeOverlay()
+    const focus = useAnnotationFocus()
+    overlay.onBoxPointerDown(rectAnno, fakePointer())
+    expect(focus.activeAnnotationId.value).toBe('anno-1')
+    // 在 (5,5) 按下 → 选中被取消、联动被清、开始拖拽；1 源图像素的拖拽判小，editor 不开
+    overlay.onRootPointerDown(fakePointer(5, 5))
+    expect(overlay.selectedId.value).toBeNull()
+    expect(focus.activeAnnotationId.value).toBeNull()
+    // 收掉拖拽（pointerup 落在 1px 外 = 太小），不把监听器和草稿框漏到下一条用例
+    window.dispatchEvent(new MouseEvent('pointerup', { clientX: 6, clientY: 6 }))
+    expect(overlay.editor.value).toBeNull()
+    expect(overlay.draft.value).toBeNull()
   })
 })

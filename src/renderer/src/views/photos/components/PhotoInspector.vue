@@ -20,6 +20,7 @@ import type { PhotoAnnotation } from '@shared/annotations'
 import { usePhotoData } from '../composables/usePhotoData'
 import { usePhotoActions } from '../composables/usePhotoActions'
 import { useWallpaper } from '../composables/useWallpaper'
+import { useAnnotationFocus } from '../composables/useAnnotationFocus'
 import { useContextMenu, type MenuItem } from '@composables/useContextMenu'
 import { useDialogs } from '../composables/useDialogs'
 import { useToast } from '@composables/useToast'
@@ -333,6 +334,26 @@ async function removeAnnotation(id: string): Promise<void> {
     toast.error('没能删除标注', { description: (error as Error).message })
   }
 }
+
+// —— 检查器 ↔ 预览 overlay 选中联动（写端在 useAnnotationOverlay / 读端在两端模板）——
+// 预览关着时 hover/click 只高亮列表项自身（不去开预览）；预览开着时共享单例里的 id
+// 同时点亮 overlay 对应框。反向：overlay 点框选中 → 这里高亮并滚到可见（检查器被
+// 预览弹窗盖住时滚动无害，关掉预览即可看到留痕的选中项）。
+const {
+  activeAnnotationId: focusedAnnotationId,
+  setAnnotationFocus,
+  clearAnnotationFocus
+} = useAnnotationFocus()
+const annotationListEl = ref<HTMLElement | null>(null)
+
+watch(focusedAnnotationId, async (id) => {
+  // 不在本素材的列表里（别的素材的标注 / 已清空）就不滚
+  if (!id || !annotations.value.some((a) => a.id === id)) return
+  await nextTick()
+  annotationListEl.value
+    ?.querySelector(`[data-annotation-id="${CSS.escape(id)}"]`)
+    ?.scrollIntoView({ block: 'nearest' })
+})
 
 // —— 六轮：来源链接（Eagle 检查器 http:// 字段）——
 
@@ -856,11 +877,16 @@ function pickWallpaper(event: MouseEvent): void {
         <!-- 标注 comments[]：素材级批注可直接增删；区域/时间点等 overlay 落地后再填 -->
         <div class="mt-3 border-t border-line-default pt-3">
           <p class="mb-2 text-xs text-fg-tertiary">标注（{{ annotations.length }}）</p>
-          <ul v-if="annotations.length" class="mb-2 flex flex-col gap-1">
+          <ul v-if="annotations.length" ref="annotationListEl" class="mb-2 flex flex-col gap-1">
             <li
               v-for="a in annotations"
               :key="a.id"
-              class="flex items-start gap-1.5 text-[11px] text-fg-secondary"
+              :data-annotation-id="a.id"
+              class="flex items-start gap-1.5 rounded px-0.5 py-0.5 text-[11px] text-fg-secondary transition-colors duration-fast"
+              :class="focusedAnnotationId === a.id ? 'bg-surface-hover text-fg-primary' : ''"
+              @mouseenter="setAnnotationFocus(a.id)"
+              @mouseleave="clearAnnotationFocus()"
+              @click="setAnnotationFocus(a.id)"
             >
               <span
                 v-if="annotationStamp(a)"

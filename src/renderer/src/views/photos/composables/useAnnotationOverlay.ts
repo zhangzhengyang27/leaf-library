@@ -13,6 +13,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { ComputedRef, Ref } from 'vue'
 import { useToast } from '@composables/useToast'
+import { useAnnotationFocus } from './useAnnotationFocus'
 import {
   normalizeAnnotationInput,
   ANNOTATION_MIN_SIDE,
@@ -132,6 +133,8 @@ export function useAnnotationOverlay(
   rootEl: Ref<HTMLElement | null>
 ): AnnotationOverlayApi {
   const toast = useToast()
+  // 检查器 ↔ overlay 选中联动：选中态变化写进共享单例，检查器列表据此高亮/滚动
+  const focus = useAnnotationFocus()
 
   /** overlay 根元素相对 stage 的盒子（贴住 img 的显示矩形；stage 是定位上下文） */
   const box = ref({ left: 0, top: 0, width: 0, height: 0 })
@@ -263,6 +266,7 @@ export function useAnnotationOverlay(
       // 小于最小边的拖拽当没发生（点按空白 = 取消选中）
       if (isRectTooSmall(rect)) {
         selectedId.value = null
+        focus.clearAnnotationFocus()
         return
       }
       editor.value = { mode: 'create', rect, body: '' }
@@ -289,6 +293,7 @@ export function useAnnotationOverlay(
     if (!(imgRect.width > 0) || !(imgRect.height > 0)) return
     const start = clientToImagePoint(e.clientX, e.clientY, imgRect, deps.nat().w, deps.nat().h)
     selectedId.value = null
+    focus.clearAnnotationFocus() // 点空白 = 取消选中，联动高亮一并撤掉
     beginDrag(start, imgRect)
   }
 
@@ -299,7 +304,10 @@ export function useAnnotationOverlay(
     if (editor.value?.annotationId === a.id) return // 正在这个框里改词，别打断输入
     if (editor.value) closeEditor()
     if (selectedId.value === a.id) openEditorFor(a)
-    else selectedId.value = a.id
+    else {
+      selectedId.value = a.id
+      focus.setAnnotationFocus(a.id) // 选中即联动：检查器列表项同步高亮/滚动
+    }
   }
 
   // —— 增删改（直接调 window.api，成功后 emit refresh 请父层重载，PhotoPreview 改动最小）——
@@ -315,6 +323,7 @@ export function useAnnotationOverlay(
         return
       }
       if (selectedId.value === id) selectedId.value = null
+      if (focus.activeAnnotationId.value === id) focus.clearAnnotationFocus()
       deps.onRefresh()
     } catch (error) {
       toast.error('没能删除标注', { description: (error as Error).message })

@@ -4,6 +4,7 @@
  *
  * 职责分界：状态机与坐标换算全在 useAnnotationOverlay（可单测），这里只画——
  *  - 已有 rect 标注：描边框 + hover 显示 body，点一下选中，已选中再点弹改词框；
+ *    检查器列表 hover/click 写入的聚焦 id 也会让对应框高亮（选中联动，见 useAnnotationFocus）；
  *  - 拖拽新建：任意方向拖出矩形（归一化），小于 ANNOTATION_MIN_SIDE 的拖拽忽略；
  *  - 内联输入框：Enter 保存（create/update）、Esc 取消，样式沿用预览层输入框 token。
  *
@@ -14,6 +15,7 @@
 import { ref } from 'vue'
 import type { PhotoAnnotation } from '@shared/annotations'
 import { useAnnotationOverlay } from '../composables/useAnnotationOverlay'
+import { useAnnotationFocus } from '../composables/useAnnotationFocus'
 
 const props = defineProps<{
   photoId: string
@@ -60,6 +62,11 @@ const overlay = useAnnotationOverlay(
 // composable 里的自动聚焦 watch 才能拿到这个元素）
 const { editorInputRef } = overlay
 
+// 检查器 ↔ overlay 选中联动（读端）：检查器列表 hover/click 写进共享单例的 id，
+// 这里按 id 高亮对应框（id 全库唯一，匹配上必是当前素材的框）。✕ 删除键仍只跟
+// overlay 自己的选中态走——聚焦高亮是「指路」，不该顺手给删除权。
+const { activeAnnotationId: focusedAnnotationId } = useAnnotationFocus()
+
 defineExpose({
   /** Esc 优先级第一级：输入框开着就先关输入框（返回是否关了） */
   cancelEditorIfOpen: overlay.cancelEditorIfOpen
@@ -76,13 +83,13 @@ defineExpose({
     data-annotation-overlay
     @pointerdown="overlay.onRootPointerDown"
   >
-    <!-- 已有标注框：hover 提示 body；选中态琥珀色，未选中天蓝细框 -->
+    <!-- 已有标注框：hover 提示 body；选中态与聚焦态（检查器列表联动）琥珀色，未选中天蓝细框 -->
     <div
       v-for="a in overlay.rectList.value"
       :key="a.id"
       class="group absolute border"
       :class="
-        overlay.selectedId.value === a.id
+        overlay.selectedId.value === a.id || focusedAnnotationId === a.id
           ? 'border-amber-400 bg-amber-400/15'
           : 'border-sky-400/90 bg-sky-400/5 hover:bg-sky-400/15'
       "
