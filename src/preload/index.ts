@@ -381,7 +381,9 @@ const api: API = {
     update: (id, photoId, input) =>
       ipcRenderer.invoke('annotations:update', String(id ?? ''), String(photoId ?? ''), input),
     remove: (id, photoId) =>
-      ipcRenderer.invoke('annotations:remove', String(id ?? ''), String(photoId ?? ''))
+      ipcRenderer.invoke('annotations:remove', String(id ?? ''), String(photoId ?? '')),
+    // M3 · 批量计数（卡片角标）：列表原样透传，逐 id 形状由主进程过 isAnnotationIdLike
+    count: (photoIds) => ipcRenderer.invoke('annotations:count', photoIds)
   },
   // P1：音频波形 + BPM（波形 400 B/条不随列表下发，打开预览时按 id 单独取一次）
   audio: {

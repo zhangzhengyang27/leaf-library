@@ -592,6 +592,8 @@ export interface API {
     create: (photoId: string, input: AnnotationInput) => Promise<AnnotationWriteResult>
     update: (id: string, photoId: string, input: AnnotationInput) => Promise<AnnotationWriteResult>
     remove: (id: string, photoId: string) => Promise<AnnotationWriteResult>
+    /** M3 · 批量计数（卡片角标用）：回 { photoId: 条数 }，无标注的 id 不在记录里 */
+    count: (photoIds: string[]) => Promise<Record<string, number>>
   }
   // P1：音频波形 + BPM（400 B 一条，不随列表下发，打开预览时按 id 单独取）
   audio: {

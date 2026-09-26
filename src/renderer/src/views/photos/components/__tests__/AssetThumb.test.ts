@@ -1,14 +1,18 @@
 // @vitest-environment happy-dom
-import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest'
+import { describe, it, expect, beforeAll, afterAll, afterEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import type { VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import AssetThumb from '../AssetThumb.vue'
+import { useLibraryTabs } from '../../../../stores/libraryTabs'
+import { usePhotoData } from '../../composables/usePhotoData'
 import type { Photo } from '../../../../types/photo'
 
 /**
  * 六期 Vue 组件测试：AssetThumb 六类卡片渲染分支。
  * （此前渲染层零自动化覆盖——待办清单低优先级项的起步）
  * ④-4 起 AssetThumb 读取全局显示配置（useLibraryTabs）——需激活 Pinia。
+ * M3 起另读 usePhotoData 的标注数缓存——徽标四态断言见文末。
  */
 
 function makePhoto(kind: Photo['kind'], overrides: Partial<Photo> = {}): Photo {
@@ -129,5 +133,62 @@ describe('AssetThumb · 六类卡片渲染', () => {
     })
     expect(wrapper.find('img').exists()).toBe(false)
     expect(wrapper.text()).toContain('PSD')
+  })
+})
+
+describe('AssetThumb · M3 标注数徽标（开关 × 条数 四态）', () => {
+  const apiMock = vi.fn()
+
+  beforeAll(() => {
+    setActivePinia(createPinia())
+    ;(globalThis as Record<string, unknown>).window = globalThis.window ?? {}
+    ;(window as unknown as Record<string, unknown>).api = {
+      photos: { fontInfo: apiMock }
+    }
+    apiMock.mockResolvedValue(null)
+  })
+
+  afterEach(() => {
+    // 模块单例不跨用例泄漏：开关复位、计数缓存清空
+    useLibraryTabs().active.display.showAnnotationCount = false
+    usePhotoData().annotationCounts.value = new Map()
+  })
+
+  /** 挂一张普通图片卡（徽标挂点与内容分支无关，图片卡足够覆盖） */
+  const mountThumb = (): VueWrapper<InstanceType<typeof AssetThumb>> =>
+    mount(AssetThumb, { props: { photo: makePhoto('image') }, global: globalStubs })
+
+  it('开关关 + 有标注 → 不渲染徽标（Eagle 默认关闭）', () => {
+    useLibraryTabs().active.display.showAnnotationCount = false
+    usePhotoData().annotationCounts.value = new Map([['p1', 3]])
+    const wrapper = mountThumb()
+    expect(wrapper.find('[data-test="annotation-count-badge"]').exists()).toBe(false)
+  })
+
+  it('开关开 + 无标注（0 条）→ 不渲染徽标', () => {
+    useLibraryTabs().active.display.showAnnotationCount = true
+    usePhotoData().annotationCounts.value = new Map()
+    const wrapper = mountThumb()
+    expect(wrapper.find('[data-test="annotation-count-badge"]').exists()).toBe(false)
+  })
+
+  it('开关开 + 正数 → 渲染徽标：显示条数，title 为「N 条标注」，缩略图不受影响', () => {
+    useLibraryTabs().active.display.showAnnotationCount = true
+    usePhotoData().annotationCounts.value = new Map([['p1', 3]])
+    const wrapper = mountThumb()
+    const badge = wrapper.find('[data-test="annotation-count-badge"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('3')
+    expect(badge.attributes('title')).toBe('3 条标注')
+    expect(wrapper.find('img').exists()).toBe(true)
+  })
+
+  it('开关开 + 恰 1 条 → 徽标显示 1（边界：不因 0/1 语义误隐藏）', () => {
+    useLibraryTabs().active.display.showAnnotationCount = true
+    usePhotoData().annotationCounts.value = new Map([['p1', 1]])
+    const wrapper = mountThumb()
+    const badge = wrapper.find('[data-test="annotation-count-badge"]')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toBe('1')
   })
 })

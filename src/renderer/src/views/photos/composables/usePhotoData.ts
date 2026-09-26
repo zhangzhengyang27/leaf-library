@@ -163,6 +163,8 @@ const loadMainPage = async (reset: boolean): Promise<void> => {
       mainCursor.value = page.nextCursor
       mainHasMore.value = page.nextCursor !== null
       mainPagedActive.value = true
+      // M3：本页落地即刷新该页标注数（≤500 条恰为一内片）
+      void refreshAnnotationCounts(page.items.map((p) => p.id))
       break
     }
   } catch (error) {
@@ -202,6 +204,8 @@ const loadPhotos = async (): Promise<void> => {
     // 顺带刷新侧栏固定项计数池（未分类/最近添加），避免导入/删除后计数陈旧
     void loadUnsorted()
     void loadRecent()
+    // M3：全量路径整库落地后刷标注数（内部有 2000 上限与分片，不放大成本）
+    void refreshAnnotationCounts(allPhotos.value.map((p) => p.id))
   } catch (error) {
     console.error('加载图片失败:', error)
     toast.error('加载图片失败', { description: (error as Error).message })
@@ -277,6 +281,8 @@ const loadTrashPage = async (reset: boolean): Promise<void> => {
     recycleCount.value = page.total
     trashCursor.value = page.nextCursor
     trashHasMore.value = page.nextCursor !== null
+    // M3：回收站窗口落地即刷新标注数
+    void refreshAnnotationCounts(page.items.map((p) => p.id))
   } catch (error) {
     console.error('加载回收站失败:', error)
   } finally {
@@ -335,6 +341,8 @@ const loadFavoritesPage = async (reset: boolean): Promise<void> => {
     favoritesPhotos.value = reset ? page.items : [...favoritesPhotos.value, ...page.items]
     favoritesCursor.value = page.nextCursor
     favoritesHasMore.value = page.nextCursor !== null
+    // M3：收藏窗口落地即刷新标注数
+    void refreshAnnotationCounts(page.items.map((p) => p.id))
   } catch (error) {
     console.error('加载收藏失败:', error)
   } finally {
@@ -363,6 +371,8 @@ const loadFolderPage = async (reset: boolean): Promise<void> => {
     folderPhotos.value = reset ? page.items : [...folderPhotos.value, ...page.items]
     folderCursor.value = page.nextCursor
     folderHasMore.value = page.nextCursor !== null
+    // M3：文件夹窗口落地即刷新标注数
+    void refreshAnnotationCounts(page.items.map((p) => p.id))
   } catch (error) {
     console.error('加载文件夹失败:', error)
   } finally {
@@ -417,6 +427,8 @@ const loadSearchPage = async (
     searchCursor.value = page.nextCursor
     searchHasMore.value = page.nextCursor !== null
     searchPoolQuery.value = query
+    // M3：搜索窗口落地即刷新标注数
+    void refreshAnnotationCounts(page.items.map((p) => p.id))
   } catch (error) {
     console.error('搜索失败:', error)
   } finally {
@@ -445,6 +457,8 @@ const refreshAlbumPhotos = async (albumId: string | null): Promise<void> => {
   if (!albumId) return
   try {
     albumPhotos.value = await window.api.photos.getAlbumPhotos(albumId)
+    // M3：相册池落地即刷新标注数
+    void refreshAnnotationCounts(albumPhotos.value.map((p) => p.id))
   } catch (error) {
     console.error('加载相册内容失败:', error)
   }
@@ -459,6 +473,8 @@ const refreshFolderPhotos = async (folderId: string | null): Promise<void> => {
   }
   try {
     folderPhotos.value = await window.api.photos.getFolderPhotos(folderId)
+    // M3：文件夹池（非分页回滚路径）落地即刷新标注数
+    void refreshAnnotationCounts(folderPhotos.value.map((p) => p.id))
   } catch (error) {
     console.error('加载文件夹内容失败:', error)
   }
@@ -468,14 +484,18 @@ const refreshSmartAlbumPhotos = async (smartId: string | null): Promise<void> =>
   if (!smartId) return
   try {
     smartAlbumPhotos.value = await window.api.photos.getSmartAlbumPhotos(smartId)
+    // M3：智能夹池落地即刷新标注数
+    void refreshAnnotationCounts(smartAlbumPhotos.value.map((p) => p.id))
   } catch (error) {
-    console.error('加载智能文件夹内容失败:', error)
+    console.error('加载智能文件夹失败:', error)
   }
 }
 
 const loadUnsorted = async (): Promise<void> => {
   try {
     unsortedPhotos.value = await window.api.photos.getUnsorted()
+    // M3：未分类池落地即刷新标注数
+    void refreshAnnotationCounts(unsortedPhotos.value.map((p) => p.id))
   } catch (error) {
     console.error('加载未分类失败:', error)
   }
@@ -484,6 +504,8 @@ const loadUnsorted = async (): Promise<void> => {
 const loadRecent = async (): Promise<void> => {
   try {
     recentPhotos.value = await window.api.photos.getRecent()
+    // M3：最近添加池落地即刷新标注数
+    void refreshAnnotationCounts(recentPhotos.value.map((p) => p.id))
   } catch (error) {
     console.error('加载最近添加失败:', error)
   }
@@ -539,6 +561,68 @@ function replacePhotoLocal(updated: Photo): void {
   photoRev.value++
 }
 
+// ── M3 · 卡片标注数徽标（photoId → 条数）──
+// 开关 display.showAnnotationCount（默认关，Eagle 同款默认）关闭时零 IPC；
+// 打开瞬间由 watch 补拉最近一次加载池的 id。计数与列表本体解耦：
+// 查询失败静默清空（徽标当作无数据），不弹错、绝不影响照片列表。
+const annotationCounts = ref(new Map<string, number>())
+/** 最近一次请求计数的 id 集合（非响应式，仅供开关打开瞬间补拉） */
+let lastCountIds: string[] = []
+/** 请求序号守卫：分页/切视图快速连续加载时只有最新一次调用可写结果，
+ *  过期响应整体丢弃（与 useVideoSubtitles 的「序号丢过期」同思路） */
+let annotationCountSeq = 0
+/** repo 一次 IN 查询至多吃 500 个 id（超出部分静默截断）→ 渲染层自行分片调用；
+ *  单次刷新再配 2000 总量上限，兜住「筛选激活走全量路径」时整库级别的 id 列表 */
+const COUNT_CHUNK_SIZE = 500
+const COUNT_FETCH_LIMIT = 2000
+
+/** 开关读取（惰性取 store：模块加载时 Pinia 尚未激活，不能顶层 useLibraryTabs） */
+function annotationBadgeEnabled(): boolean {
+  try {
+    return useLibraryTabs().active.display.showAnnotationCount
+  } catch {
+    return false
+  }
+}
+
+let offAnnotationCountToggle: (() => void) | null = null
+/** 开关打开瞬间补拉（幂等安装；模块级单例与 bindViewWatcher 同范式） */
+function ensureAnnotationCountToggleWatch(): void {
+  if (offAnnotationCountToggle) return
+  offAnnotationCountToggle = watch(
+    () => useLibraryTabs().active.display.showAnnotationCount,
+    (on) => {
+      if (on) void refreshAnnotationCounts(lastCountIds)
+    }
+  )
+}
+
+/**
+ * 拉取给定 id 的标注数并**合并**进缓存（不清掉其它池已取到的条目）。
+ * 各内容池加载落地后各调一次（loadMainPage/loadPhotos/各视图窗口…），
+ * 「页面数据就绪 → 取当前页 id 刷计数」的时机由这些调用点单源维护。
+ */
+const refreshAnnotationCounts = async (ids: readonly string[]): Promise<void> => {
+  ensureAnnotationCountToggleWatch()
+  const seq = ++annotationCountSeq
+  const target = Array.from(new Set(ids)).slice(0, COUNT_FETCH_LIMIT)
+  lastCountIds = target
+  if (!annotationBadgeEnabled()) return
+  try {
+    const merged = new Map(annotationCounts.value)
+    for (let i = 0; i < target.length; i += COUNT_CHUNK_SIZE) {
+      const rec = await window.api.annotations.count(target.slice(i, i + COUNT_CHUNK_SIZE))
+      if (seq !== annotationCountSeq) return // 期间已发起更新的一次调用，过期响应丢弃
+      for (const [id, n] of Object.entries(rec)) merged.set(id, n)
+    }
+    if (seq !== annotationCountSeq) return
+    annotationCounts.value = merged
+  } catch {
+    // 静默失败：本次当无数据（清空徽标缓存），不影响列表
+    if (seq === annotationCountSeq) annotationCounts.value = new Map()
+  }
+}
+
 export function usePhotoData(): {
   loading: typeof loading
   sections: typeof sections
@@ -557,6 +641,8 @@ export function usePhotoData(): {
   recentPhotos: typeof recentPhotos
   recentViewedPhotos: typeof recentViewedPhotos
   sidebarCounts: typeof sidebarCounts
+  annotationCounts: typeof annotationCounts
+  refreshAnnotationCounts: typeof refreshAnnotationCounts
   loadPhotos: typeof loadPhotos
   loadAlbums: typeof loadAlbums
   loadFolders: typeof loadFolders
@@ -614,6 +700,8 @@ export function usePhotoData(): {
     recentPhotos,
     recentViewedPhotos,
     sidebarCounts,
+    annotationCounts,
+    refreshAnnotationCounts,
     loadPhotos,
     loadAlbums,
     loadFolders,

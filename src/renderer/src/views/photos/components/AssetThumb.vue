@@ -1,118 +1,134 @@
 <template>
-  <!-- 位图/SVG/PDF：缩略图；生成失败（thumbStatus=2，如 PSD）→ 扩展名徽章兜底 -->
-  <div
-    v-if="photo.kind === 'image' && photo.thumbStatus === 2"
-    class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-rose-50 to-slate-200 dark:from-gray-800 dark:to-slate-900"
-  >
-    <span class="text-4xl">🖼️</span>
-    <span class="mt-1 max-w-[90%] truncate px-1 text-[10px] text-gray-500">
-      {{ fileExtension.toUpperCase() }}
-    </span>
-  </div>
-  <img
-    v-else-if="photo.kind === 'image'"
-    :key="thumbRetryKey"
-    :src="thumbFailed ? THUMB_PLACEHOLDER : thumbSrc"
-    :alt="photo.fileName"
-    :class="thumbSizeCls"
-    loading="lazy"
-    @error="handleImageError"
-  />
-
-  <!-- 视频：抽帧缩略图 + 悬停即播（六期） + 播放角标 + 时长 -->
-  <div
-    v-else-if="photo.kind === 'video'"
-    class="relative w-full h-full"
-    @mouseenter="hoverPlay = true"
-    @mouseleave="hoverPlay = false"
-  >
-    <video
-      v-if="hoverPlay"
-      :src="videoUrl"
-      muted
-      autoplay
-      loop
-      playsinline
-      class="w-full h-full object-cover"
-      @error="hoverPlay = false"
-    />
+  <!-- M3：整体包一层 relative 根容器——本组件模板是多分支碎片，各调用方容器未必
+       relative（列表行小缩略图/自由网格），徽标需要确定贴住缩略图自身的定位上下文 -->
+  <div class="relative h-full w-full">
+    <!-- 位图/SVG/PDF：缩略图；生成失败（thumbStatus=2，如 PSD）→ 扩展名徽章兜底 -->
+    <div
+      v-if="photo.kind === 'image' && photo.thumbStatus === 2"
+      class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-rose-50 to-slate-200 dark:from-gray-800 dark:to-slate-900"
+    >
+      <span class="text-4xl">🖼️</span>
+      <span class="mt-1 max-w-[90%] truncate px-1 text-[10px] text-gray-500">
+        {{ fileExtension.toUpperCase() }}
+      </span>
+    </div>
     <img
-      v-else
+      v-else-if="photo.kind === 'image'"
       :key="thumbRetryKey"
-      :src="thumbFailed ? THUMB_PLACEHOLDER : `thumb://256/${photo.id}`"
+      :src="thumbFailed ? THUMB_PLACEHOLDER : thumbSrc"
       :alt="photo.fileName"
       :class="thumbSizeCls"
       loading="lazy"
       @error="handleImageError"
     />
+
+    <!-- 视频：抽帧缩略图 + 悬停即播（六期） + 播放角标 + 时长 -->
+    <div
+      v-else-if="photo.kind === 'video'"
+      class="relative w-full h-full"
+      @mouseenter="hoverPlay = true"
+      @mouseleave="hoverPlay = false"
+    >
+      <video
+        v-if="hoverPlay"
+        :src="videoUrl"
+        muted
+        autoplay
+        loop
+        playsinline
+        class="w-full h-full object-cover"
+        @error="hoverPlay = false"
+      />
+      <img
+        v-else
+        :key="thumbRetryKey"
+        :src="thumbFailed ? THUMB_PLACEHOLDER : `thumb://256/${photo.id}`"
+        :alt="photo.fileName"
+        :class="thumbSizeCls"
+        loading="lazy"
+        @error="handleImageError"
+      />
+      <span
+        v-if="durationLabel"
+        class="absolute bottom-2.5 right-[5px] flex h-5 items-center rounded border border-black/20 bg-black/50 px-1 font-mono text-[12px] leading-none text-white"
+      >
+        {{ durationLabel }}
+      </span>
+    </div>
+
+    <!-- 音频卡片 -->
+    <div
+      v-else-if="photo.kind === 'audio'"
+      class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-800 dark:to-teal-900/60"
+    >
+      <span class="text-4xl">🎵</span>
+      <span v-if="durationLabel" class="mt-1 text-[10px] text-gray-500 dark:text-gray-300">
+        {{ durationLabel }}
+      </span>
+    </div>
+
+    <!-- 字体卡片 -->
+    <div
+      v-else-if="photo.kind === 'font'"
+      class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 dark:from-gray-800 dark:to-gray-900"
+    >
+      <span class="text-4xl font-serif text-gray-700 dark:text-gray-200">Aa</span>
+      <span class="mt-1 max-w-[90%] truncate px-1 text-[10px] text-gray-500">
+        {{ fontDisplayName }}
+      </span>
+    </div>
+
+    <!-- 书签卡片（六期）：🌐 + 标题 + 域名 -->
+    <div
+      v-else-if="photo.kind === 'bookmark'"
+      class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-sky-50 to-indigo-100 dark:from-gray-800 dark:to-indigo-900/60"
+    >
+      <span class="text-4xl">🌐</span>
+      <span
+        class="max-w-[90%] truncate px-1 text-[11px] font-medium text-gray-600 dark:text-gray-200"
+      >
+        {{ bookmarkTitle }}
+      </span>
+      <span class="max-w-[90%] truncate px-1 text-[10px] text-gray-400">{{ bookmarkDomain }}</span>
+    </div>
+
+    <!-- 十五轮 D16 + 二十一轮：文本内容预览卡（Eagle：暗色面板底 + 加粗标题 + 正文预览） -->
+    <div
+      v-else-if="isTextFile && textContent"
+      class="h-full w-full overflow-hidden bg-white p-2.5 dark:bg-surface-2"
+    >
+      <p class="mb-1 truncate text-[13px] font-bold leading-tight text-gray-800 dark:text-gray-100">
+        {{ textTitle }}
+      </p>
+      <pre
+        class="line-clamp-6 whitespace-pre-wrap break-all font-sans text-[11px] leading-snug text-gray-600 dark:text-gray-300"
+        >{{ textContent }}</pre
+      >
+    </div>
+
+    <!-- 兜底文件卡片 -->
+    <div
+      v-else
+      class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 dark:from-gray-800 dark:to-slate-900"
+    >
+      <span class="text-3xl">📄</span>
+      <span
+        class="mt-1 rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-gray-600 dark:text-gray-300"
+      >
+        {{ fileExtension }}
+      </span>
+    </div>
+
+    <!-- M3（Eagle「标注数」）：卡片标注计数徽标（开关开 + 条数 >0 才渲染）。
+         左下角：避让上缘的处理中/丢失角标与右缘的时长/预览钮；
+         底色圆角照 PhotoGridOverlay 既有角标范式（黑底白字小胶囊）。 -->
     <span
-      v-if="durationLabel"
-      class="absolute bottom-2.5 right-[5px] flex h-5 items-center rounded border border-black/20 bg-black/50 px-1 font-mono text-[12px] leading-none text-white"
+      v-if="showAnnotationBadge"
+      data-test="annotation-count-badge"
+      class="absolute bottom-1.5 left-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-black/55 px-1 font-mono text-[10px] leading-none text-white"
+      :title="`${annotationCount} 条标注`"
     >
-      {{ durationLabel }}
-    </span>
-  </div>
-
-  <!-- 音频卡片 -->
-  <div
-    v-else-if="photo.kind === 'audio'"
-    class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-emerald-50 to-teal-100 dark:from-gray-800 dark:to-teal-900/60"
-  >
-    <span class="text-4xl">🎵</span>
-    <span v-if="durationLabel" class="mt-1 text-[10px] text-gray-500 dark:text-gray-300">
-      {{ durationLabel }}
-    </span>
-  </div>
-
-  <!-- 字体卡片 -->
-  <div
-    v-else-if="photo.kind === 'font'"
-    class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-gray-50 to-gray-200 dark:from-gray-800 dark:to-gray-900"
-  >
-    <span class="text-4xl font-serif text-gray-700 dark:text-gray-200">Aa</span>
-    <span class="mt-1 max-w-[90%] truncate px-1 text-[10px] text-gray-500">
-      {{ fontDisplayName }}
-    </span>
-  </div>
-
-  <!-- 书签卡片（六期）：🌐 + 标题 + 域名 -->
-  <div
-    v-else-if="photo.kind === 'bookmark'"
-    class="flex h-full w-full flex-col items-center justify-center gap-1 bg-gradient-to-br from-sky-50 to-indigo-100 dark:from-gray-800 dark:to-indigo-900/60"
-  >
-    <span class="text-4xl">🌐</span>
-    <span
-      class="max-w-[90%] truncate px-1 text-[11px] font-medium text-gray-600 dark:text-gray-200"
-    >
-      {{ bookmarkTitle }}
-    </span>
-    <span class="max-w-[90%] truncate px-1 text-[10px] text-gray-400">{{ bookmarkDomain }}</span>
-  </div>
-
-  <!-- 十五轮 D16 + 二十一轮：文本内容预览卡（Eagle：暗色面板底 + 加粗标题 + 正文预览） -->
-  <div
-    v-else-if="isTextFile && textContent"
-    class="h-full w-full overflow-hidden bg-white p-2.5 dark:bg-surface-2"
-  >
-    <p class="mb-1 truncate text-[13px] font-bold leading-tight text-gray-800 dark:text-gray-100">
-      {{ textTitle }}
-    </p>
-    <pre
-      class="line-clamp-6 whitespace-pre-wrap break-all font-sans text-[11px] leading-snug text-gray-600 dark:text-gray-300"
-      >{{ textContent }}</pre
-    >
-  </div>
-
-  <!-- 兜底文件卡片 -->
-  <div
-    v-else
-    class="flex h-full w-full flex-col items-center justify-center bg-gradient-to-br from-slate-50 to-slate-200 dark:from-gray-800 dark:to-slate-900"
-  >
-    <span class="text-3xl">📄</span>
-    <span
-      class="mt-1 rounded bg-black/10 px-1.5 py-0.5 text-[10px] font-medium uppercase text-gray-600 dark:text-gray-300"
-    >
-      {{ fileExtension }}
+      {{ annotationCount }}
     </span>
   </div>
 </template>
@@ -123,6 +139,7 @@ import { CODE_EXTENSIONS, isFontFile, TEXT_EXTENSIONS } from '@shared/assetTypes
 import { mediaUrl } from '@renderer/utils/mediaPath'
 import type { Photo } from '../../../types/photo'
 import { useLibraryTabs } from '@renderer/stores/libraryTabs'
+import { usePhotoData } from '../composables/usePhotoData'
 
 const props = withDefaults(
   defineProps<{
@@ -278,6 +295,15 @@ const thumbSrc = computed(() => {
   }
   return `thumb://256/${props.photo.id}`
 })
+
+// —— M3（Eagle「标注数」）：卡片标注计数徽标 ——
+// 计数由 usePhotoData 在各内容池落地后经 annotations:count 批量拉取（模块单例），
+// 组件只读那张 Map，不逐卡发 IPC；开关关着或条数为 0 都不渲染（Eagle 默认关闭）。
+const { annotationCounts } = usePhotoData()
+const annotationCount = computed(() => annotationCounts.value.get(props.photo.id) ?? 0)
+const showAnnotationBadge = computed(
+  () => tabs.active.display.showAnnotationCount && annotationCount.value > 0
+)
 
 // —— 十五轮 D16：文本内容预览（kind=file/text 且文本扩展名；懒加载 + 组件级缓存；F4 起支持 text kind） ——
 // 代码类也走文本卡（用户拍板）：库里 3,547 条源码素材原先是一片相同的 📄+扩展名，

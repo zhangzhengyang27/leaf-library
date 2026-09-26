@@ -67,4 +67,16 @@ export function registerAnnotationIpcHandlers(): void {
       return { ok: false, error: sanitizeIpcMessage(error) }
     }
   })
+
+  /**
+   * M3 · 批量计数（卡片角标用）：入参 photo id 列表，回 `{ photoId: 条数 }` 记录，
+   * 没有标注的 id 不出现在记录里（渲染层 get 不到即不显示徽标）。
+   * id 先过 isAnnotationIdLike 再进 SQL；repo 内部按 500 一片切片查询——
+   * 超过 500 的部分被静默截断（不报错），渲染层应自行分片调用避免徽标丢失。
+   */
+  ipcMain.handle('annotations:count', (_e, ids: unknown): Record<string, number> => {
+    if (!Array.isArray(ids)) return {}
+    const valid = ids.filter((i) => isAnnotationIdLike(i))
+    return Object.fromEntries(photoAnnotationRepository.countByPhotoIds(valid))
+  })
 }

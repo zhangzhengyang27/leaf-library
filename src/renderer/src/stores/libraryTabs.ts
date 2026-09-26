@@ -54,6 +54,8 @@ export interface DisplayOptions {
   showExtensionLabel: boolean
   /** 显示标注（描述角标） */
   showAnnotation: boolean
+  /** M3（Eagle 显示开关「标注数」）：卡片渲染标注计数徽标（仅条数 >0 时显示） */
+  showAnnotationCount: boolean
   /** 文件夹视图包含子文件夹内容 */
   includeSubfolders: boolean
   /** 显示横栏（悬停信息栏） */
@@ -74,6 +76,8 @@ export function makeDisplayOptions(): DisplayOptions {
     // 二十一轮：角标渲染已随 Eagle 对齐移除，字段保留仅为旧持久化数据兼容
     showExtensionLabel: false,
     showAnnotation: false,
+    // M3：Eagle 该开关默认也不开；缺字段由 loadPersisted 的逐字段合并自动补默认值
+    showAnnotationCount: false,
     includeSubfolders: false,
     // 十八轮：Eagle 无卡片 hover 操作条，默认关闭
     showHoverBar: false,

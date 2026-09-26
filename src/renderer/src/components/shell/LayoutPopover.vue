@@ -114,6 +114,8 @@ const SWITCHES: Array<{ key: string; label: string }> = [
   { key: 'includeSubfolders', label: '显示子文件夹内容' },
   { key: '_showSidebar', label: '显示侧栏' },
   { key: 'showInspector', label: '显示检查器' },
+  // M3（Eagle「标注数」）：卡片标注计数徽标；走 DisplayOptions 通用布尔开关，无需特判
+  { key: 'showAnnotationCount', label: '标注数' },
   { key: 'autoPlayGif', label: 'GIF/WebP 自动播放' }
 ]
 function flagOf(key: string): boolean {
