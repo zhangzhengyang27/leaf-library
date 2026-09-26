@@ -1,6 +1,6 @@
 # Leaf · 数据库 Schema 设计文档
 
-> 版本：v15（migration 累计到 `025_source_path_index`；2026-09-25 与代码对齐）
+> 版本：v16（migration 累计到 `026_smart_album_parent`；2026-09-26 与代码对齐）
 > 引擎：SQLite via `better-sqlite3`
 > 模式：WAL + `foreign_keys = ON` + `synchronous = NORMAL`
 > 路径：`<userData>/leaf.db`（多资源库后为 `<库路径>/library.db`）
@@ -96,7 +96,7 @@ PRAGMA temp_store = MEMORY;      -- 临时表/索引放内存
 | 3   | `photo_albums`             | 数十                   | Photos     | 001                                    |
 | 4   | `photo_album_items`        | 数千                   | Photos     | 001                                    |
 | 5   | `photo_tags`               | 数千                   | Photos     | 001 → 014 绑定字典                     |
-| 30  | `photo_smart_albums`       | 数十                   | Photos     | 014                                    |
+| 30  | `photo_smart_albums`       | 数十                   | Photos     | 014 → 026 父级嵌套                     |
 | 6   | `rec_recordings`           | 数百                   | Recording  | 001                                    |
 | 7   | `rec_markers`              | 数千                   | Recording  | 001                                    |
 | 8   | `rec_clips`                | 数百                   | Recording  | 001                                    |
@@ -177,6 +177,10 @@ Nominatim 反地理编码缓存（六期）：key 为 2 位小数量化坐标（
 Eagle 式智能收藏夹：`rules_json` 存条件集（标签 id / 收藏 / 最低评分 / 格式 / 最小宽高 /
 时间区间 / 关键词），查询时由 `smartAlbumRules.ts` 编译为 photo_photos 上的 WHERE。
 软删除 `deleted_at`。
+`parent_id`（026，D-022 M4）：父智能夹 id，NULL=根级。智能夹树形嵌套，求值语义为
+**子级命中 = 子级规则 AND 全部祖先规则**（Eagle 口径；空规则父级不约束）。不加外键，
+删除父夹不级联——子夹留存、按孤儿挂根级展示；环（父级=自己/自己的后代）在
+SmartAlbumRepository 写路径上拒绝。
 
 #### `photo_vectors`（021）
 
@@ -328,7 +332,7 @@ migration 版本表。`version` 主键，`applied_at` 是落地时间。
 
 `database.ts` 把每个 migration 包在 `db.transaction()` 里，单条失败整个回滚。
 
-### 8.4 迁移历史（独立版 001 → 025）
+### 8.4 迁移历史（独立版 001 → 026）
 
 > 独立版从工具箱拆出时，schema 取自母项目共享链 001→017 演进后的**最终累计状态**，
 > 由 `001_library_init` 一次性建齐——所以下表 001 是"结果快照"，002 起才是本仓自己的演进。
@@ -360,6 +364,7 @@ migration 版本表。`version` 主键，`applied_at` 是落地时间。
 | 023  | `023_photo_annotations.ts`        | 标注 comments[]（Eagle 招牌差异）                                                                    |
 | 024  | `024_audio_facts.ts`              | 音频波形（400B 降采样包络）+ BPM 事实列                                                              |
 | 025  | `025_source_path_index.ts`        | `source_path` 索引（D-020 重复导入判定）                                                             |
+| 026  | `026_smart_album_parent.ts`       | 智能夹树形嵌套：`photo_smart_albums.parent_id` + 索引（D-022 M4）                                     |
 
 > 字段细节以每个 migration 文件为准；本文档 §5 模块说明反映**最新累计**状态。
 > 2026-09-25 对齐前本文档停在 v11/017，且 014–017 三行还是母项目时代的旧条目——已按实际文件重写。

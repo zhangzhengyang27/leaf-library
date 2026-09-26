@@ -82,6 +82,8 @@ export interface SmartAlbum {
   id: string
   name: string
   rules: SmartAlbumRules
+  /** M4（026）：父智能夹 id；null = 根级（树形嵌套，求值时子级自动 AND 祖先链） */
+  parentId: string | null
   sortOrder: number
   createdAt: number
   updatedAt: number

@@ -25,7 +25,7 @@ import { database } from '../database'
 import { now, chunkIds } from '../repo'
 import { decodePageCursor, encodePageCursor } from '../pageCursor'
 import { TagRepository } from './TagRepository'
-import { buildSmartAlbumWhere, type SmartAlbumRules } from '../smartAlbumRules'
+import { buildSmartAlbumWhere, type CompiledWhere, type SmartAlbumRules } from '../smartAlbumRules'
 import { extOfFileName, hueBucketOf } from '../../../shared/colorHue'
 import { clusterDuplicates, findSimilar, type PhashItem } from '../photoSimilarity'
 import { kindOfExt, DOC_TEXT_QUERY_EXTENSIONS, type AssetKind } from '@shared/assetTypes'
@@ -1786,10 +1786,23 @@ export class PhotoRepository {
 
   // —— 智能收藏夹 ——
 
-  queryByRules(rules: SmartAlbumRules): Photo[] {
+  /**
+   * 智能夹取数。M4（D-022）起支持嵌套：ancestorWheres 是祖先链各夹独立编译出的
+   * WHERE 片段（buildSmartAlbumWhere 产物），按 AND 求交——Eagle 口径「子级命中 =
+   * 子级规则 AND 全部祖先规则」。片段各自独立编译（各自带参数），拼回时占位符
+   * 顺序 = params 拼接顺序，绑定参数不会串位；祖先里空规则编译为 1=1，天然不约束。
+   */
+  queryByRules(rules: SmartAlbumRules, ancestorWheres: CompiledWhere[] = []): Photo[] {
     const { whereSql, params } = buildSmartAlbumWhere(rules)
-    let photos = this.getBase(`deleted_at IS NULL AND (${whereSql})`, 'imported_at DESC', params)
-    // 色相桶需在 JS 侧按主色计算过滤（SQLite 不便计算色相）
+    const allParams = [...params, ...ancestorWheres.flatMap((w) => w.params)]
+    const conds = [
+      'deleted_at IS NULL',
+      `(${whereSql})`,
+      ...ancestorWheres.map((w) => `(${w.whereSql})`)
+    ]
+    let photos = this.getBase(conds.join(' AND '), 'imported_at DESC', allParams)
+    // 色相桶需在 JS 侧按主色计算过滤（SQLite 不便计算色相）；
+    // 祖先维的颜色约束已由各自的 SQL 谓词（color_hue = ?）下推，无需重复
     if (rules.colorHue) {
       photos = photos.filter((p) => hueBucketOf(p.colorDominant) === rules.colorHue)
     }

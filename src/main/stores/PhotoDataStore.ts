@@ -7,7 +7,11 @@ import {
 import { smartAlbumRepository, type SmartAlbum } from '../db/repos/SmartAlbumRepository'
 import { albumRepository, type Album } from '../db/repos/AlbumRepository'
 import { photoFolderRepository, type PhotoFolder } from '../db/repos/PhotoFolderRepository'
-import type { SmartAlbumRules } from '../db/smartAlbumRules'
+import {
+  buildSmartAlbumWhere,
+  type CompiledWhere,
+  type SmartAlbumRules
+} from '../db/smartAlbumRules'
 import { activeRoot, activeSubdir } from '../modules/libraryRegistry'
 import {
   copyFileSync,
@@ -588,13 +592,17 @@ export class PhotoDataStore {
     return smartAlbumRepository.list()
   }
 
-  createSmartAlbum(name: string, rules: SmartAlbumRules): SmartAlbum {
-    return smartAlbumRepository.create(name, stripSemanticSnapshot(rules))
+  createSmartAlbum(
+    name: string,
+    rules: SmartAlbumRules,
+    parentId?: string | null
+  ): SmartAlbum {
+    return smartAlbumRepository.create(name, stripSemanticSnapshot(rules), parentId)
   }
 
   updateSmartAlbum(
     id: string,
-    updates: { name?: string; rules?: SmartAlbumRules }
+    updates: { name?: string; rules?: SmartAlbumRules; parentId?: string | null }
   ): SmartAlbum | undefined {
     if (!updates.rules) return smartAlbumRepository.update(id, updates)
     return smartAlbumRepository.update(id, {
@@ -603,15 +611,44 @@ export class PhotoDataStore {
     })
   }
 
+  /** M4：移动智能夹到目标父级（null = 根级）；环防护在 repo（中文错误直出 toast） */
+  moveSmartAlbum(id: string, parentId: string | null): SmartAlbum | undefined {
+    return smartAlbumRepository.moveTo(id, parentId)
+  }
+
   deleteSmartAlbum(id: string): boolean {
     return smartAlbumRepository.remove(id)
   }
 
-  /** 语义条件（若有）在进 SQL 前解析成 id 快照；模型未就绪时按 fail-closed 出空 */
+  /**
+   * M4 嵌套智能夹：把「待定父级 + 排除自己」的祖先链逐夹编译成 WHERE 片段。
+   * 每夹独立走 buildSmartAlbumWhere（v2 嵌套组/正则照常编译，组深度/节点数闸
+   * 逐夹生效——祖先链是另一维度，不占 SMART_ALBUM_MAX_DEPTH 名额）；
+   * 语义条件逐夹解析（祖先带 semanticQuery 时同样 fail-closed）；
+   * 空规则父级编译为 1=1，天然不约束。祖先链深度不设上限（写路径环防护已挡死成环）。
+   */
+  private async ancestorWheresFor(
+    parentId: string | null | undefined,
+    excludeId?: string
+  ): Promise<CompiledWhere[]> {
+    const chain = smartAlbumRepository.getAncestorChain(parentId, excludeId)
+    const parts: CompiledWhere[] = []
+    for (const ancestor of chain) {
+      parts.push(buildSmartAlbumWhere(await applySemanticQuery(ancestor.rules)))
+    }
+    return parts
+  }
+
+  /**
+   * 打开智能夹取数（也是侧栏内容的「计数通道」：打开父夹看到的数量 = 父夹自身
+   * 规则的命中，不叠加任何子级——Eagle 口径如此）。
+   * M4：子级命中 = 子级规则 AND 全部祖先规则（逐夹编译后求交）。
+   */
   async getSmartAlbumPhotos(id: string): Promise<Photo[]> {
     const album = smartAlbumRepository.getById(id)
     if (!album) return []
-    return photoRepository.queryByRules(await applySemanticQuery(album.rules))
+    const ancestorWheres = await this.ancestorWheresFor(album.parentId, album.id)
+    return photoRepository.queryByRules(await applySemanticQuery(album.rules), ancestorWheres)
   }
 
   // —— 手动相册（四期） ——
@@ -831,9 +868,22 @@ export class PhotoDataStore {
     return count
   }
 
-  /** 规则试运行（编辑智能文件夹时实时预览结果数） */
-  async queryPhotosByRules(rules: SmartAlbumRules): Promise<Photo[]> {
-    return photoRepository.queryByRules(await applySemanticQuery(rules))
+  /**
+   * 规则试运行（编辑智能文件夹时实时预览结果数）。
+   * M4：scope 带待定父级时预览按「子级 AND 该父级的祖先链」口径——与保存后打开
+   * 该夹看到的一致（编辑既有夹时 excludeId 把自己摘出链条，防自引用）；
+   * 不带 scope 走纯规则求值（旧调用方语义不变）。
+   * 语义条件（若有）在进 SQL 前解析成 id 快照；模型未就绪时按 fail-closed 出空。
+   */
+  async queryPhotosByRules(
+    rules: SmartAlbumRules,
+    scope?: { parentId?: string | null; excludeId?: string }
+  ): Promise<Photo[]> {
+    if (!scope) {
+      return photoRepository.queryByRules(await applySemanticQuery(rules))
+    }
+    const ancestorWheres = await this.ancestorWheresFor(scope.parentId, scope.excludeId)
+    return photoRepository.queryByRules(await applySemanticQuery(rules), ancestorWheres)
   }
 
   // —— 以图搜图 / 相似查重（二期） ——

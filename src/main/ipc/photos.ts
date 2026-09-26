@@ -471,13 +471,20 @@ export function registerPhotoIpcHandlers(
 
     // —— 智能收藏夹 ——
     listSmartAlbums: () => photoStore.listSmartAlbums(),
-    createSmartAlbum: (name: string, rules: SmartAlbumRules) =>
-      photoStore.createSmartAlbum(name, rules),
-    updateSmartAlbum: (id: string, updates: { name?: string; rules?: SmartAlbumRules }) =>
+    createSmartAlbum: (name: string, rules: SmartAlbumRules, parentId?: string | null) =>
+      photoStore.createSmartAlbum(name, rules, parentId),
+    updateSmartAlbum: (id: string, updates: { name?: string; rules?: SmartAlbumRules; parentId?: string | null }) =>
       photoStore.updateSmartAlbum(id, updates),
+    // M4：侧栏右键「移动到…」（环防护在 repo，中文错误经 IPC 直出渲染层 toast）
+    moveSmartAlbum: (id: string, parentId: string | null) =>
+      photoStore.moveSmartAlbum(id, parentId),
     deleteSmartAlbum: (id: string) => photoStore.deleteSmartAlbum(id),
     getSmartAlbumPhotos: (id: string) => photoStore.getSmartAlbumPhotos(id),
-    queryPhotosByRules: (rules: SmartAlbumRules) => photoStore.queryPhotosByRules(rules),
+    // M4：scope 带「待定父级」时实时计数按「子级 AND 祖先链」口径
+    queryPhotosByRules: (
+      rules: SmartAlbumRules,
+      scope?: { parentId?: string | null; excludeId?: string }
+    ) => photoStore.queryPhotosByRules(rules, scope),
 
     // —— 以图搜图 / 相似查重（二期） ——
     findSimilar: (photoId: string, threshold?: number) =>

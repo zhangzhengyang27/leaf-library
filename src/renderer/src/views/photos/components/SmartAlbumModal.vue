@@ -18,6 +18,25 @@
         />
       </div>
 
+      <!-- M4 嵌套智能夹：父级选择（根级或任意非自身后代的智能夹）。
+           求值语义：子级命中 = 子级规则 AND 全部祖先规则（Eagle 口径）；
+           环在这里由候选集排除，主进程 repo 再兜一道 -->
+      <div>
+        <label class="mb-1 block text-xs text-fg-muted">父级智能夹</label>
+        <select
+          v-model="parentAlbumId"
+          class="h-8 w-full rounded-md border border-line-default bg-surface-1 px-2 text-sm text-fg-primary focus:outline-none focus:border-brand-500"
+        >
+          <option :value="null">（根级 · 不嵌套）</option>
+          <option v-for="c in parentCandidates" :key="c.id" :value="c.id">
+            {{ '\u3000'.repeat(c.depth) }}{{ c.name }}
+          </option>
+        </select>
+        <p v-if="parentAlbumId" class="mt-1 text-[11px] text-fg-muted">
+          该夹将嵌套在父级之下：需要同时满足父级（及其全部上级）的规则才会命中。
+        </p>
+      </div>
+
       <!-- 标签（全部包含） -->
       <div v-if="availableTags.length > 0">
         <label class="mb-1 block text-xs text-fg-muted">
@@ -767,6 +786,39 @@ const toast = useToast()
 const ALL_FORMATS = FORMAT_FILTER_EXTENSIONS
 
 const name = ref('')
+// ── M4 嵌套智能夹：父级选择（null = 根级）。候选集排除自身与自身后代（防环，
+//    与主进程 assertValidParent 同口径双保险）；实时计数按「子级 AND 待定父级祖先链」
+const parentAlbumId = ref<string | null>(null)
+const allSmartAlbums = ref<SmartAlbum[]>([])
+const parentCandidates = computed<Array<{ id: string; name: string; depth: number }>>(() => {
+  const byId = new Map(allSmartAlbums.value.map((a) => [a.id, a]))
+  const selfId = props.album?.id ?? null
+  const depthOf = (start: string | null): number => {
+    let d = 0
+    let pid: string | null | undefined = start
+    const seen = new Set<string>()
+    while (pid && !seen.has(pid)) {
+      seen.add(pid)
+      d += 1
+      pid = byId.get(pid)?.parentId ?? null
+    }
+    return d
+  }
+  const isSelfDescendant = (candidateId: string): boolean => {
+    if (!selfId) return false
+    let pid: string | null | undefined = candidateId
+    const seen = new Set<string>()
+    while (pid && !seen.has(pid)) {
+      if (pid === selfId) return true // 候选是自己的后代（或自己）→ 不能当父级
+      seen.add(pid)
+      pid = byId.get(pid)?.parentId ?? null
+    }
+    return false
+  }
+  return allSmartAlbums.value
+    .filter((a) => a.id !== selfId && !isSelfDescendant(a.id))
+    .map((a) => ({ id: a.id, name: a.name, depth: depthOf(a.parentId) }))
+})
 const selectedTagIds = ref<string[]>([])
 const selectedKinds = ref<string[]>([])
 const favorite = ref(false)
@@ -1272,6 +1324,8 @@ onMounted(async () => {
   const src: SmartAlbumRules | null = a ? a.rules : (props.presetRules ?? null)
   if (src) {
     name.value = a?.name ?? ''
+    // M4：编辑既有夹时回填其父级（null = 根级）
+    parentAlbumId.value = a?.parentId ?? null
     selectedTagIds.value = src.tags ?? []
     selectedKinds.value = src.kinds ?? []
     favorite.value = src.favorite ?? false
@@ -1347,6 +1401,12 @@ onMounted(async () => {
   try {
     const all = await window.api.photos.listPhotoFolders()
     folders.value = all.map((f) => ({ id: f.id, name: f.name }))
+  } catch {
+    /* ignore */
+  }
+  // M4 父级候选（排除自身/自身后代见 parentCandidates）
+  try {
+    allSmartAlbums.value = await window.api.photos.listSmartAlbums()
   } catch {
     /* ignore */
   }
@@ -1454,18 +1514,23 @@ const currentRules = computed<SmartAlbumRules>(() => {
 // 条件变化时实时试跑匹配数量（防抖 300ms + 序号守卫：
 // 慢的旧请求回来时不得覆盖新一轮计数；卸载后定时器不再触发全库查询；
 // 引擎拒编译（超限/结构损坏）时把错误念在计数行上，而不是永远「正在计算」）
+// M4：父级选择也进依赖——计数按「当前规则 AND 待定父级的祖先链」口径，
+// 与保存后打开该夹看到的一致（编辑既有夹时 excludeId 把自己摘出链条）
 const countError = ref('')
 let debounceTimer: number | undefined
 let rulesQuerySeq = 0
 watch(
-  currentRules,
+  [currentRules, parentAlbumId],
   () => {
     window.clearTimeout(debounceTimer)
     const seq = ++rulesQuerySeq
     debounceTimer = window.setTimeout(async () => {
       if (seq !== rulesQuerySeq) return
       try {
-        const result = await window.api.photos.queryPhotosByRules(currentRules.value)
+        const result = await window.api.photos.queryPhotosByRules(currentRules.value, {
+          parentId: parentAlbumId.value,
+          excludeId: props.album?.id
+        })
         if (seq !== rulesQuerySeq) return
         matchCount.value = result.length
         countError.value = ''
@@ -1519,11 +1584,13 @@ async function handleSave(): Promise<void> {
     if (props.album) {
       await window.api.photos.updateSmartAlbum(props.album.id, {
         name: trimmed,
-        rules: currentRules.value
+        rules: currentRules.value,
+        // M4：父级随保存下发（null = 移回根级；环由主进程 assertValidParent 拒绝）
+        parentId: parentAlbumId.value
       })
       toast.success('智能文件夹已更新')
     } else {
-      await window.api.photos.createSmartAlbum(trimmed, currentRules.value)
+      await window.api.photos.createSmartAlbum(trimmed, currentRules.value, parentAlbumId.value)
       toast.success('智能文件夹已创建')
     }
     emit('saved')

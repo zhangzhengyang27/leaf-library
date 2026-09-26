@@ -736,14 +736,29 @@ async function toggleClipboardWatch(on: boolean): Promise<void> {
 
 // ── AI 助手（DeepSeek 文本模型，D-017）──
 
-const aiCfg = ref<{ configured: boolean; model: string; hint: string } | null>(null)
+const aiCfg = ref<{
+  configured: boolean
+  model: string
+  hint: string
+  vision: { model: string; endpoint: string; enabled: boolean; configured: boolean }
+} | null>(null)
 const aiKeyInput = ref('')
 const aiBusy = ref(false)
 const aiTest = ref('')
+// 视觉打标（M3）：与文本档共用 ai.config 一次拉回
+const visionModelInput = ref('')
+const visionEndpointInput = ref('')
+const visionEnabledInput = ref(false)
+const visionBusy = ref(false)
+const visionTest = ref('')
 
 async function loadAiConfig(): Promise<void> {
   try {
     aiCfg.value = await window.api.ai.config()
+    // 视觉档（M3）与文本档同源回填：每次进设置页都以主进程配置为准
+    visionModelInput.value = aiCfg.value.vision.model
+    visionEndpointInput.value = aiCfg.value.vision.endpoint
+    visionEnabledInput.value = aiCfg.value.vision.enabled
   } catch {
     aiCfg.value = null
   }
@@ -779,6 +794,34 @@ async function onClearAiKey(): Promise<void> {
   } else {
     useToast().error('清除失败', { description: r.error })
   }
+}
+
+// ── AI 助手 · 视觉打标（M3 看图工作流：OpenAI 兼容端点 + DeepSeek 预设）──
+
+async function onSaveVision(): Promise<void> {
+  visionBusy.value = true
+  visionTest.value = ''
+  const r = await window.api.ai.setVisionConfig({
+    model: visionModelInput.value,
+    endpoint: visionEndpointInput.value,
+    enabled: visionEnabledInput.value
+  })
+  if (r.ok) {
+    useToast().success('已保存视觉打标配置', {
+      description: '图片只以库内缩略图出库（≤768px / 200KB），原图不出库'
+    })
+    await loadAiConfig()
+  } else {
+    useToast().error('保存失败', { description: r.error })
+  }
+  visionBusy.value = false
+}
+
+async function onTestVision(): Promise<void> {
+  visionBusy.value = true
+  const r = await window.api.ai.testVision()
+  visionTest.value = r.ok ? `视觉模型回复：${r.text.trim().slice(0, 40)}` : `失败：${r.error}`
+  visionBusy.value = false
 }
 
 // ── 插件 ──
@@ -1866,6 +1909,71 @@ onBeforeUnmount(() => {
                 >
                 <span v-if="aiTest" class="min-w-0 flex-1 truncate text-[11px] text-fg-tertiary">
                   {{ aiTest }}
+                </span>
+              </div>
+            </section>
+
+            <!-- 视觉打标（M3 看图工作流）：OpenAI 兼容端点 + DeepSeek 预设 -->
+            <section class="mb-4 rounded-lg border border-line-subtle bg-surface-2 p-4">
+              <div class="flex items-center gap-2">
+                <h3 class="text-xs font-medium text-fg-primary">视觉打标</h3>
+                <UBadge v-if="aiCfg?.vision.configured" variant="success">已配置</UBadge>
+                <UBadge v-else variant="neutral">未配置</UBadge>
+              </div>
+              <p class="mt-2 text-[11px] leading-5 text-fg-tertiary">
+                让模型看图生成摘要与标签（右键「AI 摘要与标签」）。DeepSeek 官方 API
+                暂时只有文本，这里接任何 OpenAI 兼容视觉端点——如 SiliconFlow 托管的
+                DeepSeek-VL2；官方视觉档上线后改端点/模型名即可。沿用上方同一把 API
+                Key；图片只以库内缩略图出库（重编码 ≤768px / 200KB），原图不出库。
+              </p>
+              <div class="mt-3 grid grid-cols-[64px_1fr] items-center gap-x-3 py-1">
+                <span class="text-xs text-fg-secondary">启用</span>
+                <div class="flex items-center gap-2">
+                  <USwitch v-model="visionEnabledInput" />
+                  <span class="text-[11px] text-fg-tertiary">开启后位图素材出现看图打标入口</span>
+                </div>
+              </div>
+              <div class="mt-1 grid grid-cols-[64px_1fr] items-center gap-x-3 py-1">
+                <span class="text-xs text-fg-secondary">模型名</span>
+                <input
+                  v-model="visionModelInput"
+                  type="text"
+                  placeholder="如 deepseek-vl2（留空 = 未配置视觉）"
+                  autocomplete="off"
+                  class="h-8 min-w-0 rounded-md border border-line-default bg-surface-0 px-2 text-xs text-fg-primary focus:border-brand-500 focus:outline-none"
+                />
+              </div>
+              <div class="mt-1 grid grid-cols-[64px_1fr] items-center gap-x-3 py-1">
+                <span class="text-xs text-fg-secondary">端点</span>
+                <input
+                  v-model="visionEndpointInput"
+                  type="text"
+                  placeholder="留空用 DeepSeek 主端点；托管平台填 base URL（如 https://api.siliconflow.cn/v1）"
+                  autocomplete="off"
+                  class="h-8 min-w-0 rounded-md border border-line-default bg-surface-0 px-2 text-xs text-fg-primary focus:border-brand-500 focus:outline-none"
+                />
+              </div>
+              <div class="mt-2 flex items-center gap-2">
+                <UButton
+                  size="sm"
+                  :loading="visionBusy"
+                  :disabled="!aiCfg?.configured"
+                  @click="onSaveVision"
+                  >保存</UButton
+                >
+                <UButton
+                  size="sm"
+                  variant="secondary"
+                  :loading="visionBusy"
+                  :disabled="!aiCfg?.vision.configured"
+                  @click="onTestVision"
+                  >测试连接</UButton
+                >
+                <span
+                  v-if="visionTest"
+                  class="min-w-0 flex-1 truncate text-[11px] text-fg-tertiary"
+                >
+                  {{ visionTest }}
                 </span>
               </div>
             </section>

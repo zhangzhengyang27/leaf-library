@@ -293,6 +293,8 @@ import { usePhotoClipboard } from './composables/usePhotoClipboard'
 import { usePhotoSelection } from './composables/usePhotoSelection'
 import { useDeepLink } from './composables/useDeepLink'
 import { buildItemLink, type DeepLinkTarget } from '@shared/deepLink'
+import { isTextFile } from '@shared/assetTypes'
+import { hasAiWorthyText } from '@shared/ocrText'
 // 引擎清单与主进程同一份（纯模块，两侧不跑偏）；跨层相对路径，保持 main/utils 为唯一出处
 import { REVERSE_SEARCH_ENGINES } from '../../../../main/utils/reverseSearch'
 import { MODE_LABEL, useWallpaper } from './composables/useWallpaper'
@@ -313,6 +315,9 @@ const search = usePhotoSearch()
 const scan = useDuplicateScan()
 const actions = usePhotoActions()
 const aiBatch = useAiBatch()
+// M3 视觉打标：视觉模型是否已配置（设置 › AI 助手 › 视觉打标）。
+// 挂载时拉一次；设置页与本视图分属两个路由，返回时重挂载会重新拉。
+const visionReady = ref(false)
 const preview = usePreview()
 const keyboard = usePhotoKeyboard()
 const { pendingConfirm } = useDialogs()
@@ -503,6 +508,24 @@ function onLoadMore(): void {
   data.loadMoreMain()
 }
 
+/**
+ * M3 视觉链入口门禁（D-017 教训的看图版）：位图素材只有「视觉模型已配置」才出现
+ * AI 入口——未配置就维持不出现，模型看不到图还摆按钮就是在诱导瞎猜。
+ * 有文字信号的素材（正文/OCR/纯文本）不受影响，仍走文本链；判定口径与
+ * PhotoPreview 的 hasTextSignal 一致，主进程 suggestVisionMeta 里还有第二道闸。
+ */
+function aiEntryVisible(ids: string[]): boolean {
+  const photos = byIds(ids)
+  if (!photos.some((p) => p.kind === 'image') || visionReady.value) return true
+  return photos.some(
+    (p) =>
+      p.kind === 'text' ||
+      isTextFile(p.fileName) ||
+      hasAiWorthyText(p.docText) ||
+      hasAiWorthyText(p.ocrText)
+  )
+}
+
 function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: number }): void {
   if (filters.isMapView.value) return
   const inTrash = filters.isTrashView.value
@@ -619,11 +642,15 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
       label: ids.length > 1 ? `批量重命名（${ids.length} 项）…` : '批量重命名…',
       icon: 'context-menu/ic-rename'
     },
-    {
-      key: 'ai-batch-meta',
-      label: `AI 摘要与标签（${ids.length} 项）…`,
-      icon: 'context-menu/ic-ai'
-    },
+    ...(aiEntryVisible(ids)
+      ? [
+          {
+            key: 'ai-batch-meta',
+            label: `AI 摘要与标签（${ids.length} 项）…`,
+            icon: 'context-menu/ic-ai'
+          } as MenuItem
+        ]
+      : []),
     { key: 'rename', label: '重命名 ⌘R', icon: 'context-menu/ic-rename', disabled: !isSingle },
     // F1（Eagle）：剪切 → 目标文件夹 ⌘V 粘贴移动
     { key: 'cut', label: '剪切 ⌘X', icon: 'context-menu/ic-file-copy' },
@@ -1054,7 +1081,19 @@ async function handleMenuAction(rawKey: string, ids: string[], photo: Photo): Pr
       // 批量重命名弹窗基于当前选中集（BatchRenameModal 消费 selection）
       batchRenameOpen.value = true
     } else if (key === 'ai-batch-meta') {
-      aiBatch.run(ids)
+      // M3：位图走视觉链（每条带一次缩略图请求），其余素材并到文本链，两段串行、
+      // 用量合并报；视觉未配置时维持文本链现状（位图会被「无文字信号」跳过）。
+      const bitmapIds = byIds(ids)
+        .filter((p) => p.kind === 'image')
+        .map((p) => p.id)
+      if (bitmapIds.length && visionReady.value) {
+        aiBatch.runVision(
+          bitmapIds,
+          ids.filter((id) => !bitmapIds.includes(id))
+        )
+      } else {
+        aiBatch.run(ids)
+      }
     } else if (key === 'new-folder-with') {
       requestPrompt({
         title: ids.length > 1 ? `用所选项目新建文件夹（${ids.length} 项）` : '用所选项目新建文件夹',
@@ -1386,6 +1425,12 @@ onMounted(async () => {
     fileManagers.value = await window.api.system.listFileManagers()
   } catch {
     fileManagers.value = []
+  }
+  // M3：视觉打标入口门禁的数据源（失败按未配置处理，不阻塞首屏）
+  try {
+    visionReady.value = (await window.api.ai.config()).vision.configured
+  } catch {
+    visionReady.value = false
   }
 })
 

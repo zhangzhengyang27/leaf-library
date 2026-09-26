@@ -35,6 +35,7 @@ import { m022_photo_fps } from './022_photo_fps'
 import { m023_photo_annotations } from './023_photo_annotations'
 import { m024_audio_facts } from './024_audio_facts'
 import { m025_source_path_index } from './025_source_path_index'
+import { m026_smart_album_parent } from './026_smart_album_parent'
 
 export const migrations: Migration[] = [
   m001_library_init,
@@ -60,5 +61,6 @@ export const migrations: Migration[] = [
   m022_photo_fps,
   m023_photo_annotations,
   m024_audio_facts,
-  m025_source_path_index
+  m025_source_path_index,
+  m026_smart_album_parent
 ]

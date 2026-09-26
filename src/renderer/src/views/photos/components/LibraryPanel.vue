@@ -24,7 +24,7 @@ import { usePhotoActions } from '../composables/usePhotoActions'
 import { usePhotoImport } from '../composables/usePhotoImport'
 import PanelRow from './LibraryPanelRow.vue'
 import AutoTagModal from './AutoTagModal.vue'
-import type { PhotoFolder } from '../../../types/photo'
+import type { PhotoFolder, SmartAlbum } from '../../../types/photo'
 
 const router = useRouter()
 const route = useRoute()
@@ -101,14 +101,82 @@ onMounted(() => {
 
 // ── 小节：智能文件夹（预置行 + 用户智能夹）/ 文件夹 / 相册 ──
 
-const smartItems = computed<TreeItem[]>(() =>
-  data.smartAlbums.value.map((a) => ({
+// ── M4 嵌套智能夹（D-022）：照文件夹树范式（G7 逐行折叠 + 展开态持久化）──
+// 计数口径沿用智能夹计数通道：父级行不显示计数徽标（现有智能夹行本就无计数），
+// 若未来接计数，父级 = 自身规则命中，不叠加子级（Eagle 口径，见 PhotoDataStore 注释）。
+
+const SMART_EXPANDED_KEY = 'leaf.sidebar-smart-expanded'
+function loadSmartExpanded(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SMART_EXPANDED_KEY)
+    return new Set<string>(raw ? (JSON.parse(raw) as string[]) : [])
+  } catch {
+    return new Set<string>()
+  }
+}
+const expandedSmartIds = ref<Set<string>>(loadSmartExpanded())
+
+function toggleSmartExpand(id: string): void {
+  const next = new Set(expandedSmartIds.value)
+  if (next.has(id)) next.delete(id)
+  else next.add(id)
+  expandedSmartIds.value = next
+  try {
+    localStorage.setItem(SMART_EXPANDED_KEY, JSON.stringify([...next]))
+  } catch {
+    /* ignore */
+  }
+}
+
+interface FlatSmart {
+  item: TreeItem
+  depth: number
+  hasChildren: boolean
+  expanded: boolean
+}
+
+function smartTreeItem(a: SmartAlbum): TreeItem {
+  return {
     key: `smart:${a.id}`,
     view: `smart:${a.id}`,
     title: a.name,
     icon: 'context-menu/ic-smart-folder-rule'
-  }))
-)
+  }
+}
+
+/** 智能夹树：按 parentId 递归拍平；仅展开的节点递归子级（Eagle 逐行折叠）。
+ *  脏数据兜底与 repo.listTree 同口径：父级已删/不存在 → 挂根；环链只挂一次，剩余挂根 */
+const flatSmartItems = computed<FlatSmart[]>(() => {
+  const albums = data.smartAlbums.value
+  const live = new Set(albums.map((a) => a.id))
+  const byParent = new Map<string | null, SmartAlbum[]>()
+  for (const a of albums) {
+    const key = a.parentId !== null && live.has(a.parentId) ? a.parentId : null
+    const bucket = byParent.get(key)
+    if (bucket) bucket.push(a)
+    else byParent.set(key, [a])
+  }
+  const out: FlatSmart[] = []
+  const placed = new Set<string>()
+  const walk = (parentId: string | null, depth: number): void => {
+    for (const a of byParent.get(parentId) ?? []) {
+      if (placed.has(a.id)) continue // 环脏数据：每个节点只挂一次
+      placed.add(a.id)
+      const hasChildren = (byParent.get(a.id) ?? []).length > 0
+      const expanded = expandedSmartIds.value.has(a.id)
+      out.push({ item: smartTreeItem(a), depth, hasChildren, expanded })
+      if (expanded) walk(a.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  for (const a of albums) {
+    if (!placed.has(a.id)) {
+      placed.add(a.id)
+      out.push({ item: smartTreeItem(a), depth: 0, hasChildren: false, expanded: false })
+    }
+  }
+  return out
+})
 
 const albumItems = computed<TreeItem[]>(() =>
   data.albums.value.map((a) => ({
@@ -935,23 +1003,74 @@ function openQuickMenu(item: TreeItem, e: MouseEvent): void {
   )
 }
 
+/** M4：targetId 是否为 albumId 的祖先（「移动到…」子菜单排除自身后代，防环——
+ *  与文件夹菜单的 isDescendantFolder 同构，环防护主进程再兜一道） */
+function isDescendantAlbum(targetId: string, albumId: string): boolean {
+  let pid: string | null | undefined = albumId
+  const seen = new Set<string>()
+  while (pid && !seen.has(pid)) {
+    if (pid === targetId) return true
+    seen.add(pid)
+    pid = data.smartAlbums.value.find((a) => a.id === pid)?.parentId ?? null
+  }
+  return false
+}
+
+/** M4：移动智能夹（改父级；null = 根级） */
+function moveSmartAlbum(id: string, target: string | null): void {
+  void window.api.photos
+    .moveSmartAlbum(id, target)
+    .then(() => {
+      void data.loadSmartAlbums()
+      useToast().success(target ? '智能夹已移动' : '已移动到根目录')
+    })
+    .catch((err: Error) => useToast().error('移动失败', { description: err.message }))
+}
+
 function openSmartMenu(item: TreeItem, e: MouseEvent): void {
+  const albumId = item.key.slice(6)
+  const album = data.smartAlbums.value.find((a) => a.id === albumId)
+  const moveTargets: MenuItem[] = [
+    {
+      key: 'to-root',
+      label: '移动到根目录',
+      icon: 'context-menu/ic-folder-move',
+      disabled: (album?.parentId ?? null) === null
+    },
+    ...data.smartAlbums.value
+      .filter((a) => a.id !== albumId && !isDescendantAlbum(albumId, a.id))
+      .map((a) => ({
+        key: a.id,
+        label: a.name,
+        icon: 'context-menu/ic-search-scope-folder',
+        disabled: (album?.parentId ?? null) === a.id
+      }))
+  ]
   menu.open(
     e.clientX,
     e.clientY,
     [
       { key: 'open', label: '打开', icon: 'ic-arrow-right' },
       { key: 'd1', divider: true },
+      {
+        key: 'move',
+        label: '移动到…',
+        icon: 'context-menu/ic-folder-move',
+        children: moveTargets
+      },
       { key: 'edit', label: '编辑规则', icon: 'context-menu/ic-rename' },
       { key: 'delete', label: '删除收藏夹', icon: 'context-menu/ic-file-move-trash', danger: true }
     ],
     (key) => {
+      if (key.startsWith('sub:smart-move:')) {
+        const child = key.slice('sub:smart-move:'.length)
+        moveSmartAlbum(albumId, child === 'to-root' ? null : child)
+        return
+      }
       if (key === 'open') openItem(item)
       else if (key === 'edit') {
-        const album = data.smartAlbums.value.find((a) => a.id === item.key.slice(6))
         if (album) actions.openSmartAlbumModal(album)
       } else if (key === 'delete') {
-        const album = data.smartAlbums.value.find((a) => a.id === item.key.slice(6))
         if (album) actions.deleteSmartAlbumById(album)
       }
     }
@@ -1285,13 +1404,20 @@ function onDrop(item: TreeItem, e: DragEvent): void {
           </UTooltip>
         </div>
         <template v-if="!collapsedGroups.has('smart')">
+          <!-- M4 嵌套智能夹：照文件夹树范式（▸ 逐行折叠 + depth 缩进参考线，无新色值） -->
           <PanelRow
-            v-for="item in smartItems.filter((i) => matchesFilter(i.title))"
-            :key="item.key"
-            :item="item"
-            :active="isActive(item.view)"
-            @open="openItem(item)"
-            @contextmenu="openSmartMenu(item, $event)"
+            v-for="node in flatSmartItems.filter((n) => matchesFilter(n.item.title))"
+            :key="node.item.key"
+            :item="node.item"
+            :active="isActive(node.item.view)"
+            :indent="false"
+            :style="{ paddingLeft: `${8 + node.depth * 16}px` }"
+            :expandable="node.hasChildren"
+            :expanded="node.expanded"
+            :depth="node.depth"
+            @open="openItem(node.item)"
+            @toggle-expand="toggleSmartExpand(node.item.key.slice(6))"
+            @contextmenu="openSmartMenu(node.item, $event)"
           />
         </template>
       </div>

@@ -171,13 +171,16 @@ const api: API = {
       ipcRenderer.invoke('platform:requestUserAttention', level)
   },
   // 数据迁移中心
-  // DeepSeek 文本模型（D-017）：Key 只写不读，正文由主进程按 photoId 反查
+  // DeepSeek 文本模型（D-017）+ 视觉打标（M3）：Key 只写不读，图片由主进程按 photoId 反查缩略图
   ai: {
     config: () => ipcRenderer.invoke('ai:config'),
     setKey: (key) => ipcRenderer.invoke('ai:setKey', key),
     clearKey: () => ipcRenderer.invoke('ai:clearKey'),
     test: () => ipcRenderer.invoke('ai:test'),
+    setVisionConfig: (cfg) => ipcRenderer.invoke('ai:setVisionConfig', cfg),
+    testVision: () => ipcRenderer.invoke('ai:testVision'),
     batchMeta: (ids) => ipcRenderer.invoke('ai:batchMeta', ids),
+    batchVision: (ids) => ipcRenderer.invoke('ai:batchVision', ids),
     onBatch: (callback) => {
       const listener = (_e, p) => callback(p)
       ipcRenderer.on('ai:batch', listener)
@@ -224,11 +227,15 @@ const api: API = {
     restoreMultiple: (ids) => ipcRenderer.invoke('photos:restoreMultiple', ids),
     clearRecycleBin: () => ipcRenderer.invoke('photos:clearRecycleBin'),
     listSmartAlbums: () => ipcRenderer.invoke('photos:listSmartAlbums'),
-    createSmartAlbum: (name, rules) => ipcRenderer.invoke('photos:createSmartAlbum', name, rules),
+    // M4 嵌套智能夹：create 带 parent（null = 根级）；moveSmartAlbum 供侧栏右键移动
+    createSmartAlbum: (name, rules, parentId) =>
+      ipcRenderer.invoke('photos:createSmartAlbum', name, rules, parentId),
     updateSmartAlbum: (id, updates) => ipcRenderer.invoke('photos:updateSmartAlbum', id, updates),
+    moveSmartAlbum: (id, parentId) => ipcRenderer.invoke('photos:moveSmartAlbum', id, parentId),
     deleteSmartAlbum: (id) => ipcRenderer.invoke('photos:deleteSmartAlbum', id),
     getSmartAlbumPhotos: (id) => ipcRenderer.invoke('photos:getSmartAlbumPhotos', id),
-    queryPhotosByRules: (rules) => ipcRenderer.invoke('photos:queryPhotosByRules', rules),
+    queryPhotosByRules: (rules, scope) =>
+      ipcRenderer.invoke('photos:queryPhotosByRules', rules, scope),
     findSimilar: (photoId, threshold) =>
       ipcRenderer.invoke('photos:findSimilar', photoId, threshold),
     getDuplicateGroups: (threshold, opts) =>

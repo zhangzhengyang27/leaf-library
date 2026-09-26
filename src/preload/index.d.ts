@@ -243,13 +243,39 @@ export interface API {
   }
 
   createNewWindow: (route: string) => Promise<boolean>
-  // DeepSeek 文本模型（D-017）
+  // DeepSeek 文本模型（D-017）+ 视觉打标（M3 看图工作流）
   ai: {
-    config: () => Promise<{ configured: boolean; model: string; hint: string }>
+    config: () => Promise<{
+      configured: boolean
+      model: string
+      hint: string
+      vision: {
+        /** 视觉模型名（OpenAI 兼容端点，如 DeepSeek-VL2 托管档）；空 = 未配置 */
+        model: string
+        /** 端点覆盖；空 = 用 DeepSeek 主端点 */
+        endpoint: string
+        enabled: boolean
+        /** 模型名 + 开关 + 主 Key 齐备（能力入口据此出现/缺席） */
+        configured: boolean
+      }
+    }>
     setKey: (key: string) => Promise<{ ok: true } | { ok: false; error: string }>
     clearKey: () => Promise<{ ok: true } | { ok: false; error: string }>
     test: () => Promise<{ ok: true; text: string } | { ok: false; error: string }>
+    setVisionConfig: (cfg: {
+      model: string
+      endpoint: string
+      enabled: boolean
+    }) => Promise<{ ok: true } | { ok: false; error: string }>
+    testVision: () => Promise<{ ok: true; text: string } | { ok: false; error: string }>
     batchMeta: (ids: string[]) => Promise<{
+      done: number
+      skipped: number
+      failed: number
+      tokens: { prompt: number; completion: number }
+      requested: number
+    }>
+    batchVision: (ids: string[]) => Promise<{
       done: number
       skipped: number
       failed: number
@@ -348,14 +374,24 @@ export interface API {
     restoreMultiple: (ids: string[]) => Promise<number>
     clearRecycleBin: () => Promise<string[]>
     listSmartAlbums: () => Promise<SmartAlbum[]>
-    createSmartAlbum: (name: string, rules: SmartAlbumRules) => Promise<SmartAlbum>
+    /** M4 嵌套智能夹：create/update 带 parent（null = 根级）；moveSmartAlbum 供侧栏右键移动 */
+    createSmartAlbum: (
+      name: string,
+      rules: SmartAlbumRules,
+      parentId?: string | null
+    ) => Promise<SmartAlbum>
     updateSmartAlbum: (
       id: string,
-      updates: { name?: string; rules?: SmartAlbumRules }
+      updates: { name?: string; rules?: SmartAlbumRules; parentId?: string | null }
     ) => Promise<SmartAlbum | undefined>
+    moveSmartAlbum: (id: string, parentId: string | null) => Promise<SmartAlbum | undefined>
     deleteSmartAlbum: (id: string) => Promise<boolean>
     getSmartAlbumPhotos: (id: string) => Promise<Photo[]>
-    queryPhotosByRules: (rules: SmartAlbumRules) => Promise<Photo[]>
+    /** M4：scope 带「待定父级」时实时计数按「子级 AND 祖先链」口径 */
+    queryPhotosByRules: (
+      rules: SmartAlbumRules,
+      scope?: { parentId?: string | null; excludeId?: string }
+    ) => Promise<Photo[]>
     findSimilar: (
       photoId: string,
       threshold?: number
@@ -855,6 +891,8 @@ export interface SmartAlbum {
   id: string
   name: string
   rules: SmartAlbumRules
+  /** M4（026）：父智能夹 id；null = 根级 */
+  parentId: string | null
   sortOrder: number
   createdAt: number
   updatedAt: number
