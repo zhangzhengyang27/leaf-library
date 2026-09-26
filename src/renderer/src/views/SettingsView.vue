@@ -1921,10 +1921,10 @@ onBeforeUnmount(() => {
                 <UBadge v-else variant="neutral">未配置</UBadge>
               </div>
               <p class="mt-2 text-[11px] leading-5 text-fg-tertiary">
-                让模型看图生成摘要与标签（右键「AI 摘要与标签」）。DeepSeek 官方 API
-                暂时只有文本，这里接任何 OpenAI 兼容视觉端点——如 SiliconFlow 托管的
-                DeepSeek-VL2；官方视觉档上线后改端点/模型名即可。沿用上方同一把 API
-                Key；图片只以库内缩略图出库（重编码 ≤768px / 200KB），原图不出库。
+                让模型看图生成摘要与标签（右键「AI 摘要与标签」）。DeepSeek 4.1
+                起官方模型支持视觉，默认模型名已填好，沿用上方同一把 API Key
+                开箱即用；用托管平台（如 SiliconFlow 跑开源 VL 权重）时改模型名/
+                端点即可。图片只以库内缩略图出库（重编码 ≤768px / 200KB），原图不出库。
               </p>
               <div class="mt-3 grid grid-cols-[64px_1fr] items-center gap-x-3 py-1">
                 <span class="text-xs text-fg-secondary">启用</span>
@@ -1938,7 +1938,7 @@ onBeforeUnmount(() => {
                 <input
                   v-model="visionModelInput"
                   type="text"
-                  placeholder="如 deepseek-vl2（留空 = 未配置视觉）"
+                  placeholder="默认 deepseek-4.1（留空 = 未配置视觉）"
                   autocomplete="off"
                   class="h-8 min-w-0 rounded-md border border-line-default bg-surface-0 px-2 text-xs text-fg-primary focus:border-brand-500 focus:outline-none"
                 />

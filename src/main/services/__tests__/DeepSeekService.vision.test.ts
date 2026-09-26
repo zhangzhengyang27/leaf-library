@@ -208,10 +208,10 @@ describe('resolveVisionEndpoint（端点覆盖归一）', () => {
 })
 
 describe('视觉配置存储与入口判定', () => {
-  it('默认（模型名空）= 未配置，入口判定 false', () => {
+  it('默认（未存过配置）模型名落官方 4.1 视觉档，未启用 = 未配置，入口判定 false', () => {
     expect(setApiKey('sk-vision-test-key-12345678').ok).toBe(true)
     const cfg = getConfig()
-    expect(cfg.vision.model).toBe('')
+    expect(cfg.vision.model).toBe('deepseek-4.1')
     expect(cfg.vision.configured).toBe(false)
     expect(isVisionConfigured()).toBe(false)
   })

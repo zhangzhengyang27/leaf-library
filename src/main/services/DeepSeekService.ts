@@ -28,6 +28,12 @@ import { tagRepository } from '../db/repos/TagRepository'
 import { getThumbnailService } from './ThumbnailService'
 
 const ENDPOINT = 'https://api.deepseek.com/chat/completions'
+/**
+ * 视觉档默认模型：DeepSeek 4.1 起官方支持视觉（2026-09-27 用户确认；公开检索口径滞后，
+ * 以控制台模型列表为准）。端点默认就是官方主端点，配合既有 Key 开箱即用；
+ * 用托管平台（如 SiliconFlow 跑开源 VL 权重）时在设置页改模型名/端点即可。
+ */
+export const VISION_DEFAULT_MODEL = 'deepseek-4.1'
 const MODEL = 'deepseek-chat'
 /** 单次喂入的正文上限：模型上下文够长，但摘要用不着全灌，也顺带封顶请求体 */
 const MAX_BODY_CHARS = 6000
@@ -132,7 +138,8 @@ function readVisionRaw(): { vision?: Partial<VisionConfig> } {
 function readVisionConfig(): VisionConfig {
   const v = readVisionRaw().vision ?? {}
   return {
-    model: typeof v.model === 'string' ? v.model : '',
+    // 未存过时默认官方 4.1 视觉档；显式存了空串仍视为「留空 = 未配置」（设置页语义不变）
+    model: typeof v.model === 'string' ? v.model : VISION_DEFAULT_MODEL,
     endpoint: typeof v.endpoint === 'string' ? v.endpoint : '',
     enabled: v.enabled === true
   }
