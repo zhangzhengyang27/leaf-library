@@ -23,7 +23,12 @@
   `add_tags` 写回 → `create_album` 归档——即 Eagle 官方 MCP 面板宣传的那三个场景的 Leaf 等价物。
 - 加一条 e2e/探针：脚本化跑通 search→get_image→add_tags 全链（照 ai-probe 的闸模式，缺模型 skip）。
 
-### M3 · 内置视觉打标（可选，独立决策）
+### M3 · 内置视觉打标（用户拍板做，2026-09-26）
+
+> **路线依据**：用户指定 DeepSeek 视觉模型。已核实的现实（2026-09-26 检索）：DeepSeek 官方 API
+> 仍为纯文本档（deepseek-chat/reasoner），官方口径多模态"在做"；视觉模型 DeepSeek-VL2 为开源权重，
+> 由 SiliconFlow/Novita 等 OpenAI 兼容平台托管。故实现为 **OpenAI 兼容通用视觉端点 + DeepSeek 预设**：
+> 官方视觉档上线填官方端点/模型名即可，现阶段填托管平台跑 deepseek-vl2 同样可用——两种现实同一套代码。
 - 对标 Eagle「AI 模型套件」的 BYOK 模式：设置页接一个视觉云 API（候选：DeepSeek 视觉档 / 其他 BYOK），
   批量「看图打标/命名/描述」复用批量摘要的成本确认 + token 用量口径。
 - 决策点：接哪家、免费额度现实性、与 M1 外部客户端路径的定位分工（内置=一键批量，MCP=灵活工作流）。
