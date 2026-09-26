@@ -155,6 +155,19 @@ function build() {
           preview.close()
         }
       } else if (!inTextField && !ctx?.isBriefMode?.()) {
+        // 可内联播放的视频态：Shift+←/→ 是 ±10 帧步进，让路给 PhotoPreview 的
+        // onKeydown（它自行 preventDefault）。这里不让路的话 ArrowLeft 分支不查
+        // shiftKey，会把 Shift+← 当翻页先消费掉 —— window 上两个监听器都会跑，
+        // 结果就是翻页 + 步进双消费（素材跳走 + 新素材时间被挪）
+        const shiftStepTarget = preview.previewPhoto.value
+        if (
+          e.shiftKey &&
+          (e.key === 'ArrowLeft' || e.key === 'ArrowRight') &&
+          shiftStepTarget?.kind === 'video' &&
+          isPlayableVideoFile(shiftStepTarget.fileName)
+        ) {
+          return
+        }
         if (e.key === 'ArrowLeft') {
           e.preventDefault()
           preview.previous()

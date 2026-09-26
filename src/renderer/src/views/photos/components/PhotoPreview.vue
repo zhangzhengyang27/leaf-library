@@ -945,6 +945,14 @@ function onKeydown(e: KeyboardEvent): void {
     if (isVideoInline.value) toggleVideoPlay()
     else void audioPlayerRef.value?.toggle()
   }
+  // 视频态 Shift+←/→ = ±10 帧步进（对标 Eagle mpv；普通 ←/→ 仍归全局键盘层翻页）。
+  // 输入框让路已由上方 field 提前 return 统一生效；usePhotoKeyboard 对该组合同步让路，
+  // 否则它会先按翻页消费掉（window 上两个监听器都跑，preventDefault 拦不住对方）
+  if (isVideoInline.value && e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+    e.preventDefault()
+    stepFrame(e.key === 'ArrowLeft' ? -10 : 10)
+    bumpChrome()
+  }
 }
 onMounted(() => {
   window.addEventListener('keydown', onKeydown)
@@ -1038,15 +1046,20 @@ const FALLBACK_FPS = 30
  * 逐帧步进：先暂停再挪 currentTime。
  * 步长按库里实测帧率（022 起由 ffmpeg 探测入库），没探到才回落 30 ——
  * 原来硬编码 1/30，24fps 素材一次跳 1.25 帧、60fps 跳半帧，按钮却写着「一帧」。
+ * ±10 档给键盘 Shift+←/→（对标 Eagle mpv 的 ±10 逐帧）；按钮仍只有 ±1。
  */
-function stepFrame(direction: 1 | -1): void {
+function stepFrame(direction: 1 | -1 | 10 | -10): void {
   const video = videoRef.value
   if (!video) return
   video.pause()
   const fps = props.photo?.fps
   const frame = 1 / (fps && Number.isFinite(fps) && fps > 0 ? fps : FALLBACK_FPS)
   const next = video.currentTime + direction * frame
-  video.currentTime = Math.min(Math.max(0, next), video.duration || next)
+  // clamp 到 [0, duration]；duration 没探到（NaN，元数据未加载）时上界放开。
+  // 原写法 `video.duration || next` 拿未 clamp 的 next 兜底：next 为负时
+  // （元数据未加载就按 ←帧）Math.min(0, 负) 会写出负 currentTime —— ±1 也中招
+  const duration = Number.isFinite(video.duration) ? video.duration : Infinity
+  video.currentTime = Math.min(Math.max(0, next), duration)
 }
 
 /** 按钮上的步长说明：探到过报实测值，没探到说明用的是兜底 */
@@ -1574,7 +1587,7 @@ const isRasterImage = computed(
 )
 
 const shortcutHint = computed((): string => {
-  if (isVideoInline.value) return '←→ 翻页 · 空格 播放/暂停 · Esc 关闭'
+  if (isVideoInline.value) return '←→ 翻页 · ⇧←→ ±10 帧 · 空格 播放/暂停 · Esc 关闭'
   // 自然尺寸未知（SVG 无宽高 / 图未加载完）时不吹缩放能力
   const zoom = naturalKnown.value ? ' · 滚轮缩放 · 双击 100%' : ''
   return `←→ 翻页 · 空格/Esc 关闭 · F5 简报 · ⌘G 黑白${zoom}`

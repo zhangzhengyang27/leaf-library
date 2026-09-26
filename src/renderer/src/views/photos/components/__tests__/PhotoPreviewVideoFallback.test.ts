@@ -64,3 +64,55 @@ describe('预览器视频可播性分支', () => {
     expect(w.text()).not.toContain('无法在应用内播放')
   })
 })
+
+/**
+ * 视频态 Shift+←/→ = ±10 帧步进（对标 Eagle mpv；普通 ←/→ 仍归全局键盘层翻页）。
+ * 这里只验证 PhotoPreview 侧：按实测 fps 挪 currentTime、首尾 clamp、
+ * 无 Shift 的 ←/→ 不动 currentTime（usePhotoKeyboard 的让路链路不在本挂载环境里）。
+ */
+describe('视频 Shift+←/→ ±10 帧步进', () => {
+  const videoPhoto = (): Photo => ({ ...photo('clip.mp4', 'video'), fps: 30 })
+
+  it('Shift+→ 按实测 fps 前进 10 帧；连按累加，不出 NaN', () => {
+    const w = mountPreview(videoPhoto())
+    const video = w.find('video').element as HTMLVideoElement
+    video.currentTime = 1
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true }))
+    // 1s + 连按两次 × 10 帧（fps 30）= 1 + 20/30
+    expect(video.currentTime).toBeCloseTo(1 + 20 / 30, 5)
+    expect(Number.isNaN(video.currentTime)).toBe(false)
+    w.unmount()
+  })
+
+  it('Shift+← 越过片头 clamp 到 0，不出负时间', () => {
+    const w = mountPreview(videoPhoto())
+    const video = w.find('video').element as HTMLVideoElement
+    video.currentTime = 5 / 30 // 不足 10 帧的余量
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', shiftKey: true }))
+    expect(video.currentTime).toBe(0)
+    expect(Number.isNaN(video.currentTime)).toBe(false)
+    w.unmount()
+  })
+
+  it('Shift+→ 越过片尾 clamp 到 duration', () => {
+    const w = mountPreview(videoPhoto())
+    const video = w.find('video').element as HTMLVideoElement
+    // happy-dom 未加载媒体元数据时 duration 是 NaN，实例级 mock 一个 0.5s 时长
+    Object.defineProperty(video, 'duration', { value: 0.5, configurable: true })
+    video.currentTime = 0.49
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', shiftKey: true }))
+    expect(video.currentTime).toBeCloseTo(0.5, 5)
+    w.unmount()
+  })
+
+  it('不带 Shift 的 ←/→ 不做帧步进（翻页语义归全局键盘层）', () => {
+    const w = mountPreview(videoPhoto())
+    const video = w.find('video').element as HTMLVideoElement
+    video.currentTime = 1
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }))
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }))
+    expect(video.currentTime).toBe(1)
+    w.unmount()
+  })
+})
