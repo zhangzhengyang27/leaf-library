@@ -84,11 +84,10 @@ describe('SmartAlbumModal · 文件夹条件往返', () => {
       global: globalStubs
     })
     await flushPromises()
-    // 按 'none'（未分类）那一项认出文件夹控件：弹窗里还有评分/匹配模式等其它 select
-    const folderSelect = w
-      .findAll('select')
-      .find((s) => s.findAll('option').some((o) => o.element.value === 'none'))
-    expect(folderSelect).toBeTruthy()
+    // 文件夹多选 select 的判别属性是 multiple（M4 起弹窗里还有单选的「标注」select，
+    // 它也有 value="none" 的选项，单按 'none' 认会误中）
+    const folderSelect = w.find('select[multiple]')
+    expect(folderSelect.exists()).toBe(true)
     const selected = folderSelect!
       .findAll('option')
       .filter((o) => o.element.selected)
@@ -181,6 +180,22 @@ describe('SmartAlbumModal · 条件往返不丢', () => {
     expect(out.formats).toBeUndefined()
     expect(out.fileExtsInclude).toEqual(['png', 'jpg'])
   })
+
+  it('标注维「有标注」编辑保存后原样保留（M4）', async () => {
+    expect(await editThenSave({ annotationFilter: 'any' })).toMatchObject({
+      annotationFilter: 'any'
+    })
+  })
+
+  it('标注维「无标注」编辑保存后原样保留（M4）', async () => {
+    expect(await editThenSave({ annotationFilter: 'none' })).toMatchObject({
+      annotationFilter: 'none'
+    })
+  })
+
+  it('标注维不限档不下发（M4，缺省 = 不出现该键）', async () => {
+    expect((await editThenSave({})).annotationFilter).toBeUndefined()
+  })
 })
 
 /**
@@ -212,8 +227,9 @@ describe('SmartAlbumModal · 排除文件夹与精确评分往返', () => {
     })
     await flushPromises()
     // 两个文件夹多选 select 都含 'none' 项，按块内 label 文本认出排除那个
+    // （判据用 multiple：M4 的单选「标注」select 同样含 value="none" 的选项）
     const selects = w
-      .findAll('select')
+      .findAll('select[multiple]')
       .filter((s) => s.findAll('option').some((o) => o.element.value === 'none'))
     expect(selects.length).toBe(2)
     const excludeSelect = selects.find((s) =>

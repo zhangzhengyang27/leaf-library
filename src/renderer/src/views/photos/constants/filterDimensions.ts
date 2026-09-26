@@ -5,7 +5,8 @@
  * - 二十六轮：维度顺序存 localStorage('leaf.filter-dimensions-order')，
  *   池内拖拽排序（Eagle ic-drag-help），筛选行按该顺序渲染已固定维度
  * - 每个维度的取值在 LibraryTab 上，激活判断/清除统一走 isDimensionActive/clearDimension
- * - 有意差异：Eagle「标注」在 023 迁移后有字段了（photo_annotations），但消费端还没接，暂不入池；「注释」对应描述字段；
+ * - 有意差异：Eagle「标注」在 023 迁移后有字段了，M4 起入池（有/无标注两档取值）；
+ *   「注释」对应描述字段；
  *   AI 维度（以图找图/语义搜索）固定后为动作 chip（触发搜索模式而非取值面板）
  */
 
@@ -24,6 +25,8 @@ export type DimensionId =
   | 'size'
   | 'duration'
   | 'notes'
+  /** 标注维（023 photo_annotations 的消费端，Eagle「标注」）：有/无标注两档 */
+  | 'annotations'
   | 'url'
   | 'time'
   | 'modifiedDate'
@@ -40,7 +43,7 @@ export interface FilterDimensionMeta {
 /**
  * 二十六轮：注册表顺序对齐 Eagle 池实测——
  * 颜色 / 以图找图(AI) / 语义搜索(AI) / 标签 / 文件夹 / 形状 / 评分 / 格式 /
- * 尺寸 / 时长 / 大小 / 注释 / 链接 / 添加日期 / 修改日期。
+ * 尺寸 / 时长 / 大小 / 注释 / 标注 / 链接 / 添加日期 / 修改日期。
  * 默认固定集 = Eagle 默认筛选行：颜色 / 标签 / 文件夹 / 形状 / 评分 / 格式。
  */
 export const FILTER_DIMENSIONS: FilterDimensionMeta[] = [
@@ -89,6 +92,12 @@ export const FILTER_DIMENSIONS: FilterDimensionMeta[] = [
     defaultPinned: false
   },
   { id: 'notes', label: '注释', icon: 'context-menu/ic-filter-item-note', defaultPinned: false },
+  {
+    id: 'annotations',
+    label: '标注',
+    icon: 'context-menu/ic-filter-item-comment',
+    defaultPinned: false
+  },
   { id: 'url', label: '链接', icon: 'context-menu/ic-filter-item-url', defaultPinned: false },
   {
     id: 'modifiedDate',

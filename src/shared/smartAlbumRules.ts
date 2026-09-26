@@ -129,6 +129,13 @@ export interface SmartAlbumRules {
   /** 仅看未标签 */
   untaggedOnly?: boolean
 
+  /**
+   * 标注维（Eagle 筛选器「标注」，023 photo_annotations）：
+   * 'any' = 有标注（任一条：区域批注/时间点笔记/素材级批注都算），
+   * 'none' = 无标注；不设 = 不限。SQL 侧 EXISTS/NOT EXISTS（smartAlbumRules）。
+   */
+  annotationFilter?: 'any' | 'none'
+
   /** 全局搜索词（FTS5 file_name/description/ocr_text + 标签名 LIKE；全局语义） */
   searchKeyword?: string
   /** 搜索范围（Eagle ˅ 面板九列；给出则按列 OR-group，未给走 FTS 子集） */

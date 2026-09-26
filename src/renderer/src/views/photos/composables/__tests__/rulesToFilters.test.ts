@@ -41,6 +41,7 @@ function seedWideFilters(): void {
   t.tagMatchExact = false
   t.tagExclude = ['废弃']
   t.untaggedOnly = false
+  t.annotationFilter = 'any'
   t.folderFilter = ''
   t.folderFilterIds = ['f1', 'f2', 'none']
   t.folderExcludeIds = ['f9']

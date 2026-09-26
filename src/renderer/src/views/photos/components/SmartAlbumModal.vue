@@ -476,6 +476,19 @@
             <input v-model="untaggedOnly" type="checkbox" class="accent-brand-500" />
             仅看未标签
           </label>
+
+          <!-- M4 标注维（023 photo_annotations）：有/无标注两档，'不限' = 不下发 -->
+          <div>
+            <label class="mb-1 block text-xs text-fg-muted">标注</label>
+            <select
+              v-model="annotationFilterSel"
+              class="h-7 w-full rounded border border-line-default bg-surface-1 px-2 text-xs text-fg-primary"
+            >
+              <option value="">不限</option>
+              <option value="any">有标注</option>
+              <option value="none">无标注</option>
+            </select>
+          </div>
         </div>
       </fieldset>
 
@@ -568,6 +581,8 @@ const tagLogic = ref<'any' | 'all' | 'exact'>('all')
 const tagNames = ref<string[]>([])
 const tagExcludeNames = ref<string[]>([])
 const untaggedOnly = ref(false)
+/** M4 标注维：''=不限（select 需要标量值，spec 的缺省不下发单独一层） */
+const annotationFilterSel = ref<'' | 'any' | 'none'>('')
 const shapesInclude = ref<string[]>([])
 const shapesExclude = ref<string[]>([])
 const ratingsInclude = ref<number[]>([])
@@ -639,6 +654,7 @@ const OWNED_RULE_KEYS: Array<keyof SmartAlbumRules> = [
   'tagNamesExact',
   'tagNamesExclude',
   'untaggedOnly',
+  'annotationFilter',
   'shapesInclude',
   'shapesExclude',
   'ratioWidth',
@@ -799,6 +815,7 @@ onMounted(async () => {
     tagLogic.value = src.tagNamesExact?.length ? 'exact' : src.tagNamesAny?.length ? 'any' : 'all'
     tagExcludeNames.value = [...(src.tagNamesExclude ?? [])]
     untaggedOnly.value = !!src.untaggedOnly
+    annotationFilterSel.value = src.annotationFilter ?? ''
     shapesInclude.value = [...(src.shapesInclude ?? [])]
     shapesExclude.value = [...(src.shapesExclude ?? [])]
     ratingsInclude.value = [...(src.ratingsInclude ?? [])]
@@ -879,6 +896,7 @@ const currentRules = computed<SmartAlbumRules>(() => {
   }
   if (tagExcludeNames.value.length > 0) rules.tagNamesExclude = [...tagExcludeNames.value]
   if (untaggedOnly.value) rules.untaggedOnly = true
+  if (annotationFilterSel.value) rules.annotationFilter = annotationFilterSel.value
   if (shapesInclude.value.length > 0) rules.shapesInclude = [...shapesInclude.value]
   if (shapesExclude.value.length > 0) rules.shapesExclude = [...shapesExclude.value]
   // 两键原样并存写回：引擎（buildSmartAlbumWhere / matchRating）语义是包含集优先，

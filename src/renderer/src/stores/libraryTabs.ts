@@ -133,6 +133,8 @@ export interface LibraryTab {
   tagExclude: string[]
   /** 五轮：仅看未标签（Eagle 标签弹层「未标签」行） */
   untaggedOnly: boolean
+  /** M4（Eagle 筛选器「标注」维）：''=不限，'any'=有标注，'none'=无标注 */
+  annotationFilter: '' | 'any' | 'none'
   /** D-012 文件夹筛选（folder id；'' = 不限，'none' = 未分类到文件夹） */
   folderFilter: string
   /** 五轮：文件夹多选包含（id 列表含 'none'，空=不限） */
@@ -198,6 +200,7 @@ export function makeTab(view = 'all', title = '全部'): LibraryTab {
     tagMatchExact: false,
     tagExclude: [],
     untaggedOnly: false,
+    annotationFilter: '',
     customTime: null,
     modifiedTimeRange: null,
     durationRange: null,
@@ -241,6 +244,7 @@ const FILTER_FIELD_KEYS = [
   'tagMatchExact',
   'tagExclude',
   'untaggedOnly',
+  'annotationFilter',
   'folderFilter',
   'folderFilterIds',
   'folderExcludeIds',

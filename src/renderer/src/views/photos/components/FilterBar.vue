@@ -533,6 +533,29 @@ function clearNoteKeyword(): void {
   tab.value.noteKeyword = ''
   tabs.persist()
 }
+
+// ── M4 标注维（有/无标注两档，Eagle「标注」维） ──
+
+const annotationCounts = computed<{ any: number; none: number }>(() => {
+  let any = 0
+  let none = 0
+  for (const p of pool.value) {
+    const has = filters.annotationHas(p)
+    if (has === true) any++
+    else if (has === false) none++
+  }
+  return { any, none }
+})
+function clearAnnotation(close: () => void): void {
+  tab.value.annotationFilter = ''
+  tabs.persist()
+  close()
+}
+function pickAnnotation(v: 'any' | 'none', close: () => void): void {
+  tab.value.annotationFilter = tab.value.annotationFilter === v ? '' : v
+  tabs.persist()
+  close()
+}
 function clearUrlKeyword(): void {
   tab.value.urlKeyword = ''
   tabs.persist()
@@ -677,6 +700,8 @@ function isDimActive(id: DimensionId): boolean {
       return !!tab.value.durationRange
     case 'notes':
       return !!tab.value.noteKeyword
+    case 'annotations':
+      return !!tab.value.annotationFilter
     case 'url':
       return !!tab.value.urlKeyword
     case 'time':
@@ -729,6 +754,9 @@ function clearDim(id: DimensionId): void {
       break
     case 'notes':
       tab.value.noteKeyword = ''
+      break
+    case 'annotations':
+      tab.value.annotationFilter = ''
       break
     case 'url':
       tab.value.urlKeyword = ''
@@ -1146,6 +1174,36 @@ watch(
               >
                 清除
               </button>
+            </div>
+          </template>
+        </DimensionChip>
+
+        <!-- 标注（有/无标注两档，Eagle「标注」维；计数来自客户端在场缓存） -->
+        <DimensionChip
+          v-else-if="dimId === 'annotations'"
+          label="标注"
+          icon="context-menu/ic-filter-item-comment"
+          :active="!!tab.annotationFilter"
+        >
+          <template #panel="{ close }">
+            <div class="flex w-44 flex-col py-1">
+              <OptionRow
+                :selected="!tab.annotationFilter"
+                label="不限"
+                @pick="clearAnnotation(close)"
+              />
+              <OptionRow
+                :selected="tab.annotationFilter === 'any'"
+                label="有标注"
+                :count="annotationCounts.any"
+                @pick="pickAnnotation('any', close)"
+              />
+              <OptionRow
+                :selected="tab.annotationFilter === 'none'"
+                label="无标注"
+                :count="annotationCounts.none"
+                @pick="pickAnnotation('none', close)"
+              />
             </div>
           </template>
         </DimensionChip>

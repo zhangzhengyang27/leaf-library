@@ -102,6 +102,8 @@ export function summarizeFilter(rules: SmartAlbumRules): string {
   }
   if (n(rules.tagNamesExclude)) parts.push(`排除标签 ${rules.tagNamesExclude?.length}`)
   if (rules.untaggedOnly) parts.push('仅未标签')
+  if (rules.annotationFilter === 'any') parts.push('有标注')
+  else if (rules.annotationFilter === 'none') parts.push('无标注')
   if (n(rules.folderIds)) parts.push(`文件夹 ${rules.folderIds?.length}`)
   if (n(rules.folderExcludeIds)) parts.push(`排除文件夹 ${rules.folderExcludeIds?.length}`)
   if (n(rules.kinds)) parts.push(`类型 ${rules.kinds?.join('/')}`)

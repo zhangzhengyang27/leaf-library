@@ -151,4 +151,17 @@ describe('usePhotoFilters · 图库视图与快筛', () => {
     filters.tab.value.view = 'untagged'
     expect(buildFiltersSpec().untaggedOnly).toBe(true)
   })
+
+  it('标注维映射：两档原样进 spec，空档（不限）不下发（M4）', () => {
+    const filters = usePhotoFilters()
+    filters.tab.value.view = 'all'
+    expect(buildFiltersSpec().annotationFilter).toBeUndefined()
+
+    filters.tab.value.annotationFilter = 'any'
+    expect(buildFiltersSpec().annotationFilter).toBe('any')
+    filters.tab.value.annotationFilter = 'none'
+    expect(buildFiltersSpec().annotationFilter).toBe('none')
+    filters.tab.value.annotationFilter = ''
+    expect(buildFiltersSpec().annotationFilter).toBeUndefined()
+  })
 })

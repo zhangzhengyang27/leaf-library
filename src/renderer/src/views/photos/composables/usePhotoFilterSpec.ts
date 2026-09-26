@@ -69,6 +69,8 @@ export function buildFiltersSpec(): SmartAlbumRules {
   // 「未标签」视图与「仅看未标签」chip 共用同一个 SQL 谓词：视图侧此前只在已加载的
   // 分页窗口里本地筛（窗口 500 行），窗口外的未标签素材永远看不到
   if (tab.untaggedOnly || tab.view === 'untagged') spec.untaggedOnly = true
+  // M4 标注维：''（不限）不下发，'any'/'none' 原样进 spec（EXISTS/NOT EXISTS 由主进程拼）
+  if (tab.annotationFilter) spec.annotationFilter = tab.annotationFilter
   if (tab.tagExclude.length > 0) spec.tagNamesExclude = [...tab.tagExclude]
   if (tab.tagFilter.length > 0) {
     if (tab.tagMatchExact) spec.tagNamesExact = [...tab.tagFilter]

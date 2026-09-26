@@ -312,6 +312,18 @@ export function buildSmartAlbumWhere(rules: SmartAlbumRules): CompiledWhere {
     )
   }
 
+  // 标注维（M4，Eagle 筛选器「标注」有/无标注）：photo_annotations 没有软删列，
+  // 软删素材的标注行保留到硬删才清（PhotoRepository.clearRecycleBin 统一清表），
+  // 回收站视图语义与标签维同口径——deleted_at 谓词由 getPage 的视图 WHERE 合并，这里
+  // 只判「有没有标注」本身，三档形状（rect/atMs/纯文字）任意一条都算有
+  if (rules.annotationFilter === 'any') {
+    conds.push(`EXISTS (SELECT 1 FROM photo_annotations pa WHERE pa.photo_id = photo_photos.id)`)
+  } else if (rules.annotationFilter === 'none') {
+    conds.push(
+      `NOT EXISTS (SELECT 1 FROM photo_annotations pa WHERE pa.photo_id = photo_photos.id)`
+    )
+  }
+
   // 全局搜索词 / 高级语法 AST（二者可独立存在，不可互相 gating）：
   //   a) 高级语法 AST → 递归 SQL（haystack = scope 列拼接；与客户端 evalNode 同构）
   //   b) 词拆分 AND：带搜索范围 → 九列 scope OR-group；无范围 → FTS5 + 标签名

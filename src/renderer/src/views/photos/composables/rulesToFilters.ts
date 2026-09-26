@@ -121,6 +121,8 @@ export function rulesToFilters(
   const tagOut = [...(rules.tagNamesExclude ?? [])]
   if (tagOut.length) fields.tagExclude = [...new Set(tagOut)]
   if (rules.untaggedOnly) fields.untaggedOnly = true
+  // M4 标注维：'any'/'none' 原样回 chip；不设 = 不限（chip 默认值，无需写）
+  if (rules.annotationFilter) fields.annotationFilter = rules.annotationFilter
 
   if (rules.folderIds?.length) {
     fields.folderFilterIds = [...rules.folderIds]

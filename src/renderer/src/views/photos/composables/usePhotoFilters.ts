@@ -459,6 +459,27 @@ function build() {
     return tab.value.urlKeywordExact ? url === kw : url.includes(kw)
   }
 
+  /**
+   * M4 标注维本地判定（与 buildSmartAlbumWhere 的 EXISTS/NOT EXISTS 同口径）：
+   * 分页主池/收藏/文件夹/搜索由 SQL 下推；相册/智能夹/最近添加/随机等仍走 matchAll
+   * 的路径靠这份在场信息。真值三态：true=有 / false=无 / null=计数未到——
+   * 未知放行（不误杀），计数落地后 computed 自然重算。
+   */
+  function annotationHas(p: Photo): boolean | null {
+    const known = annotationPresence.value.get(p.id)
+    if (known !== undefined) return known
+    // 徽标缓存（M3，开关打开时才有数据）能补的先补，省一次闪烁
+    const badge = data.annotationCounts.value.get(p.id)
+    return badge === undefined ? null : badge > 0
+  }
+  function matchAnnotation(p: Photo): boolean {
+    const f = tab.value.annotationFilter
+    if (!f) return true
+    const has = annotationHas(p)
+    if (has === null) return true
+    return f === 'any' ? has : !has
+  }
+
   function matchQuick(p: Photo): boolean {
     if (tab.value.resolutionFilter) {
       const min = RESOLUTION_MIN[tab.value.resolutionFilter]
@@ -481,7 +502,7 @@ function build() {
     return true
   }
 
-  /** 全部快筛叠加：类型 + 颜色 + 格式/分辨率/时间 + §2.C 检索项 + D-012 维度 */
+  /** 全部快筛叠加：类型 + 颜色 + 格式/分辨率/时间 + §2.C 检索项 + D-012 维度 + M4 标注 */
   function matchAll(p: Photo): boolean {
     return (
       matchKind(p) &&
@@ -498,7 +519,8 @@ function build() {
       matchNoteKeyword(p) &&
       matchUrlKeyword(p) &&
       matchFolderFilter(p) &&
-      matchModifiedTime(p)
+      matchModifiedTime(p) &&
+      matchAnnotation(p)
     )
   }
 
@@ -525,6 +547,7 @@ function build() {
       t.tagFilter.length > 0 ||
       t.tagExclude.length > 0 ||
       t.untaggedOnly ||
+      !!t.annotationFilter ||
       !!t.folderFilter ||
       t.folderFilterIds.length > 0 ||
       t.folderExcludeIds.length > 0 ||
@@ -618,6 +641,37 @@ function build() {
     if (tab.value.view === 'recents') return data.recentViewedPhotos.value
     return data.allPhotos.value
   })
+
+  // ── M4 标注维：客户端在场信息（photoId → 是否有标注）──
+  // 维度激活时才拉（不激活零 IPC）；与 usePhotoData 的徽标计数缓存（M3）解耦——
+  // 那份只在徽标开关打开时补拉，且截断在 2000 id，做筛选判据不够格。
+  // 分块 500 对齐 repo 的 IN 上限；合并进缓存（往返回切视图不重拉已知的 id）。
+  const annotationPresence = ref(new Map<string, boolean>())
+  let annotationSeq = 0
+  const ANNOTATION_CHUNK = 500
+  watch(
+    [() => tab.value.annotationFilter, currentPool],
+    ([f, pool]) => {
+      if (!f || pool.length === 0) return
+      const seq = ++annotationSeq
+      const target = Array.from(new Set(pool.map((p) => p.id)))
+      void (async () => {
+        const merged = new Map(annotationPresence.value)
+        for (let i = 0; i < target.length; i += ANNOTATION_CHUNK) {
+          try {
+            const rec = await window.api.annotations.count(target.slice(i, i + ANNOTATION_CHUNK))
+            if (seq !== annotationSeq) return // 期间翻档/换池：过期响应整体丢弃
+            for (const [id, n] of Object.entries(rec)) merged.set(id, n > 0)
+          } catch {
+            return // 查询失败保持已知子集：matchAnnotation 对未知放行，不误杀
+          }
+        }
+        if (seq !== annotationSeq) return
+        annotationPresence.value = merged
+      })()
+    },
+    { immediate: true }
+  )
 
   // ── 展示分组（视图分支 + 关键词 + 快筛 + 组内排序）──
 
@@ -800,6 +854,8 @@ function build() {
     showFilters,
     matchAll,
     matchKeyword,
+    /** M4 标注维本地真值（FilterBar 两档计数用；true/false/null=未知） */
+    annotationHas,
     hasDimensionFilters,
     currentPool,
     displaySections,
