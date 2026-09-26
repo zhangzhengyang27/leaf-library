@@ -41,6 +41,7 @@ import { reverseGeocode as reverseGeocodeService } from '../services/GeoCoder'
 import { ocrService } from '../services/OcrService'
 import { listZipEntries, extractZipEntryDataUrl } from '../utils/zipBrowse'
 import { uniqueFilePath } from '../utils/screenshotFile'
+import { getReverseSearchEngine, openReverseSearchEngine } from '../utils/reverseSearch'
 import {
   isOpenPathAllowed,
   grantScanDir,
@@ -918,6 +919,27 @@ export function registerPhotoIpcHandlers(
       } catch (err) {
         return { ok: false, error: sanitizeIpcMessage(err) }
       }
+    },
+    // 右键「反向图搜」（对标 Eagle find > reverse）：搜索引擎只认 URL/上传，
+    // 所以位图复制进系统剪贴板 + 打开引擎页，用户在页面里 ⌘V 粘贴。
+    // 路径只按 id 从库里反查（渲染层传不进任意路径，与 openWithDefault 同一信任模型）；
+    // 非图片/文件缺失返回 { ok:false }，异常路径走 registerPrefixedHandlers 的统一脱敏通道。
+    reverseImageSearch: (payload: { id?: unknown; engineId?: unknown }) => {
+      const engine = getReverseSearchEngine(payload?.engineId)
+      if (!engine) return { ok: false as const, error: '未知的搜索引擎' }
+      const photo = photoStore.getPhotoById(String(payload?.id ?? ''))
+      if (!photo || photo.kind !== 'image') {
+        return { ok: false as const, error: '素材不存在或不是位图' }
+      }
+      if (!existsSync(photo.filePath)) {
+        return { ok: false as const, error: '文件不存在或已被移动' }
+      }
+      const img = nativeImage.createFromPath(photo.filePath)
+      // SVG 等矢量 kind 也归 image，但 nativeImage 解不出位图，这里兜住
+      if (img.isEmpty()) return { ok: false as const, error: '图片不可读（矢量或已损坏）' }
+      clipboard.writeImage(img)
+      openReverseSearchEngine(engine.id, (url) => void shell.openExternal(url))
+      return { ok: true as const, engine: engine.name }
     },
     /** 在默认应用中打开原文件（仅限已入库素材路径） */
     openWithDefault: (filePath: string): boolean => {

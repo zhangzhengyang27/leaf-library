@@ -337,6 +337,8 @@ const api: API = {
     getClipboardText: () => ipcRenderer.invoke('photos:getClipboardText'),
     copyThumbToClipboard: (id) => ipcRenderer.invoke('photos:copyThumbToClipboard', id),
     copyBase64: (id) => ipcRenderer.invoke('photos:copyBase64', id),
+    // 右键「反向图搜」：位图进系统剪贴板 + 打开引擎页（引擎清单见 main/utils/reverseSearch）
+    reverseImageSearch: (payload) => ipcRenderer.invoke('photos:reverseImageSearch', payload),
     openWithDefault: (filePath) => ipcRenderer.invoke('photos:openWithDefault', filePath),
     duplicate: (id) => ipcRenderer.invoke('photos:duplicate', id),
     replaceFile: (id) => ipcRenderer.invoke('photos:replaceFile', id),

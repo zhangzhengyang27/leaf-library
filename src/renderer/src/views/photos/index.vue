@@ -292,7 +292,9 @@ import { usePhotoImport } from './composables/usePhotoImport'
 import { usePhotoClipboard } from './composables/usePhotoClipboard'
 import { usePhotoSelection } from './composables/usePhotoSelection'
 import { useDeepLink } from './composables/useDeepLink'
-import type { DeepLinkTarget } from '@shared/deepLink'
+import { buildItemLink, type DeepLinkTarget } from '@shared/deepLink'
+// 引擎清单与主进程同一份（纯模块，两侧不跑偏）；跨层相对路径，保持 main/utils 为唯一出处
+import { REVERSE_SEARCH_ENGINES } from '../../../../main/utils/reverseSearch'
 import { MODE_LABEL, useWallpaper } from './composables/useWallpaper'
 import type { WallpaperMode } from '@shared/wallpaper'
 
@@ -633,6 +635,7 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
       children: [
         { key: 'copy', label: '复制文件 ⌘C' },
         { key: 'copy-path', label: '复制文件路径 ⌥⌘C' },
+        { key: 'copy-link', label: '复制素材链接' },
         { key: 'copy-title', label: '复制标题', disabled: !isSingle },
         {
           key: 'copy-tags',
@@ -687,11 +690,14 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
     { key: 'refresh-thumb', label: '刷新缩略图', icon: 'context-menu/ic-video-update-thumbnail' },
     { key: 'reanalyze-color', label: '重新分析颜色', icon: 'context-menu/ic-filter-item-color' },
     { key: 'similar', label: '以图搜图', icon: 'context-menu/ic-search-by-image' },
+    // 反向图搜▸（Eagle find > reverse）：引擎只认 URL/上传，本地位图先进剪贴板再开页粘贴；
+    // 只对位图类素材显示（kind 判定与「设为壁纸」同口径），多选禁用
     {
       key: 'reverse-search',
-      label: '以图找图（谷歌）',
+      label: '反向图搜',
       icon: 'context-menu/ic-reverse-search',
-      disabled: !isSingle
+      disabled: ids.length > 1 || photo.kind !== 'image',
+      children: REVERSE_SEARCH_ENGINES.map((e) => ({ key: e.id, label: e.name }))
     },
     { key: 'gray-preview', label: '黑白预览', icon: 'context-menu/ic-grayscale' },
     // 缩略图背景▸（Eagle 子菜单形态）
@@ -878,6 +884,14 @@ async function handleMenuAction(rawKey: string, ids: string[], photo: Photo): Pr
           .join('\n')
       )
       useToast().success('已复制文件路径')
+    } else if (key === 'copy-link') {
+      // 深链 leaf://item/<id>（Eagle「复制 Eagle 链接」口径；检查器同款，形状在 @shared/deepLink）
+      await window.api.photos.copyText(
+        byIds(ids)
+          .map((p) => buildItemLink(p.id))
+          .join('\n')
+      )
+      useToast().success('已复制素材链接')
     } else if (key === 'copy-title') {
       const base = photo.fileName.replace(/\.[^.]+$/, '')
       await window.api.photos.copyText(base)
@@ -1078,15 +1092,19 @@ async function handleMenuAction(rawKey: string, ids: string[], photo: Photo): Pr
         await loadAll()
         useToast().success('拼图已创建并入库', { description: r.filePath?.split(/[\\/]/).pop() })
       } else useToast().error('创建拼图失败', { description: r.error })
-    } else if (key === 'reverse-search') {
-      // 谷歌以图找图：本地图无法直接给搜索引擎，先复制文件再打开识图页粘贴
-      const ok = await window.api.photos.copyToClipboard([photo.filePath])
-      if (ok) {
-        void window.api.system.openExternal('https://images.google.com/')
-        useToast().success('已复制图片并打开谷歌识图', {
-          description: '在网页搜索框使用 ⌘V 粘贴图片'
+    } else if (key.startsWith('sub:reverse-search:')) {
+      // 反向图搜（Eagle find > reverse）：主进程把位图写进系统剪贴板并打开引擎页
+      const r = await window.api.photos.reverseImageSearch({
+        id: photo.id,
+        engineId: key.slice('sub:reverse-search:'.length)
+      })
+      if (r.ok) {
+        useToast().success('图片已复制到剪贴板，请在打开的页面粘贴', {
+          description: `引擎：${r.engine ?? ''} · 在页面搜索框 ⌘V`
         })
-      } else useToast().error('以图找图失败', { description: '文件不存在或已被移动' })
+      } else {
+        useToast().error('反向图搜失败', { description: r.error })
+      }
     } else if (key === 'brief') {
       // 十八轮 P3：进入简报模式 F5
       briefMode.value = true

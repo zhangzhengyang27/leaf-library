@@ -537,6 +537,11 @@ export interface API {
     copyThumbToClipboard: (id: string) => Promise<boolean>
     /** ④-3：复制原文件 Base64（5MB 上限） */
     copyBase64: (id: string) => Promise<{ ok: boolean; error?: string }>
+    /** 右键「反向图搜」（Eagle find>reverse 口径）：位图复制进系统剪贴板并打开引擎页 */
+    reverseImageSearch: (payload: {
+      id: string
+      engineId: string
+    }) => Promise<{ ok: boolean; error?: string; engine?: string }>
     openWithDefault: (filePath: string) => Promise<boolean>
     duplicate: (id: string) => Promise<Photo>
     replaceFile: (id: string) => Promise<{ ok: boolean; error?: string; photo?: Photo }>
