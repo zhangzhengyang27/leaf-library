@@ -20,7 +20,9 @@
 
       <!-- 标签（全部包含） -->
       <div v-if="availableTags.length > 0">
-        <label class="mb-1 block text-xs text-fg-muted">匹配模式</label>
+        <label class="mb-1 block text-xs text-fg-muted">
+          匹配模式<span v-if="groups.length > 0">（基础条件与各条件组之间）</span>
+        </label>
         <select
           v-model="matchMode"
           class="mb-3 h-8 w-full rounded-md border border-line-default bg-surface-1 px-2 text-sm text-fg-primary focus:outline-none focus:border-brand-500"
@@ -402,9 +404,12 @@
               placeholder="如 红色日落的海边"
               class="w-full px-2 py-1 text-xs rounded border border-line-default bg-surface-1 text-fg-primary"
             />
-            <p v-if="semanticQuery.trim() && !semanticReady" class="mt-1 text-[11px] text-warning-600">
-              向量模型未下载：这条条件现在会判定为「无匹配」（相册显示空），
-              到 设置 › 内容识别 下载后自动生效。
+            <p
+              v-if="semanticQuery.trim() && !semanticReady"
+              class="mt-1 text-[11px] text-warning-600"
+            >
+              向量模型未下载：这条条件现在会判定为「无匹配」（相册显示空）， 到 设置 › 内容识别
+              下载后自动生效。
             </p>
           </div>
 
@@ -492,12 +497,135 @@
         </div>
       </fieldset>
 
+      <!-- ── D-022 条件组（形状 v2）：与上方基础条件并存；组间连接词 = 顶部「匹配模式」，
+           组内连接词/组级取反在各组的头部行。旧规则没有 groups 时这里为空，形状不变 ── -->
+      <div>
+        <div class="mb-1 flex items-center justify-between">
+          <label class="block text-xs text-fg-muted">条件组</label>
+          <button
+            type="button"
+            class="rounded border border-line-default px-2 py-0.5 text-xs text-fg-secondary hover:border-brand-400 disabled:opacity-50"
+            :disabled="groups.length >= MAX_GROUPS"
+            :title="groups.length >= MAX_GROUPS ? `最多 ${MAX_GROUPS} 个条件组` : ''"
+            @click="addGroup"
+          >
+            + 添加条件组
+          </button>
+        </div>
+
+        <fieldset
+          v-for="(g, gi) in groups"
+          :key="gi"
+          class="mb-2 rounded-md border border-line-default p-2"
+        >
+          <div class="mb-2 flex items-center gap-2">
+            <span class="shrink-0 text-xs text-fg-muted">组 {{ gi + 1 }}</span>
+            <select
+              v-model="g.match"
+              title="组内连接词"
+              class="h-7 rounded border border-line-default bg-surface-1 px-1 text-xs text-fg-primary"
+            >
+              <option value="all">组内全部满足</option>
+              <option value="any">组内任一满足</option>
+            </select>
+            <label
+              class="flex items-center gap-1 text-xs text-fg-secondary"
+              title="整组取反：这组条件都不满足才算命中"
+            >
+              <input v-model="g.not" type="checkbox" class="accent-brand-500" />
+              不满足此组
+            </label>
+            <button
+              type="button"
+              class="ml-auto rounded border border-line-default px-2 py-0.5 text-xs text-fg-muted hover:border-danger hover:text-danger-500"
+              @click="removeGroup(gi)"
+            >
+              删除组
+            </button>
+          </div>
+
+          <div class="space-y-1.5">
+            <div v-for="(row, ri) in g.rows" :key="ri" class="flex items-center gap-1.5">
+              <select
+                v-model="row.key"
+                class="h-7 w-36 shrink-0 rounded border border-line-default bg-surface-1 px-1 text-xs text-fg-primary"
+                @change="onRowKeyChange(row)"
+              >
+                <option v-for="d in GROUP_RULE_DEFS" :key="d.key" :value="d.key">
+                  {{ d.label }}
+                </option>
+              </select>
+              <!-- 值控件按键型分发：bool 勾选 / num 数字 / enum 下拉 / text、list 文本（逗号分隔） -->
+              <input
+                v-if="rowDef(row.key)?.kind === 'bool'"
+                v-model="row.value"
+                type="checkbox"
+                class="accent-brand-500"
+              />
+              <input
+                v-else-if="rowDef(row.key)?.kind === 'num'"
+                v-model.number="row.value"
+                type="number"
+                min="0"
+                class="h-7 w-28 rounded border border-line-default bg-surface-1 px-2 text-xs text-fg-primary"
+              />
+              <select
+                v-else-if="rowDef(row.key)?.kind === 'enum'"
+                v-model="row.value"
+                class="h-7 w-36 rounded border border-line-default bg-surface-1 px-1 text-xs text-fg-primary"
+              >
+                <option
+                  v-for="o in rowDef(row.key)?.options ?? []"
+                  :key="String(o.value)"
+                  :value="o.value"
+                >
+                  {{ o.label }}
+                </option>
+              </select>
+              <input
+                v-else
+                v-model="row.value"
+                type="text"
+                :placeholder="rowDef(row.key)?.placeholder ?? ''"
+                class="h-7 min-w-0 flex-1 rounded border border-line-default bg-surface-1 px-2 text-xs text-fg-primary"
+              />
+              <button
+                type="button"
+                class="shrink-0 rounded px-1 text-xs text-fg-muted hover:text-danger-500"
+                title="删除这条条件"
+                @click="g.rows.splice(ri, 1)"
+              >
+                删除
+              </button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="mt-1.5 text-xs text-fg-muted hover:text-brand-500 disabled:opacity-50"
+            :disabled="g.rows.length >= MAX_GROUP_ROWS"
+            @click="addRow(g)"
+          >
+            + 添加条件
+          </button>
+          <p v-if="groupExtraKeys(g).length > 0" class="mt-1 text-[11px] text-warning-500">
+            组内还有暂不支持编辑的条件，将原样保留：{{ groupExtraKeys(g).join('、') }}
+          </p>
+        </fieldset>
+      </div>
+
       <p v-if="unownedLabels.length > 0" class="mb-2 text-[11px] text-warning-500">
         这条还带着编辑器暂不支持编辑的条件，将原样保留：{{ unownedLabels.join('、') }}
       </p>
 
-      <p class="text-xs text-fg-muted">
-        {{ matchCount === null ? '正在计算匹配数量...' : `当前条件匹配 ${matchCount} 张图片` }}
+      <p class="text-xs" :class="countError ? 'text-warning-500' : 'text-fg-muted'">
+        {{
+          countError
+            ? `实时计数失败：${countError}`
+            : matchCount === null
+              ? '正在计算匹配数量...'
+              : `当前条件匹配 ${matchCount} 张图片`
+        }}
       </p>
     </div>
 
@@ -524,6 +652,7 @@ import {
 } from '@shared/assetTypes'
 import type { HueBucket } from '@utils/photoColor'
 import type { SmartAlbum, SmartAlbumRules, TagSummary } from '../../../types/photo'
+import { validateSmartAlbumRules, type SmartAlbumRuleGroup } from '@shared/smartAlbumRules'
 import ColorPalette from './ColorPalette.vue'
 import { useToast } from '@composables/useToast'
 
@@ -662,6 +791,8 @@ const OWNED_RULE_KEYS: Array<keyof SmartAlbumRules> = [
   'resolutionMin',
   'excludeKeyword',
   'semanticQuery',
+  // D-022 条件组：由下方组容器接管（无组时不出该键，旧规则保存后形状不变）
+  'groups',
   // 快照字段：编辑器不呈现它，但 passthrough 不能把它丢掉（下次保存要带走的是 semanticQuery）
   'semanticIds'
 ]
@@ -682,6 +813,188 @@ const RULE_LABEL: Record<string, string> = {
 const unownedLabels = computed<string[]>(() =>
   Object.keys(passthrough.value).map((k) => RULE_LABEL[k] ?? k)
 )
+
+// ── D-022 条件组（形状 v2）：组容器 + 组内规则行 ──
+// 顶层表单继续编辑「基础条件」（顶层 rules）；条件组是与之并存的显式 groups。
+// 组内规则行走「键 select + 值控件」的通用行（值型按 GROUP_RULE_DEFS 分发），
+// 覆盖不到的键进 group.extra 原样保留（顶层 passthrough 的组级同款兜底）。
+
+interface GroupRowDraft {
+  key: string
+  value: string | number | boolean | null
+}
+interface GroupDraft {
+  match: 'any' | 'all'
+  not: boolean
+  rows: GroupRowDraft[]
+  /** 组内暂不支持编辑的键，保存时原样带回 */
+  extra: Record<string, unknown>
+}
+
+/** Eagle 的「30 组 × 30 条件」口径；距引擎组节点闸（SMART_ALBUM_MAX_NODES = 300）余量充足 */
+const MAX_GROUPS = 30
+const MAX_GROUP_ROWS = 30
+const DEFAULT_ROW_KEY = 'keyword'
+
+type GroupValueKind = 'bool' | 'num' | 'text' | 'list' | 'enum'
+interface GroupRuleDef {
+  key: keyof SmartAlbumRules
+  label: string
+  kind: GroupValueKind
+  /** enum 行的下拉选项 */
+  options?: Array<{ value: number | string; label: string }>
+  /** num 行的单位换算：界面 KB/秒 → 引擎 字节/毫秒 */
+  scale?: number
+  placeholder?: string
+}
+
+const GROUP_RULE_DEFS: GroupRuleDef[] = [
+  { key: 'keyword', label: '文件名/描述含', kind: 'text', placeholder: '如 海报' },
+  { key: 'excludeKeyword', label: '排除关键词', kind: 'text', placeholder: '如 临时' },
+  { key: 'favorite', label: '仅收藏', kind: 'bool' },
+  {
+    key: 'minRating',
+    label: '最低评分',
+    kind: 'enum',
+    options: [1, 2, 3, 4, 5].map((n) => ({ value: n, label: `${'★'.repeat(n)} 起` }))
+  },
+  {
+    key: 'annotationFilter',
+    label: '标注',
+    kind: 'enum',
+    options: [
+      { value: 'any', label: '有标注' },
+      { value: 'none', label: '无标注' }
+    ]
+  },
+  { key: 'minWidth', label: '最小宽度 px', kind: 'num' },
+  { key: 'minHeight', label: '最小高度 px', kind: 'num' },
+  { key: 'maxWidth', label: '最大宽度 px', kind: 'num' },
+  { key: 'maxHeight', label: '最大高度 px', kind: 'num' },
+  { key: 'minFileSize', label: '最小大小 (KB)', kind: 'num', scale: 1024 },
+  { key: 'maxFileSize', label: '最大大小 (KB)', kind: 'num', scale: 1024 },
+  { key: 'minDurationMs', label: '最短时长 (秒)', kind: 'num', scale: 1000 },
+  { key: 'maxDurationMs', label: '最长时长 (秒)', kind: 'num', scale: 1000 },
+  {
+    key: 'resolutionMin',
+    label: '分辨率下限（短边）',
+    kind: 'enum',
+    options: [
+      { value: 1280, label: '≥1280（1K）' },
+      { value: 1920, label: '≥1920（2K）' },
+      { value: 3840, label: '≥3840（4K）' }
+    ]
+  },
+  { key: 'fileExtsInclude', label: '扩展名包含', kind: 'list', placeholder: 'png, jpg' },
+  { key: 'fileExtsExclude', label: '扩展名排除', kind: 'list', placeholder: 'gif, tmp' },
+  { key: 'tagNamesAny', label: '标签名（任一）', kind: 'list', placeholder: '逗号分隔' },
+  { key: 'tagNamesAll', label: '标签名（全部）', kind: 'list', placeholder: '逗号分隔' },
+  { key: 'tagNamesExact', label: '标签名（完全一致）', kind: 'list', placeholder: '逗号分隔' },
+  { key: 'tagNamesExclude', label: '标签名（排除）', kind: 'list', placeholder: '逗号分隔' },
+  { key: 'untaggedOnly', label: '仅看未标签', kind: 'bool' }
+]
+
+const groups = ref<GroupDraft[]>([])
+
+const rowDef = (key: string): GroupRuleDef | undefined => GROUP_RULE_DEFS.find((d) => d.key === key)
+const groupExtraKeys = (g: GroupDraft): string[] => Object.keys(g.extra)
+
+function defaultValueFor(def: GroupRuleDef): string | number | boolean | null {
+  if (def.kind === 'bool') return true
+  if (def.kind === 'num') return null
+  if (def.kind === 'enum') return def.options?.[0]?.value ?? ''
+  return ''
+}
+
+function addGroup(): void {
+  if (groups.value.length < MAX_GROUPS)
+    groups.value.push({ match: 'all', not: false, rows: [], extra: {} })
+}
+function removeGroup(index: number): void {
+  groups.value.splice(index, 1)
+}
+function addRow(g: GroupDraft): void {
+  if (g.rows.length < MAX_GROUP_ROWS) g.rows.push({ key: DEFAULT_ROW_KEY, value: '' })
+}
+/** 换键时值必须跟着键型重置，否则数字会串进文本框 */
+function onRowKeyChange(row: GroupRowDraft): void {
+  const def = rowDef(row.key)
+  row.value = def ? defaultValueFor(def) : ''
+}
+
+/** 组内 list 行的拆分：trim 逗号分段；扩展名键再归一成无点小写（与顶层 fileExtsInclude 同口径） */
+function splitListValue(def: GroupRuleDef, raw: string): string[] {
+  const arr = raw
+    .split(/[,，、]/)
+    .map((x) => x.trim())
+    .filter(Boolean)
+  const isExt = def.key === 'fileExtsInclude' || def.key === 'fileExtsExclude'
+  return isExt ? arr.map((x) => x.replace(/^\./, '').toLowerCase()) : arr
+}
+
+/** 一行草稿 → 规则键值；空值（未填/未勾）返回 undefined = 该行不下发 */
+function rowToRuleValue(def: GroupRuleDef, row: GroupRowDraft): unknown {
+  const v = row.value
+  switch (def.kind) {
+    case 'bool':
+      return v === true ? true : undefined
+    case 'num': {
+      const n = typeof v === 'number' && Number.isFinite(v) ? Math.round(v) : 0
+      if (n <= 0) return undefined
+      return def.scale ? n * def.scale : n
+    }
+    case 'enum':
+      return v === '' || v === null || v === undefined ? undefined : v
+    case 'text': {
+      const s = typeof v === 'string' ? v.trim() : ''
+      return s === '' ? undefined : s
+    }
+    case 'list': {
+      if (typeof v !== 'string') return undefined
+      const arr = splitListValue(def, v)
+      return arr.length > 0 ? arr : undefined
+    }
+  }
+}
+
+/** 已存组规则 → 行草稿 + 兜底集：描述表管得了的键进行，其余原样留在 extra */
+function rowsFromGroupRules(rules: Record<string, unknown>): {
+  rows: GroupRowDraft[]
+  extra: Record<string, unknown>
+} {
+  const rest: Record<string, unknown> = { ...rules }
+  const rows: GroupRowDraft[] = []
+  for (const def of GROUP_RULE_DEFS) {
+    const v = rest[def.key]
+    if (v === undefined || v === null) continue
+    let consumed: string | number | boolean | null | undefined
+    if (def.kind === 'bool' && typeof v === 'boolean') consumed = v
+    else if (def.kind === 'num' && typeof v === 'number' && Number.isFinite(v))
+      consumed = def.scale ? Math.round((v / def.scale) * 100) / 100 : v
+    else if (def.kind === 'enum' && def.options?.some((o) => o.value === v))
+      consumed = v as string | number
+    else if (def.kind === 'text' && typeof v === 'string') consumed = v
+    else if (def.kind === 'list' && Array.isArray(v) && v.every((x) => typeof x === 'string'))
+      consumed = (v as string[]).join(', ')
+    if (consumed === undefined) continue // 键认识、值型不认识 → 留在 extra 不动
+    rows.push({ key: def.key, value: consumed })
+    delete rest[def.key]
+  }
+  return { rows, extra: rest }
+}
+
+/** 组草稿 → v2 组形状（match 显式写出；not 仅在取反时出现） */
+function serializeGroup(g: GroupDraft): SmartAlbumRuleGroup {
+  const rules: Record<string, unknown> = { ...g.extra }
+  for (const row of g.rows) {
+    const def = rowDef(row.key)
+    const v = def ? rowToRuleValue(def, row) : row.value
+    if (v !== undefined) rules[row.key] = v
+  }
+  const out: SmartAlbumRuleGroup = { match: g.match, rules: rules as SmartAlbumRules }
+  if (g.not) out.not = true
+  return out
+}
 
 const TAG_LOGICS = [
   { key: 'all', label: '全部包含' },
@@ -835,6 +1148,11 @@ onMounted(async () => {
     closeHex.value = src.colorClose?.hex ?? ''
     closeAccuracy.value = src.colorClose?.accuracy ?? 20
     extExclude.value = [...(src.fileExtsExclude ?? [])]
+    // D-022 条件组回填：描述表管得了的键进行，其余原样进组内 extra 兜底
+    groups.value = (src.groups ?? []).map((g) => {
+      const { rows, extra } = rowsFromGroupRules((g.rules ?? {}) as Record<string, unknown>)
+      return { match: g.match === 'any' ? 'any' : 'all', not: g.not === true, rows, extra }
+    })
     // 表单没有控件的键原样带走，并在界面上列出来——编辑保存不得把它们抹掉
     passthrough.value = Object.fromEntries(
       Object.entries(src).filter(([k]) => !OWNED_RULE_KEYS.includes(k as never))
@@ -931,11 +1249,19 @@ const currentRules = computed<SmartAlbumRules>(() => {
   if (formats.value.length > 0) {
     rules.fileExtsInclude = formats.value.map((f) => f.replace(/^\./, '').toLowerCase())
   }
+  // D-022 条件组写回：只产出「真实存在且组内有条件」的 groups——
+  // 旧规则（无组）保存后形状不变（读侧/命中集都不动），空组不留死键
+  const serializedGroups = groups.value
+    .map(serializeGroup)
+    .filter((g) => Object.keys((g.rules ?? {}) as object).length > 0)
+  if (serializedGroups.length > 0) rules.groups = serializedGroups
   return { ...passthrough.value, ...rules }
 })
 
 // 条件变化时实时试跑匹配数量（防抖 300ms + 序号守卫：
-// 慢的旧请求回来时不得覆盖新一轮计数；卸载后定时器不再触发全库查询）
+// 慢的旧请求回来时不得覆盖新一轮计数；卸载后定时器不再触发全库查询；
+// 引擎拒编译（超限/结构损坏）时把错误念在计数行上，而不是永远「正在计算」）
+const countError = ref('')
 let debounceTimer: number | undefined
 let rulesQuerySeq = 0
 watch(
@@ -949,8 +1275,12 @@ watch(
         const result = await window.api.photos.queryPhotosByRules(currentRules.value)
         if (seq !== rulesQuerySeq) return
         matchCount.value = result.length
-      } catch {
-        if (seq === rulesQuerySeq) matchCount.value = null
+        countError.value = ''
+      } catch (error) {
+        if (seq === rulesQuerySeq) {
+          matchCount.value = null
+          countError.value = (error as Error)?.message ?? '未知错误'
+        }
       }
     }, 300)
   },
@@ -979,6 +1309,14 @@ function toggleFormat(f: string): void {
 async function handleSave(): Promise<void> {
   const trimmed = name.value.trim()
   if (!trimmed) return
+  // D-022：保存前按 v2 结构校验（口径与主进程引擎一致：深度/组节点上限、组形状）。
+  // 不能把一条查询期必炸的规则存进库——编辑器是嵌套规则的唯一合法写入方，
+  // 这里挡住之后主进程保存链无需加第二道校验
+  const check = validateSmartAlbumRules(currentRules.value)
+  if (!check.ok) {
+    toast.error('无法保存', { description: check.error })
+    return
+  }
   try {
     if (props.album) {
       await window.api.photos.updateSmartAlbum(props.album.id, {

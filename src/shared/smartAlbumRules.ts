@@ -38,9 +38,36 @@ export type SearchScopeId = (typeof SEARCH_SCOPE_IDS)[number]
  */
 export const SEMANTIC_ID_CAP = 500
 
-export interface SmartAlbumRules {
-  /** 条件匹配模式（D-012 对齐 Eagle「任一项/所有」）：默认 all */
+// ── D-022 条件组（形状 v2）──
+
+/** 防炸闸：条件组递归深度上限（根算第 1 层；编辑器只产出单层组，深层只可能来自手改 JSON） */
+export const SMART_ALBUM_MAX_DEPTH = 8
+/** 防炸闸：条件组节点总数上限（根计 1，每个条件组计 1；谓词条件数与 v1 同口径不另设上限） */
+export const SMART_ALBUM_MAX_NODES = 300
+
+/**
+ * 一个显式条件组。组内连接词 `match` 管这组条件之间怎么连；组级 `not` = 「不满足此组」。
+ * `rules` 与顶层 SmartAlbumRules 同形状——因此组内理论上还能再带 groups（递归形状，
+ * 引擎按递归编译、深度/节点超限会被拒），编辑器只产出单层组。
+ */
+export interface SmartAlbumRuleGroup {
+  /** 组内连接词（默认 all = 组内全部满足） */
   match?: 'any' | 'all'
+  /** 组级取反：整组条件不满足才算命中 */
+  not?: boolean
+  /** 组内条件（与顶层同形状；更深的嵌套从 rules.groups 继续递归） */
+  rules?: SmartAlbumRules
+}
+
+export interface SmartAlbumRules {
+  /** 条件匹配模式（D-012 对齐 Eagle「任一项/所有」）：默认 all。
+   * 有 groups 时它同时是「顶层规则之间」与「顶层规则与各组之间」的连接词 */
+  match?: 'any' | 'all'
+  /**
+   * D-022 显式条件组（形状 v2）：与顶层规则并存。读侧永远兼容 v1——
+   * 无 groups（或空数组）视为单组，只有编辑器保存嵌套后才产出该字段。
+   */
+  groups?: SmartAlbumRuleGroup[]
   /** 全部包含的标签（tag_tags.id） */
   tags?: string[]
   /** 素材类型（六期：image/video/audio/font/file，空或不设=不限） */
@@ -157,4 +184,58 @@ export interface SmartAlbumRules {
   advancedAst?: SearchAstNode
   /** 文件夹排除（'none' = 未分类；matchFolderFilter exclude 语义） */
   folderExcludeIds?: string[]
+}
+
+/** v2 结构校验结果（照 annotations.normalizeAnnotationInput 的 {ok, error} 风格） */
+export type SmartAlbumRulesCheck = { ok: true } | { ok: false; error: string }
+
+/**
+ * D-022 v2 形状校验（编辑器保存前用）：只把关「组的结构 + 防炸闸」，
+ * 不逐键校验 43+ 谓词的值型——未知键向前兼容（与读侧「不容错失败」同一哲学）。
+ * 拒绝口径与主进程 buildSmartAlbumWhere 一致：深度 > SMART_ALBUM_MAX_DEPTH、
+ * 组节点 > SMART_ALBUM_MAX_NODES、groups 不是数组、组不是对象。
+ */
+export function validateSmartAlbumRules(raw: unknown): SmartAlbumRulesCheck {
+  const ctx = { nodes: 0 }
+  const error = walkSmartAlbumGroups(raw, 1, ctx)
+  return error ? { ok: false, error } : { ok: true }
+}
+
+function smartAlbumBudgetError(nodes: number): string {
+  return `条件组数量超过上限 ${SMART_ALBUM_MAX_NODES}（当前 ${nodes}），请拆分或简化规则`
+}
+
+function walkSmartAlbumGroups(
+  rules: unknown,
+  depth: number,
+  ctx: { nodes: number }
+): string | null {
+  // 空组（无 rules）也占一个节点：与引擎的计数口径一致（引擎对缺 rules 编译为空条件集）
+  if (rules === undefined || rules === null) {
+    ctx.nodes += 1
+    return ctx.nodes > SMART_ALBUM_MAX_NODES ? smartAlbumBudgetError(ctx.nodes) : null
+  }
+  // 非对象的脏值不在本校验范围（引擎把它当空条件集宽容处理，不额外报错）
+  if (typeof rules !== 'object') return null
+  ctx.nodes += 1
+  if (ctx.nodes > SMART_ALBUM_MAX_NODES) return smartAlbumBudgetError(ctx.nodes)
+  if (depth > SMART_ALBUM_MAX_DEPTH)
+    return `条件组嵌套超过 ${SMART_ALBUM_MAX_DEPTH} 层上限，请拍平条件组`
+
+  const groups = (rules as { groups?: unknown }).groups
+  if (groups === undefined || groups === null) return null
+  if (!Array.isArray(groups)) return '条件组（groups）必须是数组'
+  for (const group of groups) {
+    if (typeof group !== 'object' || group === null || Array.isArray(group))
+      return '条件组格式不合法（必须是对象）'
+    const match = (group as { match?: unknown }).match
+    if (match !== undefined && match !== 'any' && match !== 'all')
+      return '条件组的匹配模式只能是「任一满足 / 全部满足」'
+    const not = (group as { not?: unknown }).not
+    if (not !== undefined && typeof not !== 'boolean') return '条件组取反标记（not）必须是布尔值'
+    if ('groups' in group) return '条件组不支持自身的 groups 字段：嵌套组请放进组内 rules.groups'
+    const sub = walkSmartAlbumGroups((group as { rules?: unknown }).rules, depth + 1, ctx)
+    if (sub) return sub
+  }
+  return null
 }

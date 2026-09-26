@@ -4,6 +4,13 @@
  * 借鉴 Eagle 智能文件夹的「条件即相册」模型：rules 是用户可读的条件集，
  * 序列化存 photo_smart_albums.rules_json，查询时编译为 photo_photos 上的 WHERE。
  *
+ * 形状 v2（D-022）：顶层 rules 与 groups 并存——
+ *   - 组间/组内连接词分别由顶层 match 与组 match 决定（any = OR，all = AND）；
+ *   - 组级 not 把整组包成 NOT(...)；
+ *   - 读侧永远兼容 v1：无 groups 视为单组，编译产物与升级前逐字节一致；
+ *   - 防炸闸：递归深度 ≤ SMART_ALBUM_MAX_DEPTH、组节点 ≤ SMART_ALBUM_MAX_NODES，
+ *     超限抛明确错误（rules_json 是自由 JSON，手改/脚本灌入不能变成启动期炸弹）。
+ *
  * 规则→SQL 这一步本身是纯的，但**不是无 IO**：中文分词会惰性加载 jieba-wasm
  * 词典（首次约 150ms 同步编译，落在第一次搜索的调用栈上）。这一点写在这儿是为了
  * 别让人以为它可以在没有词典的环境里得出同样的词——回落分支的切法并不相同。
@@ -19,12 +26,15 @@ import { segmentQuery } from '../services/querySegment'
 import {
   SEMANTIC_ID_CAP,
   SEARCH_SCOPE_IDS,
+  SMART_ALBUM_MAX_DEPTH,
+  SMART_ALBUM_MAX_NODES,
   type SearchAstNode,
+  type SmartAlbumRuleGroup,
   type SmartAlbumRules,
   type SearchScopeId
 } from '../../shared/smartAlbumRules'
 
-export type { SmartAlbumRules }
+export type { SmartAlbumRules, SmartAlbumRuleGroup }
 
 /** 未指定搜索范围时的默认列 */
 const DEFAULT_SCOPES: SearchScopeId[] = ['name', 'note', 'tags']
@@ -41,9 +51,31 @@ function escapeLike(input: string): string {
 /** 素材 id 形状（uuid v4）；语义档的 id 集来自渲染层，逐条按它筛 */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-export function buildSmartAlbumWhere(rules: SmartAlbumRules): CompiledWhere {
+/** 编译上下文：绑定参数按 SQL 出现顺序聚合 + 防炸闸节点计数（根计 1，每个条件组计 1） */
+interface CompileCtx {
+  params: unknown[]
+  nodes: number
+}
+
+/**
+ * 语义 id 集（D-021）的单一出口，三态必须分清：
+ * null = 没给（不参与匹配）；[] = AI 判定无命中；非空 = 按 id 收窄。
+ * 「给了但是空集」与「没给」若合并，空结果会被静默换成整库命中。
+ */
+function resolveSemanticIds(raw: unknown): string[] | null {
+  if (!Array.isArray(raw)) return null
+  return raw
+    .filter((x): x is string => typeof x === 'string' && UUID_RE.test(x))
+    .slice(0, SEMANTIC_ID_CAP)
+}
+
+/**
+ * 单个规则对象（根或某组内）的**扁平谓词**编译：逐键产出条件，
+ * 绑定参数按条件产出顺序推进 ctx.params（与最终 SQL 里的占位符顺序一致）。
+ * 这里不处理 match / groups——那是 compileRulesNode 的职责。
+ */
+function compileFlatRules(rules: SmartAlbumRules, params: unknown[]): string[] {
   const conds: string[] = []
-  const params: unknown[] = []
 
   if (rules.favorite) conds.push(`is_favorite = 1`)
 
@@ -356,7 +388,8 @@ export function buildSmartAlbumWhere(rules: SmartAlbumRules): CompiledWhere {
     const hasScopes = pickedScopes.length > 0
     const scopes = hasScopes ? pickedScopes : DEFAULT_SCOPES
     // a) 高级语法：AST 递归转 SQL（term → INSTR haystack；and/or 递归；exclude → NOT）
-    if (rules.advancedAst) {      const haystackExpr = scopes.map((s) => scopeColExpr[s]).join(' || char(10) || ')
+    if (rules.advancedAst) {
+      const haystackExpr = scopes.map((s) => scopeColExpr[s]).join(' || char(10) || ')
       const astToCond = (node: SearchAstNode): string => {
         if (node.type === 'and' || node.type === 'or') {
           const joiner = node.type === 'and' ? ' AND ' : ' OR '
@@ -403,22 +436,20 @@ export function buildSmartAlbumWhere(rules: SmartAlbumRules): CompiledWhere {
     }
   }
 
-  // 语义档命中的 id 集（G1 文搜图）：只当"缩小范围"的谓词用，排序仍走既有 sort 列。
+  // 语义档命中的 id 集（G1 文搜图，D-021 下推）：只当"缩小范围"的谓词用，排序仍走既有 sort 列。
   // 勾选集来自渲染层（IPC 边界），所以逐条验形状并封顶——传一大串 id 不能把 SQL 撑爆。
-  // 「给了但是空集」与「没给」必须分开：前者是"AI 判定无命中"，要出空结果，
-  // 若退化成不加谓词就会把整库当成命中。
-  if (Array.isArray(rules.semanticIds)) {
-    const ids = rules.semanticIds
-      .filter((x): x is string => typeof x === 'string' && UUID_RE.test(x))
-      .slice(0, SEMANTIC_ID_CAP)
-    if (ids.length === 0) {
-      // 直接 return，不能只往 conds 里塞一条 1=0：match:'any' 会把 conds 用 OR 串起来，
-      // 「收藏 或 1=0」等于把所有收藏都列出来——AI 明明判定无命中，界面却给了结果。
-      return { whereSql: `1=0`, params: [] }
+  // 根级「空集 = AI 判定无命中」由 buildSmartAlbumWhere 入口整体短路成 1=0（在组编译之前，
+  // 它是整条查询的判定而不是某个组的叶子条件）；这里兜的是组内语义条件的叶子形态：
+  // 空集编译成 1=0 叶子，交给所在层的 AND/OR/NOT 组合（NOT 组甚至能把它救回来）。
+  const semIds = resolveSemanticIds(rules.semanticIds)
+  if (semIds !== null) {
+    if (semIds.length === 0) {
+      conds.push(`1=0`)
+    } else {
+      const ph = semIds.map(() => `?`).join(',')
+      conds.push(`photo_photos.id IN (${ph})`)
+      params.push(...semIds)
     }
-    const ph = ids.map(() => `?`).join(',')
-    conds.push(`photo_photos.id IN (${ph})`)
-    params.push(...ids)
   }
 
   // 文件夹排除（'none' = 未分类；matchFolderFilter exclude 语义）
@@ -452,11 +483,103 @@ export function buildSmartAlbumWhere(rules: SmartAlbumRules): CompiledWhere {
     }
   }
 
-  // D-012 匹配模式：any = 任一条件满足即命中；all = 全部满足（默认，向后兼容）
-  return {
-    whereSql: conds.length > 0 ? conds.join(rules.match === 'any' ? ' OR ' : ' AND ') : '1=1',
-    params
+  return conds
+}
+
+/**
+ * 递归编译一个规则节点（根节点或某个条件组的 rules）。
+ * - `match` 是**本层**连接词（any = OR / all = AND，默认 AND）；
+ * - 子组递归编译后作为一条完整条件并入本层：子组与父层连接词不同时括起来
+ *   （AND/OR 优先级不能靠读的人默背），组级 not 包一层 NOT(...)；
+ * - 空组（无任何条件、含嵌套组也不产出）不产生约束；「空组取反」没有
+ *   可取反的对象，同样不产生约束（两边都是全集。这条边角在 smartAlbumGroups.test.ts 钉死）；
+ * - 深度/节点超限抛明确错误，绝不静默截断。
+ *
+ * 返回 null 表示本节点没有产出任何谓词（空 rules + 空组）。
+ * 本层条件数组由调用方按 match 连接——根层裸连接（v1 编译产物逐字节兼容），
+ * 组层在并入父层时按需加括号。
+ */
+interface NodeResult {
+  conds: string[]
+  match: 'any' | 'all' | undefined
+}
+
+function compileRulesNode(
+  rules: SmartAlbumRules,
+  match: 'any' | 'all' | undefined,
+  depth: number,
+  ctx: CompileCtx
+): NodeResult | null {
+  ctx.nodes += 1
+  if (ctx.nodes > SMART_ALBUM_MAX_NODES) {
+    throw new Error(
+      `[buildSmartAlbumWhere] 条件组节点数超过上限 ${SMART_ALBUM_MAX_NODES}（当前 ${ctx.nodes}）：规则过复杂，请简化条件组`
+    )
   }
+  if (depth > SMART_ALBUM_MAX_DEPTH) {
+    throw new Error(
+      `[buildSmartAlbumWhere] 条件组嵌套深度超过上限 ${SMART_ALBUM_MAX_DEPTH} 层（当前第 ${depth} 层）：请拍平条件组`
+    )
+  }
+
+  // 本层扁平谓词（未知键天然被忽略——向前兼容）
+  const conds = compileFlatRules(rules, ctx.params)
+
+  // 子条件组：D-022 的组形状是 { match, not?, rules }，更深的嵌套经 rules.groups 递归
+  const rawGroups = (rules as { groups?: unknown } | undefined)?.groups
+  if (rawGroups !== undefined && rawGroups !== null && !Array.isArray(rawGroups)) {
+    throw new Error('[buildSmartAlbumWhere] groups 必须是数组（rules_json 结构损坏）')
+  }
+  for (const group of (rawGroups ?? []) as SmartAlbumRuleGroup[]) {
+    if (typeof group !== 'object' || group === null || Array.isArray(group)) {
+      throw new Error('[buildSmartAlbumWhere] 条件组必须是对象（rules_json 结构损坏）')
+    }
+    if ('groups' in group) {
+      // 嵌套组的唯一通道是组内 rules.groups（递归类型即由此展开）。组对象自身再挂
+      // groups 属于结构损坏——宁可报错也不能静默丢弃（丢弃 = 语义悄悄变了）
+      throw new Error(
+        '[buildSmartAlbumWhere] 条件组不支持自身的 groups 字段：嵌套组请放进组内 rules.groups'
+      )
+    }
+    const subNode = compileRulesNode(
+      group.rules ?? ({} as SmartAlbumRules),
+      group.match,
+      depth + 1,
+      ctx
+    )
+    if (!subNode || subNode.conds.length === 0) continue // 空组不产生约束（not 同样无可取反）
+    const subJoiner = subNode.match === 'any' ? ' OR ' : ' AND '
+    let sub = subNode.conds.join(subJoiner)
+    if (group.not === true) {
+      sub = `NOT (${sub})`
+    } else if (subNode.conds.length > 1 && subJoiner !== (match === 'any' ? ' OR ' : ' AND ')) {
+      // 多条件组的连接词与父层不同：必须括号，否则 is_favorite = 1 AND a OR b 会被
+      // 优先级拆成 (is_favorite = 1 AND a) OR b——真值表测试抓出来过
+      sub = `(${sub})`
+    }
+    conds.push(sub)
+  }
+
+  return { conds, match }
+}
+
+/**
+ * 智能夹规则 → WHERE。v1 形状（无 groups）编译产物与升级前逐字节一致；
+ * v2 在此之上叠加条件组递归（组间/组内 AND|OR + 组级取反）。
+ */
+export function buildSmartAlbumWhere(rules: SmartAlbumRules): CompiledWhere {
+  // D-021 根级语义空集闸：semanticIds=[] = AI 判定无命中 → 整册为空。必须在组编译之前
+  // 短路——它是整条查询的判定，match:'any' 也不得把「无命中」OR 回结果（v1 行为原样保留）
+  const rootSem = resolveSemanticIds(rules.semanticIds)
+  if (rootSem !== null && rootSem.length === 0) {
+    return { whereSql: `1=0`, params: [] }
+  }
+
+  const ctx: CompileCtx = { params: [], nodes: 0 }
+  const root = compileRulesNode(rules, rules.match, 1, ctx)
+  const whereSql =
+    root && root.conds.length > 0 ? root.conds.join(root.match === 'any' ? ' OR ' : ' AND ') : '1=1'
+  return { whereSql, params: ctx.params }
 }
 
 /** 运行时解析 rules_json（损坏时返回空规则而不是抛错） */
