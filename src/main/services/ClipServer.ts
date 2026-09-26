@@ -17,7 +17,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'http'
 import { randomBytes, timingSafeEqual } from 'crypto'
 import { join } from 'path'
-import { readFileSync, writeFileSync, mkdirSync } from 'fs'
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs'
 import { app, safeStorage } from 'electron'
 import { getAssetProcessingRef } from './assetProcessingRef'
 import { photoRepository } from '../db/repos/PhotoRepository'
@@ -25,6 +25,7 @@ import { photoFolderRepository } from '../db/repos/PhotoFolderRepository'
 import { albumRepository } from '../db/repos/AlbumRepository'
 import { addBookmark as addBookmarkService } from './BookmarkService'
 import { handleMcpJsonRpc, type McpContext } from './McpHandler'
+import { getThumbnailService } from './ThumbnailService'
 import { activeSubdir } from '../modules/libraryRegistry'
 import { assertPublicUrl } from '../utils/netSafety'
 import { IMAGE_EXTENSIONS as SHARED_IMAGE_EXT, RASTER_EXTENSIONS } from '@shared/assetTypes'
@@ -344,7 +345,20 @@ export class ClipServer {
           photos: photoRepository,
           albums: albumRepository,
           addBookmark: addBookmarkService,
-          enqueue: (id) => getAssetProcessingRef()?.enqueue(id)
+          enqueue: (id) => getAssetProcessingRef()?.enqueue(id),
+          // get_image（AI 看图工作流 M1）：照 thumb:// 协议同语义解析图片路径——
+          // 缩略图缓存未命中现场生成；original 直取库里登记的 file_path
+          // （客户端只传 id，白名单语义 = 路径只来自 DB，不接受外部传路径）
+          resolveImage: async (photoId, size) => {
+            const photo = photoRepository.getPhotoById(photoId)
+            if (!photo || !existsSync(photo.filePath)) return null
+            if (size === 'original') return photo.filePath
+            const thumbs = getThumbnailService()
+            return (
+              thumbs.getCachedPath(photoId, 256) ??
+              (await thumbs.generate(photoId, photo.filePath, 256))
+            )
+          }
         }
         const result = await handleMcpJsonRpc(rpc, mcpCtx)
         if (result.body === null) {

@@ -9,7 +9,7 @@
 - **组织**：日期分组、收藏、评分、全局标签（颜色 + 分组树）、手动相册、智能收藏夹（含类型条件）、文件夹分组、回收站 + 撤销；`docs/DECISIONS.md` D-008
 - **检索**：关键词、AI 语义搜索（Chinese-CLIP 中文文搜图 + 以图搜图，模型就绪前优雅降级，D-021）、pHash 以图搜图、相似查重（MIH 多索引哈希，5 万+ 库秒级）、9 色相桶、格式/分辨率/时间快筛、类型 chips
 - **体验**：Eagle 式布局（D-011：单行工具栏 + 树形侧栏 + 卡片常驻元信息），瀑布流/方格/列表三布局 + 排序，右键菜单、键盘导航（方向键/⌘A/⌘F）、拖拽入相册/文件夹/标签、⌘/Shift 连选、空格快速预览、视频悬停即播 + 逐帧步进/倍速、EXIF 地图（城市反解）、密码锁（safeStorage）
-- **收集**：浏览器剪藏插件（MV3，`extension/`）+ 本地 MCP 接入（`/mcp`，3 个只读工具）
+- **收集**：浏览器剪藏插件（MV3，`extension/`）+ 本地 MCP 接入（`/mcp`，JSON-RPC：只读 `leaf_photos_search` / `leaf_photo_detail` / `leaf_library_stats` / `leaf_get_image`（返回图片内容，外部 AI 客户端可看图打标）+ 可写 `leaf_create_album` / `leaf_add_tags` / `leaf_import_paths` / `leaf_add_bookmark`）
 
 ## 开发
 

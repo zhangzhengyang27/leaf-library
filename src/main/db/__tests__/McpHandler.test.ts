@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi, type Mock } from 'vitest'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -22,6 +22,7 @@ describe('McpHandler', () => {
   let repo: PhotoRepository
   let albums: AlbumRepository
   let ctx: McpContext
+  let resolveImage: Mock<[photoId: string, size: 'thumb' | 'original'], Promise<string | null>>
   const enqueued: string[] = []
   const addBookmark = vi.fn()
 
@@ -38,7 +39,10 @@ describe('McpHandler', () => {
         sourceUrl: url
       })
     )
-    ctx = { photos: repo, albums, addBookmark, enqueue: (id) => enqueued.push(id) }
+    resolveImage = vi.fn(
+      async (_photoId: string, _size: 'thumb' | 'original'): Promise<string | null> => null
+    )
+    ctx = { photos: repo, albums, addBookmark, enqueue: (id) => enqueued.push(id), resolveImage }
   })
 
   afterEach(() => {
@@ -65,13 +69,14 @@ describe('McpHandler', () => {
     expect(res.body).toBeNull()
   })
 
-  it('tools/list 列出 7 个工具（3 只读 + 4 可写）', async () => {
+  it('tools/list 列出 8 个工具（4 只读 + 4 可写）', async () => {
     const res = await handleMcpJsonRpc(rpc(2, 'tools/list'), ctx)
     const tools = (res.body!.result as { tools: Array<{ name: string }> }).tools
     expect(tools.map((t) => t.name)).toEqual([
       'leaf_photos_search',
       'leaf_photo_detail',
       'leaf_library_stats',
+      'leaf_get_image',
       'leaf_create_album',
       'leaf_add_tags',
       'leaf_import_paths',
@@ -123,6 +128,89 @@ describe('McpHandler', () => {
     }
     expect(data.total).toBe(2)
     expect(data.byKind).toMatchObject({ image: 1, video: 1 })
+  })
+
+  it('leaf_get_image original：返回 image content（base64 解回 PNG 魔数，mimeType 按扩展名）', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'leaf-mcp-img-'))
+    const pngPath = join(tmp, 'pic.png')
+    // 只关心魔数与管道：8 字节 PNG 签名 + 任意尾部
+    const pngBytes = Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      Buffer.from('rest')
+    ])
+    writeFileSync(pngPath, pngBytes)
+    const photo = repo.addPhoto(pngPath, { kind: 'image' })
+    resolveImage.mockResolvedValue(pngPath)
+
+    const res = await handleMcpJsonRpc(
+      rpc(11, 'tools/call', {
+        name: 'leaf_get_image',
+        arguments: { id: photo.id, size: 'original' }
+      }),
+      ctx
+    )
+    const result = res.body!.result as {
+      content: Array<{ type: string; data: string; mimeType: string }>
+    }
+    expect(result.content[0].type).toBe('image')
+    expect(result.content[0].mimeType).toBe('image/png')
+    const decoded = Buffer.from(result.content[0].data, 'base64')
+    expect(decoded.subarray(0, 4)).toEqual(pngBytes.subarray(0, 4))
+    expect(resolveImage).toHaveBeenCalledWith(photo.id, 'original')
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('leaf_get_image 缺省 size=thumb：mimeType 固定 image/jpeg（缩略图恒为落盘 jpg）', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'leaf-mcp-img-'))
+    const thumbPath = join(tmp, '256.jpg')
+    writeFileSync(thumbPath, Buffer.from([0xff, 0xd8, 0xff, 0xe0]))
+    const photo = repo.addPhoto(join(tmp, 'pic.png'), { kind: 'image' })
+    resolveImage.mockResolvedValue(thumbPath)
+
+    const res = await handleMcpJsonRpc(
+      rpc(12, 'tools/call', { name: 'leaf_get_image', arguments: { id: photo.id } }),
+      ctx
+    )
+    const result = res.body!.result as {
+      content: Array<{ type: string; data: string; mimeType: string }>
+    }
+    expect(result.content[0].mimeType).toBe('image/jpeg')
+    expect(resolveImage).toHaveBeenCalledWith(photo.id, 'thumb')
+    rmSync(tmp, { recursive: true, force: true })
+  })
+
+  it('leaf_get_image：素材不存在 / id 形状非法 / 非位图 original 均 isError', async () => {
+    // 合法 uuid 但库里没有
+    const missing = await handleMcpJsonRpc(
+      rpc(13, 'tools/call', {
+        name: 'leaf_get_image',
+        arguments: { id: '00000000-0000-4000-8000-000000000000' }
+      }),
+      ctx
+    )
+    expect((missing.body!.result as { isError: boolean }).isError).toBe(true)
+
+    // 形状不是 uuid：连 SQL 都不落
+    const badShape = await handleMcpJsonRpc(
+      rpc(14, 'tools/call', { name: 'leaf_get_image', arguments: { id: '../../etc/passwd' } }),
+      ctx
+    )
+    expect((badShape.body!.result as { isError: boolean }).isError).toBe(true)
+    expect(resolveImage).not.toHaveBeenCalled()
+
+    // 非位图（.mp4）请求 original：明确报错而不是把字节当图回
+    const video = repo.addPhoto('/tmp/meeting-recording.mp4', { kind: 'video' })
+    resolveImage.mockResolvedValue('/tmp/meeting-recording.mp4')
+    const notImage = await handleMcpJsonRpc(
+      rpc(15, 'tools/call', {
+        name: 'leaf_get_image',
+        arguments: { id: video.id, size: 'original' }
+      }),
+      ctx
+    )
+    const result = notImage.body!.result as { isError: boolean; content: Array<{ text: string }> }
+    expect(result.isError).toBe(true)
+    expect(result.content[0].text).toContain('not an image asset')
   })
 
   it('可写 create_album：新建相册并返回 id', async () => {

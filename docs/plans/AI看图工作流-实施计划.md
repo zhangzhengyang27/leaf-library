@@ -7,7 +7,7 @@
 > Leaf 的既有底盘**更好**：Chinese-CLIP 内置（D-021）、MCP 端点内置（search/detail/stats +
 > create_album/add_tags/import_paths/add_bookmark）。缺的只有一块：**AI 客户端看不到图**——
 > detail 只回元数据，无文字信号的图片打了也是瞎猜（D-017 拆预览页 AI 按钮的同一条理由）。
-> 状态：待评审细化后开工；M1 涉及安全边界，**先立 D-023**（与智能夹计划的 regex 决策合并编号时顺延）。
+> 状态：M1+M2 已落地（2026-09-26，勾账见文末）；M3 可选项未动。
 
 ## 分期
 
@@ -38,3 +38,34 @@ M1：MCP 客户端真连（照 extension-real 的真机范式）取到图且无 
 
 ClipServer token 复用把「剪藏写入口」和「AI 读图口」耦合（D-023 拆清楚）；base64 大图撑爆 MCP 消息
 （默认缩略图、原图显式请求）；示例文档过时风险（与 README 同一轮维护）。
+
+## 勾账 · M1+M2（2026-09-26 落地）
+
+**M1 · `leaf_get_image`**（`src/main/services/McpHandler.ts`）：
+- 入参 `{ id, size?: 'thumb' | 'original' }`（缺省 thumb）；id 先过 `isAnnotationIdLike` uuid 形状守卫
+  （与标注链同款），素材必须存在；返回 MCP image content `{ type:'image', data:<base64>, mimeType }`。
+- **实现口径与原计划的差异**：计划里的「返回可取的本地 HTTP URL」做成了**直接回 base64 image content**
+  （MCP 规范原生支持 image content 项）——URL 方案要引入第二把鉴权与过期策略，base64 让客户端
+  零额外握手；大图风险用「默认 thumb + 原图 8MB 上限（超限 isError 提示用 thumb）」双闸兜住。
+- 路径解析走既有链、不在工具里新写：`McpContext` 新增注入位 `resolveImage`，由 ClipServer 组装——
+  thumb 照 `thumb://` 协议同语义（`ThumbnailService.getCachedPath` 未命中现场生成），original 直取
+  库里登记的 `photo.filePath`（客户端只传 id，**绝不接受外部传路径**，与 resolveAssetPath 的
+  白名单语义同源）。缩略图文件恒为落盘 .jpg（mimeType 固定 image/jpeg）；original 按扩展名映射
+  （png/jpg/jpeg/webp/gif/bmp/svg/avif/tiff），映射不到兜底 image/png，且仅位图扩展放行
+  （`IMAGE_EXTENSIONS`/`RASTER_EXTENSIONS`，即 kindOfExt 判 image 的那两组口径），mp4/ttf 等明确报错。
+- description 写明工作流链：「search 检索 → get_image 看图 → add_tags 写回 → create_album 归档」。
+- 安全边界（原 D-023 想裁决的点，随实现落定，正式决策条目待补）：token 复用 ClipServer 既有那把
+  （`/mcp` 路由本就过 x-leaf-token + Origin + Host 三关）；无 URL 无过期策略；字节上限 8MB。
+
+**M2 · 全链验收 + 文档**：
+- `e2e/mcp-image.spec.mjs`（真启 app + 独立 userData，token 走渲染层 IPC `clipServer:getConfig`，
+  照 extension-real 范式）：断言 tools/list 含 get_image → import_paths 入库 fixture（bread.png）→
+  search 命中 → get_image thumb 解出 JPEG 魔数 `\xFF\xD8`、original 解出 PNG 魔数 `\x89PNG` →
+  不存在 uuid / 非法 id 均 isError → add_tags 写回后 detail 标签在 → 无 token/错 token 401。
+- README 收集行改现势（列出全部 8 个工具名）；CHANGELOG 09-26 节记用户可感知项。
+- 验证口径：`pnpm run typecheck:node` 过；`pnpm exec eslint --cache .` 0 error；
+  `pnpm exec vitest run src/main` 全绿（McpHandler 单测 7→14 条，tools/list 断言改 8 工具）；
+  `pnpm build` 过；`pnpm exec playwright test e2e/mcp-image.spec.mjs` 2 passed。
+
+**留给后续**：D-023 正式决策条目（token 档位/字节上限的背书）待与智能夹 regex 决策合并编号时顺延；
+M3（内置视觉打标 BYOK）独立决策；导入大图（>8MB）想看原图的场景若真实出现再议分档或分片。
