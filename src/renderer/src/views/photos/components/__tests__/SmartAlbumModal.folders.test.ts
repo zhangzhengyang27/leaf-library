@@ -7,7 +7,7 @@
  * 而引擎侧 folderIds 一直是数组语义（含 'none' = 未分类与真实文件夹混选）。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils'
+import { mount, flushPromises, type DOMWrapper } from '@vue/test-utils'
 import SmartAlbumModal from '../SmartAlbumModal.vue'
 import type { SmartAlbum, SmartAlbumRules } from '../../../../types/photo'
 
@@ -152,7 +152,7 @@ describe('SmartAlbumModal · 条件往返不丢', () => {
         album: makeAlbum({
           name2: 'x' as never, // 未来新增、编辑器还不认识的键
           searchKeyword: 'cat dog',
-          folderExcludeIds: ['fx'],
+          searchScopes: ['name', 'tags'],
           tags: ['tag-id-1']
         } as SmartAlbumRules),
         availableTags: []
@@ -162,7 +162,7 @@ describe('SmartAlbumModal · 条件往返不丢', () => {
     await flushPromises()
     const note = w.find('p.text-warning-500').text()
     expect(note).toContain('搜索关键词')
-    expect(note).toContain('排除文件夹')
+    expect(note).toContain('搜索范围')
     // tags 有控件（按 id 那组）→ 不算未接管，不写进提示
     expect(note).not.toContain('按 id')
 
@@ -171,7 +171,7 @@ describe('SmartAlbumModal · 条件往返不丢', () => {
     await flushPromises()
     const sent: SmartAlbumRules = apiMocks.updateSmartAlbum.mock.calls[0][1].rules
     expect(sent.searchKeyword).toBe('cat dog')
-    expect(sent.folderExcludeIds).toEqual(['fx'])
+    expect(sent.searchScopes).toEqual(['name', 'tags'])
     expect(sent.tags).toEqual(['tag-id-1'])
     expect(sent).toHaveProperty('name2')
   })
@@ -180,5 +180,86 @@ describe('SmartAlbumModal · 条件往返不丢', () => {
     const out = await editThenSave({ formats: ['.PNG', 'jpg'] })
     expect(out.formats).toBeUndefined()
     expect(out.fileExtsInclude).toEqual(['png', 'jpg'])
+  })
+})
+
+/**
+ * G2 补两处残留控件：folderExcludeIds（排除文件夹）与 ratingsInclude/ratingsExclude
+ * （精确评分多选）——引擎（buildSmartAlbumWhere）早就支持这三个键，编辑器此前没有
+ * 控件，只能靠 passthrough 兜底且界面上念英文键名。现在有控件：往返不丢 + 回显正确。
+ */
+describe('SmartAlbumModal · 排除文件夹与精确评分往返', () => {
+  it('排除文件夹条件编辑保存后原样保留（含未分类混选）', async () => {
+    expect(await editThenSave({ folderExcludeIds: ['none', 'fb'] })).toMatchObject({
+      folderExcludeIds: ['none', 'fb']
+    })
+  })
+
+  it('评分包含/排除编辑保存后原样保留（含 0=尚未评分）', async () => {
+    expect(await editThenSave({ ratingsInclude: [5, 0], ratingsExclude: [1] })).toMatchObject({
+      ratingsInclude: [5, 0],
+      ratingsExclude: [1]
+    })
+  })
+
+  it('排除文件夹回填真的落到控件上，且不与所属文件夹串门', async () => {
+    const w = mount(SmartAlbumModal, {
+      props: {
+        album: makeAlbum({ folderIds: ['fa'], folderExcludeIds: ['none', 'fb'] }),
+        availableTags: []
+      },
+      global: globalStubs
+    })
+    await flushPromises()
+    // 两个文件夹多选 select 都含 'none' 项，按块内 label 文本认出排除那个
+    const selects = w
+      .findAll('select')
+      .filter((s) => s.findAll('option').some((o) => o.element.value === 'none'))
+    expect(selects.length).toBe(2)
+    const excludeSelect = selects.find((s) =>
+      (s.element.parentElement?.textContent ?? '').includes('排除文件夹')
+    )
+    expect(excludeSelect).toBeTruthy()
+    const selected = excludeSelect!
+      .findAll('option')
+      .filter((o) => o.element.selected)
+      .map((o) => o.element.value)
+    expect(selected).toEqual(['none', 'fb'])
+  })
+
+  it('评分包含/排除回显为对应按钮态（包含=高亮，排除=划线）', async () => {
+    const w = mount(SmartAlbumModal, {
+      props: {
+        album: makeAlbum({ ratingsInclude: [5], ratingsExclude: [0] }),
+        availableTags: []
+      },
+      global: globalStubs
+    })
+    await flushPromises()
+    const btnByLabel = (label: string): DOMWrapper<HTMLButtonElement> | undefined =>
+      w.findAll('button').find((b) => b.text() === label)
+    expect(btnByLabel('★★★★★')?.classes()).toContain('border-brand-500')
+    expect(btnByLabel('尚未评分')?.classes()).toContain('line-through')
+    // 没选的保持未选态
+    expect(btnByLabel('★☆☆☆☆')?.classes()).toContain('border-line-default')
+  })
+
+  it('左键点评分写入包含集、右键写进排除集，保存不丢', async () => {
+    const w = mount(SmartAlbumModal, {
+      props: { album: makeAlbum({}), availableTags: [] },
+      global: globalStubs
+    })
+    await flushPromises()
+    const btnByLabel = (label: string): DOMWrapper<HTMLButtonElement> | undefined =>
+      w.findAll('button').find((b) => b.text() === label)
+    await btnByLabel('★★★★★')!.trigger('click') // 左键 → 包含
+    await btnByLabel('尚未评分')!.trigger('contextmenu') // 右键 → 排除
+    await flushPromises()
+    const saveBtn = w.findAll('button').find((b) => b.text().includes('保存'))
+    await saveBtn!.trigger('click')
+    await flushPromises()
+    const sent: SmartAlbumRules = apiMocks.updateSmartAlbum.mock.calls[0][1].rules
+    expect(sent.ratingsInclude).toEqual([5])
+    expect(sent.ratingsExclude).toEqual([0])
   })
 })

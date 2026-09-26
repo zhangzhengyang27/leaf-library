@@ -208,6 +208,22 @@
             <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
           </select>
         </div>
+        <div>
+          <!-- 排除文件夹：结构与所属文件夹同款（'none' = 未分类），引擎按
+               matchFolderFilter exclude 语义编译（smartAlbumRules.buildSmartAlbumWhere） -->
+          <label class="mb-1 block text-xs text-fg-muted"
+            >排除文件夹（⌘/Ctrl 多选，不选=不限）</label
+          >
+          <select
+            v-model="folderExcludeIds"
+            multiple
+            size="4"
+            class="h-[74px] w-full rounded-md border border-line-default bg-surface-1 px-2 py-1 text-sm text-fg-primary focus:outline-none focus:border-brand-500"
+          >
+            <option value="none">未分类到文件夹</option>
+            <option v-for="f in folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+          </select>
+        </div>
         <div class="mb-3">
           <label class="mb-1 block text-xs text-fg-muted">修改日期（文件系统）</label>
           <div class="flex items-center gap-1">
@@ -285,6 +301,32 @@
                 @contextmenu.prevent="toggleShape(s.key, false)"
               >
                 {{ s.label }}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <!-- 精确评分多选（0 = 尚未评分）：交互同形状那组；引擎侧包含集优先于排除集
+                 （buildSmartAlbumWhere / matchRating 同语义），同一项不会同时出现在两侧 -->
+            <label class="mb-1 block text-xs text-fg-muted">评分（左键包含 / 右键排除）</label>
+            <div class="flex flex-wrap gap-1">
+              <button
+                v-for="r in RATING_OPTIONS"
+                :key="r"
+                type="button"
+                class="rounded border px-2 py-1 text-xs"
+                :class="
+                  ratingsInclude.includes(r)
+                    ? 'border-brand-500 bg-brand-500/10 text-brand-600 dark:text-brand-400'
+                    : ratingsExclude.includes(r)
+                      ? 'border-danger text-danger-500 line-through'
+                      : 'border-line-default bg-surface-1 text-fg-muted'
+                "
+                :title="`左键包含，右键排除：${ratingOptionLabel(r)}`"
+                @click="toggleRating(r, true)"
+                @contextmenu.prevent="toggleRating(r, false)"
+              >
+                {{ ratingOptionLabel(r) }}
               </button>
             </div>
           </div>
@@ -528,6 +570,9 @@ const tagExcludeNames = ref<string[]>([])
 const untaggedOnly = ref(false)
 const shapesInclude = ref<string[]>([])
 const shapesExclude = ref<string[]>([])
+const ratingsInclude = ref<number[]>([])
+const ratingsExclude = ref<number[]>([])
+const folderExcludeIds = ref<string[]>([])
 const ratioW = ref<number | null>(null)
 const ratioH = ref<number | null>(null)
 const resolutionMin = ref<number | null>(null)
@@ -580,6 +625,9 @@ const OWNED_RULE_KEYS: Array<keyof SmartAlbumRules> = [
   'descriptionKeyword',
   'descriptionExact',
   'folderIds',
+  'folderExcludeIds',
+  'ratingsInclude',
+  'ratingsExclude',
   'modifiedFrom',
   'modifiedTo',
   'importedFrom',
@@ -602,12 +650,13 @@ const OWNED_RULE_KEYS: Array<keyof SmartAlbumRules> = [
   'semanticIds'
 ]
 
-/** 未接管键的中文标签（界面要念得出，别让用户以为条件凭空消失） */
+/** 未接管键的中文标签（界面要念得出，别让用户以为条件凭空消失）。
+ * 只收没有编辑器控件的键：folderExcludeIds / ratingsInclude / ratingsExclude
+ * 已有控件接管，进这张表反而是死条目 */
 const RULE_LABEL: Record<string, string> = {
   searchKeyword: '搜索关键词',
   searchScopes: '搜索范围',
   advancedAst: '高级搜索语法',
-  folderExcludeIds: '排除文件夹',
   fileExtsExclude: '排除扩展名',
   tags: '标签（按 id）',
   notesKeyword: '注释关键词',
@@ -643,6 +692,27 @@ function toggleShape(key: string, include: boolean): void {
   }
   list.push(key)
   const j = other.indexOf(key)
+  if (j >= 0) other.splice(j, 1)
+}
+
+// ── 精确评分多选（引擎 ratingsInclude/ratingsExclude；0 = 尚未评分） ──
+// 顺序对齐 FilterBar 评分弹层：星级行在前、「尚未评分」最后
+const RATING_OPTIONS = [1, 2, 3, 4, 5, 0]
+function ratingOptionLabel(r: number): string {
+  if (r === 0) return '尚未评分'
+  return '★'.repeat(r) + '☆'.repeat(5 - r)
+}
+/** 交互同形状那组：同一项不会同时出现在两侧 */
+function toggleRating(r: number, include: boolean): void {
+  const list = include ? ratingsInclude.value : ratingsExclude.value
+  const other = include ? ratingsExclude.value : ratingsInclude.value
+  const i = list.indexOf(r)
+  if (i >= 0) {
+    list.splice(i, 1)
+    return
+  }
+  list.push(r)
+  const j = other.indexOf(r)
   if (j >= 0) other.splice(j, 1)
 }
 
@@ -731,6 +801,9 @@ onMounted(async () => {
     untaggedOnly.value = !!src.untaggedOnly
     shapesInclude.value = [...(src.shapesInclude ?? [])]
     shapesExclude.value = [...(src.shapesExclude ?? [])]
+    ratingsInclude.value = [...(src.ratingsInclude ?? [])]
+    ratingsExclude.value = [...(src.ratingsExclude ?? [])]
+    folderExcludeIds.value = [...(src.folderExcludeIds ?? [])]
     ratioW.value = src.ratioWidth ?? null
     ratioH.value = src.ratioHeight ?? null
     resolutionMin.value = src.resolutionMin ?? null
@@ -808,6 +881,11 @@ const currentRules = computed<SmartAlbumRules>(() => {
   if (untaggedOnly.value) rules.untaggedOnly = true
   if (shapesInclude.value.length > 0) rules.shapesInclude = [...shapesInclude.value]
   if (shapesExclude.value.length > 0) rules.shapesExclude = [...shapesExclude.value]
+  // 两键原样并存写回：引擎（buildSmartAlbumWhere / matchRating）语义是包含集优先，
+  // 旧规则若两键都有，编辑保存不得把排除集抹掉——只写其一才是丢条件
+  if (ratingsInclude.value.length > 0) rules.ratingsInclude = [...ratingsInclude.value]
+  if (ratingsExclude.value.length > 0) rules.ratingsExclude = [...ratingsExclude.value]
+  if (folderExcludeIds.value.length > 0) rules.folderExcludeIds = [...folderExcludeIds.value]
   if (ratioW.value && ratioH.value) {
     rules.ratioWidth = ratioW.value
     rules.ratioHeight = ratioH.value

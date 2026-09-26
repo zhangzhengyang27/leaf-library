@@ -6,14 +6,14 @@
  *   池内拖拽排序（Eagle ic-drag-help），筛选行按该顺序渲染已固定维度
  * - 每个维度的取值在 LibraryTab 上，激活判断/清除统一走 isDimensionActive/clearDimension
  * - 有意差异：Eagle「标注」在 023 迁移后有字段了（photo_annotations），但消费端还没接，暂不入池；「注释」对应描述字段；
- *   AI 维度（以图找图）固定后为动作 chip（触发搜索模式而非取值面板）
+ *   AI 维度（以图找图/语义搜索）固定后为动作 chip（触发搜索模式而非取值面板）
  */
 
 export type DimensionId =
   | 'color'
   | 'aiImage'
-  /** 语义搜索档：FilterBar 的 chip 与 isDimActive/clearDim 已按这个 id 分支，
-   *  但还没进 FILTER_DIMENSIONS 注册表（不进池就没有这张 chip） */
+  /** 语义搜索档：动作 chip，激活态 = constants/semanticSearch 的 enabled 单例
+   *  （与 TitleBar 语义开关同一状态源），不走 isDimActive/clearDim 的取值路径 */
   | 'aiSemantic'
   | 'tags'
   | 'folders'
@@ -49,6 +49,13 @@ export const FILTER_DIMENSIONS: FilterDimensionMeta[] = [
     id: 'aiImage',
     label: '以图找图',
     icon: 'context-menu/ic-filter-item-image',
+    defaultPinned: false,
+    ai: true
+  },
+  {
+    id: 'aiSemantic',
+    label: '语义搜索',
+    icon: 'context-menu/ic-filter-item-semantic',
     defaultPinned: false,
     ai: true
   },

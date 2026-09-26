@@ -106,7 +106,6 @@ export interface LibraryTab {
   layout: LibraryLayout
   sortBy: LibrarySort
   searchKeyword: string
-  aiSearchMode: boolean
   // ── 检索筛选扩展 ──
   /** 二十六轮：精确评分多选（Eagle 评分弹层按星级复选；含 0 = 「尚未评分」行） */
   ratingInclude: number[]
@@ -184,7 +183,6 @@ export function makeTab(view = 'all', title = '全部'): LibraryTab {
     layout: 'waterfall',
     sortBy: 'imported',
     searchKeyword: '',
-    aiSearchMode: false,
     ratingInclude: [],
     ratingExclude: [],
     sizeRange: null,
@@ -334,6 +332,9 @@ function migrateLegacyFilterFields(tab: Record<string, unknown>): void {
   delete tab.formatFilter
   delete tab.orientation
   delete tab.ratingFilter
+  // aiSearchMode 是 09-23 并行会话连带落地的死状态（chip 现接 constants/semanticSearch
+  // 的 enabled 单例，与 TitleBar 同源），字段已从类型移除，旧持久化里的残留一并清掉
+  delete tab.aiSearchMode
 }
 
 function loadPersisted(): PersistedState | null {

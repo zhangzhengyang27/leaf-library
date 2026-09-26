@@ -38,6 +38,7 @@ import {
   usePhotoFilters
 } from '../composables/usePhotoFilters'
 import { useToast } from '@composables/useToast'
+import { usePhotoSearch } from '../composables/usePhotoSearch'
 import DimensionPoolPopover from '@components/shell/DimensionPoolPopover.vue'
 import DimensionChip from './DimensionChip.vue'
 import OptionRow from './OptionRow.vue'
@@ -52,13 +53,14 @@ const tabs = useLibraryTabs()
 const actions = usePhotoActions()
 const filters = usePhotoFilters()
 const semantic = useSemanticSearch()
+const photoSearch = usePhotoSearch()
 const scan = useDuplicateScan()
 
 const tab = computed(() => tabs.active)
+/** 顶层 ref 才会在模板里自动解包；直接写 semantic.enabled 拿到的是 Ref 对象，恒真 */
+const semanticEnabled = semantic.enabled
 const pool = filters.currentPool
-const showKindChips = computed(
-  () => filters.showFilters.value && tab.value.view !== 'map' && !tab.value.aiSearchMode
-)
+const showKindChips = computed(() => filters.showFilters.value && tab.value.view !== 'map')
 
 /** 相册/文件夹/智能夹上下文操作（原筛选条内联按钮） */
 const showAlbumActions = computed(() => !!filters.activeAlbum.value)
@@ -535,9 +537,16 @@ function clearUrlKeyword(): void {
   tab.value.urlKeyword = ''
   tabs.persist()
 }
-function toggleAiSearchMode(): void {
-  tab.value.aiSearchMode = !tab.value.aiSearchMode
-  tabs.persist()
+/**
+ * 语义维度 chip：与 TitleBar 的语义搜索开关同一状态源
+ * （constants/semanticSearch 的模块级 enabled 单例，localStorage 持久），
+ * 不发明第二个开关。翻档后要重跑当前查询——只改状态不重跑，
+ * 上一档的结果会被当成这一档的（TitleBar onSemanticToggle 同款联动）。
+ */
+async function toggleSemanticSearch(): Promise<void> {
+  await semantic.toggle()
+  const q = tab.value.searchKeyword.trim()
+  if (q !== '') photoSearch.handleSearch(q)
 }
 
 // ── 生效态（Eagle：负向 token + 行尾 保存/锁定/清除；漏斗蓝点判定源在 filters） ──
@@ -1217,18 +1226,19 @@ watch(
           </template>
         </DimensionChip>
 
-        <!-- AI 维度：动作 chip（触发搜索模式，无取值面板） -->
+        <!-- AI 维度：动作 chip（触发搜索模式，无取值面板）。
+             激活态 = semantic.enabled 单例（TitleBar 语义开关同一状态源），翻档联动重跑查询 -->
         <button
           v-else-if="dimId === 'aiSemantic'"
           type="button"
           class="flex h-6 items-center gap-1 rounded-sm border px-1.5 text-[11px] transition-colors duration-fast"
           :class="
-            tab.aiSearchMode
+            semanticEnabled
               ? 'border-brand-500 bg-brand-500/10 text-brand-600 dark:text-brand-400'
               : 'border-transparent text-fg-secondary hover:bg-surface-hover hover:text-fg-primary'
           "
           title="切换 AI 语义搜索（自然语言找图）"
-          @click="toggleAiSearchMode"
+          @click="toggleSemanticSearch"
         >
           <AppIcon icon="context-menu/ic-filter-item-semantic" :size="14" />
           语义搜索
