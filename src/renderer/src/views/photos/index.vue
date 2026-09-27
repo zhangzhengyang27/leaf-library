@@ -809,11 +809,14 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
       label: photo.isFavorite ? '取消收藏' : '收藏',
       icon: photo.isFavorite ? 'context-menu/ic-favorite-remove' : 'ic_star'
     },
-    ...([1, 2, 3, 4, 5] as const).map((n) => ({
-      key: `rate-${n}`,
-      label: '★'.repeat(n),
-      checked: byIds(ids).every((p) => p.rating === n)
-    })),
+    // Eagle 形态：评分 = 单行 5 颗星（点第 N 颗设 N 星），不再是 5 行堆叠的 ★ 文本行
+    {
+      key: 'rate-row',
+      label: '评分',
+      stars: byIds(ids).every((p) => p.rating === byIds(ids)[0].rating)
+        ? byIds(ids)[0].rating
+        : 0
+    },
     { key: 'rate-0', label: '清除评分', disabled: byIds(ids).every((p) => p.rating === 0) }
   ]
   // 相册/文件夹上下文：移出操作

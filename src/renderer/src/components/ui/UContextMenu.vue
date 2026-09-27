@@ -63,7 +63,9 @@ function pickableIndexes(): number[] {
   // 排除子菜单父项（审查 P3-69）：键盘 Enter 命中父项时旧实现会当作普通项
   // pick 并关菜单，与鼠标 hover 展开子菜单的行为不一致
   return visibleItems()
-    .filter(({ item }) => !item.divider && !item.disabled && !item.colors && !item.children)
+    .filter(
+      ({ item }) => !item.divider && !item.disabled && !item.colors && !item.stars && !item.children
+    )
     .map(({ index }) => index)
 }
 
@@ -79,6 +81,14 @@ function pickColor(item: MenuItem, dot: { key: string; hex: string }): void {
   const onPick = state.value?.onPick
   close()
   onPick?.(`color:${item.key}:${dot.key}`)
+}
+
+// 星级行：hover 第 n 颗时预览填充 1..n（离开整行复位）；点第 n 颗 → 既有 `rate-N` 约定
+const starHover = ref(0)
+function pickStar(item: MenuItem, n: number): void {
+  const onPick = state.value?.onPick
+  close()
+  onPick?.(`rate-${n}`)
 }
 
 // ── 二级子菜单 ──
@@ -240,6 +250,32 @@ onBeforeUnmount(() => {
       </div>
       <template v-for="pair in visibleItems()" :key="`${pair.item.key}-${pair.index}`">
         <div v-if="pair.item.divider" class="mx-2 my-1 h-px bg-line-subtle" />
+        <!-- 星级行（Eagle 卡片菜单的评分）：单行 5 颗，视觉对齐检查器评分（amber 填充） -->
+        <div
+          v-else-if="pair.item.stars !== undefined"
+          class="menu-item mx-1 flex w-[calc(100%-8px)] items-center gap-1.5 rounded-sm px-2.5 py-1.5"
+          :class="activeIndex === pair.index ? 'is-active' : ''"
+          @mouseenter="onRowEnter(pair.item, $event)"
+          @mouseleave="starHover = 0"
+        >
+          <span class="mr-1 text-xs text-fg-muted">评分</span>
+          <button
+            v-for="r in 5"
+            :key="`${pair.item.key}-${r}`"
+            type="button"
+            class="text-[13px] leading-none transition-colors"
+            :class="
+              r <= (starHover || pair.item.stars)
+                ? 'text-amber-400'
+                : 'text-fg-muted hover:text-amber-300'
+            "
+            :aria-label="`评 ${r} 星`"
+            @mouseenter="starHover = r"
+            @click="pickStar(pair.item, r)"
+          >
+            ★
+          </button>
+        </div>
         <!-- 色点行（Eagle 文件夹菜单的文件夹颜色） -->
         <div
           v-else-if="pair.item.colors"
