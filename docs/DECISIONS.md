@@ -584,3 +584,26 @@ uuid 守卫 + id-only + 扩展白名单 + 8MB 上限四闸把口子收死；失�
 
 **保留约束**：导入大图（>8MB）想看原图的场景真实出现再议分档/分片；M3 内置视觉打标（BYOK）
 独立决策，不与本条绑定。
+
+## Decision-025 · 插件中心 P1（离线核心）：启停/卸载/包导入/中心面板
+
+**日期**：2026-09-27
+
+**决策**：在 D-014 插件 MVP 上交付 Eagle 形态的离线插件中心（四期规划的第一期）：
+三栏中心面板（分类/搜索｜列表+来源徽标+启停｜详情+权限清单+卸载）、每插件启停
+**即时生效**（渲染层注册表移除即卸载扩展点与 iframe，主进程 pref 持久化键
+`plugins:enabled:<id>`，缺失=启用以兼容存量）、卸载（仅删 userData/plugins 安装件，
+extraDir 与内置原件不归卸载管）、`.leafplugin` 包导入（zip/yauzl；manifest 字段向
+Eagle 生态命名对齐；zip slip 防护；同 id 冲突 P1 拒绝）。
+
+**边界声明**：包布局向 Eagle 对齐但运行 API 是 Leaf 沙箱桥——Eagle 官方插件本体
+不可运行，生态需自建。P2 在线市场（推翻 D-014「不追在线分发」）、P3 自动更新、
+P4 插件 API 扩容（窗口类扩展点）各立专项。
+
+**设计文档**：`docs/superpowers/specs/2026-09-27-plugin-center-p1-design.md`；
+实施计划：`docs/superpowers/plans/2026-09-27-plugin-center-p1.md`。
+
+**验证**：PluginService 单测（启停/来源/卸载边界/导入往返/zip slip/同 id/manifest 非法）、
+注册表单测（enabled 过滤/乐观回滚/单例）、真 app e2e（导入→中心可见→禁用→重启持久→
+卸载确认全链）。实施过程教训入账：Promise 执行器参数不得叫 resolve（遮蔽 path.resolve）；
+yauzl lazyEntries 必须显式首次 readEntry 起泵。

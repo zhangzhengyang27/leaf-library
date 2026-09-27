@@ -62,7 +62,7 @@
 
 ## 9.b 三轮像素级对齐（2026-09-03，对照 Eagle 4 真机实测）
 
-- **TitleBar** 控件顺序对齐 Eagle：左段 🔔通知/＋导入/▤侧栏；右段 −滑块+/⚡插件/⋯更多/▦布局/▽筛选▾(维度池)/🔍搜索（最右）。主题/设置/关于移入「更多」菜单（原生菜单 ⌘, 亦有设置）。「更多」常驻任意页面。
+- **TitleBar** 控件顺序对齐 Eagle：左段 🔔通知/＋导入/▤侧栏；右段 −滑块+/⚡插件(打开 PluginCenterModal 插件中心，D-025)/⋯更多/▦布局/▽筛选▾(维度池)/🔍搜索（最右）。主题/设置/关于移入「更多」菜单（原生菜单 ⌘, 亦有设置）。「更多」常驻任意页面。
 - **DimensionPoolPopover**（新组件）：筛选维度池弹层（搜索+图钉），TitleBar 漏斗▾ 与 FilterBar「＋」共用；图钉集经 `leaf:dimensions-changed` 事件跨组件同步（localStorage 单源）。
 - **LibraryPanel**：固定项=全部/未分类/未标签/随机模式/标签管理/回收站（Eagle 顺序；「未加标签→未标签」）；删「全部标签」与「快捷入口」组（收藏/最近添加/最近查看转为智能文件夹组预置行）；删侧栏标签组（标签归「标签管理」页）；智能文件夹组头去计数；文件夹树逐行 ▸ 折叠（`leaf.sidebar-folder-expanded` 持久化，默认折叠）；文件夹右键=打开/重新命名/新建文件夹(预选父级)/新建智能收藏夹/删除。
 - **PhotoGrid** 卡片简介两行对齐 Eagle：L1 `格式: X 尺寸: W × H 文件大小: Y`（视频音频=时长段，书签=域名，字体=字体）＋ L2 `修改日期: … 创建日期: …`（10px 灰字）。
@@ -136,3 +136,16 @@
 - **外框静止淡出**：顶栏 / 缩放 HUD / 底部两行共用 `chromeVisible` 一个状态，鼠标静止 2.2s 一起淡出、
   一动即回；指针停在外框上（`pinChrome`）或正在外框的输入框里打字时不收。简报模式控制栏并入同一套计时
   （原 `briefControlsVisible` / `resetBriefControlsTimer` 已合并删除）。
+
+## 插件中心（P1 离线核心，D-025 · 2026-09-27）
+
+- **PluginCenterModal**（components/plugins/）：三栏中心——分类 tab+搜索｜插件列表（来源徽标
+  内置/已导入/开发者目录 + USwitch 启停）｜详情（描述/权限清单/入口/卸载）。导入 `.leafplugin`
+  走 `plugins:pickAndImport`（选文件→权限确认→落盘）；卸载/安装过 requestConfirm。取代旧
+  PluginManagerModal 的 TitleBar 挂载（文件保留）。
+- **usePluginRegistry**（composables/）：渲染层插件单例——全量列表 + enabledPlugins 视图 +
+  乐观启停（IPC 失败回滚）；reload 自吞错误（消费方 onMounted void 调用）。
+- **PluginService 扩展**：setEnabled/isEnabled（pref `plugins:enabled:<id>`，缺失=启用）、
+  uninstall（仅 userData/plugins 安装件）、importPlugin（yauzl 解包 + zip slip 防护 + 同 id 拒绝）、
+  listAll（ManagedPlugin：+enabled/+source）。类型单源 `src/shared/plugin.ts`。
+- 消费方 PhotoInspector/PhotoPreview 改读 enabledPlugins——禁用插件扩展点即时消失。
