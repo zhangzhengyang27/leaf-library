@@ -16,7 +16,7 @@ import LayoutPopover from './LayoutPopover.vue'
 import DimensionPoolPopover from './DimensionPoolPopover.vue'
 // F6：通知中心重新挂载（组件/事件链路完整，此前缺挂载点导致设置页开关悬空）
 import NotificationCenter from './NotificationCenter.vue'
-import PluginManagerModal from '../plugins/PluginManagerModal.vue'
+import PluginCenterModal from '../plugins/PluginCenterModal.vue'
 import ActionsModal from '../ActionsModal.vue'
 import QuickSwitcherModal from './QuickSwitcherModal.vue'
 import { useContextMenu } from '@composables/useContextMenu'
@@ -24,6 +24,7 @@ import { useRunInLibrary } from '@composables/useRunInLibrary'
 import { useLibraryUI } from '../../composables/useLibraryUI'
 import { useLibraryTabs, type LibraryLayout } from '@renderer/stores/libraryTabs'
 import {
+  ensurePinned,
   loadPinnedDimensions,
   reorderDimension,
   savePinnedDimensions,
@@ -45,7 +46,7 @@ import { useAiBatch } from '@views/photos/composables/useAiBatch'
 const route = useRoute()
 const router = useRouter()
 const menu = useContextMenu()
-const { panelVisible, togglePanel } = useLibraryUI()
+const { panelVisible, togglePanel, ensureFilterBarVisible } = useLibraryUI()
 
 const tabs = useLibraryTabs()
 const data = usePhotoData()
@@ -320,14 +321,26 @@ window.addEventListener('leaf:open-actions', openActions)
 onUnmounted(() => window.removeEventListener('leaf:open-actions', openActions))
 
 // ── 筛选维度池（G2：漏斗▾ = 维度池弹层，与 FilterBar「＋」同源）──
+// （ensureFilterBarVisible 在上方 useLibraryUI 解构处）
 
 const pinnedDims = ref<DimensionId[]>(loadPinnedDimensions())
 function togglePinnedDim(id: DimensionId): void {
-  const i = pinnedDims.value.indexOf(id)
-  if (i >= 0) pinnedDims.value.splice(i, 1)
-  else pinnedDims.value.push(id)
+  const adding = !pinnedDims.value.includes(id)
+  pinnedDims.value = adding
+    ? ensurePinned(pinnedDims.value, id)
+    : pinnedDims.value.filter((d) => d !== id)
+  // 固定必须立即可见：筛选行默认隐藏（⌘⇧F），否则 chip 落进看不见的行
+  if (adding) ensureFilterBarVisible()
   savePinnedDimensions([...pinnedDims.value])
   window.dispatchEvent(new CustomEvent('leaf:dimensions-changed'))
+}
+/** Eagle 点行语义（D-012 修复轮）：漏斗池点行 = 固定如未固定 + 让 FilterBar 打开取值面板 */
+function openDimension(id: DimensionId): void {
+  pinnedDims.value = ensurePinned(pinnedDims.value, id)
+  savePinnedDimensions([...pinnedDims.value])
+  ensureFilterBarVisible()
+  window.dispatchEvent(new CustomEvent('leaf:dimensions-changed'))
+  window.dispatchEvent(new CustomEvent('leaf:dimension-open-panel', { detail: id }))
 }
 /** 二十六轮：池内拖拽排序（与 FilterBar 共用 localStorage 单源 + 同步事件） */
 function reorderPinnedDim(from: DimensionId, to: DimensionId): void {
@@ -545,6 +558,7 @@ const iconBtn =
           <DimensionPoolPopover
             :pinned="pinnedDims"
             @toggle="togglePinnedDim"
+            @open="openDimension"
             @reorder="reorderPinnedDim"
           >
             <template #default="{ toggle }">
@@ -735,8 +749,8 @@ const iconBtn =
       </div>
     </div>
 
-    <!-- 阶段 5.1 插件管理面板 -->
-    <PluginManagerModal v-model="pluginsOpen" />
+    <!-- 插件中心（D-025 P1） -->
+    <PluginCenterModal v-model="pluginsOpen" />
     <!-- 十五轮批5：素材动作宏弹层 -->
     <ActionsModal v-model="actionsOpen" />
     <!-- 十五轮批6：⇄ 快速跳转器弹层 -->
