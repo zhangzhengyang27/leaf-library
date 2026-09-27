@@ -3,7 +3,7 @@
 > **一叶一世界，万叶成一集。** —— 把散落万处的叶，收成自己的一册。
 
 本地优先的多类型素材管理桌面应用：**图片 / 视频 / 音频 / 字体 / 任意文件 / 书签** 一站式管理。
-从 [electron-tools](../electron-tools)（Leaf 本地工具箱）的素材库模块独立而来。
+从本地项目 electron-tools（Leaf 本地工具箱）的素材库模块独立而来。
 
 ## 为什么叫 Leaf Library
 
@@ -35,7 +35,7 @@ pnpm exec playwright test e2e/extension-real.spec.mjs   # 剪藏插件真机验�
 node scripts/check-ai-env.mjs   # AI（onnxruntime）环境自查
 ```
 
-> 仓库当前无远端；`.github/workflows/ci.yml` 为接入 GitHub 后的即用配置（master/main 双认）。
+> CI：`.github/workflows/ci.yml`（master/main 双认）。
 > License：MIT（见根目录 `LICENSE`）。
 
 ## 数据
@@ -51,3 +51,7 @@ node scripts/check-ai-env.mjs   # AI（onnxruntime）环境自查
 - 渲染层：`views/photos/`（视图组装层 + `composables/` 逻辑层 + 组件），`thumb:// rawfile:// video:// image://` 自定义协议供图
 - 壳层（D-011 Eagle 布局）：`TitleBar`（hiddenInset 单行工具栏：导入/布局/面包屑/缩略图滑块）+ `LibraryPanel`（树形资源侧栏），视图状态在 `stores/libraryTabs.ts`（单状态 + 视图历史栈）
 - 共享：`src/shared/assetTypes.ts`（六类资源类型真理源）
+
+## 致谢
+
+- 交互与视觉设计参考了 [Eagle](https://eagle.cool/)——一款优秀的素材管理工具；本项目为独立实现，仓库内不含 Eagle 的代码或素材文件。

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, useAttrs } from 'vue'
-import { ICON_SIZES } from '../assets/eagle-icons/icon-sizes'
+import { ICON_SIZES } from '../assets/icon-sizes'
 
 /**
- * Eagle 提取图标渲染器（assets/eagle-icons/）。
+ * 应用图标渲染器（assets/eagle-icons/；素材 2026-09-27 起只留本地不入库，见 D-026）。
  *
  * Eagle 的 UI 图标为单色 SVG/PNG（fill #F7F8F8 系），统一用 CSS mask + background-color
  * 渲染：颜色取 currentColor（可用 Tailwind text-* 覆盖），随亮暗主题自动切换，无需双份资产。

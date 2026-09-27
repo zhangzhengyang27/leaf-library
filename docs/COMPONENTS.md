@@ -114,8 +114,8 @@
 
 ## 右栏宽度收口（2026-09-20，对齐 D-018）
 
-- 新增 token `--shell-inspector-w: 250px`（Eagle 4.0 `.inspector{width:250px}`，见
-  `research/eagle/components/layout-metrics.spec.md`）。右栏三个全高面板——`PhotoInspector` /
+- 新增 token `--shell-inspector-w: 250px`（Eagle 4.0 `.inspector{width:250px}`，实测记录见
+  本地归档 `references/eagle/`）。右栏三个全高面板——`PhotoInspector` /
   `FolderInspector` / `LibraryInfoPanel`——一律用它，此前是 260 / 240 / 240 三个值，
   选中与取消选中会让右栏跳 20px。
 - `--shell-library-panel-w` 280→300（同上 spec 的 `.sidebar{width:300px}`）；
@@ -127,7 +127,7 @@
 ## 预览弹窗去挤（2026-09-20，对齐 D-019）
 
 - **PhotoPreview 顶栏**改为单行 32px 图标键（`.pv-icon`）：关闭 / 上一张 / 下一张 / 文件名 + 计数 /
-  评分五星 / 收藏 / 幻灯片 / ⋯ 更多。图标全部走 `AppIcon`（Eagle 提取资产，mask + currentColor）。
+  评分五星 / 收藏 / 幻灯片 / ⋯ 更多。图标全部走 `AppIcon`（本地图标资产，mask + currentColor）。
   低频与破坏性动作（找相似、设为壁纸、壁纸适配方式、重命名、在文件夹中显示、用默认应用打开、
   复制文件路径、导出、丢到回收站）收进 ⋯ 菜单，不再有常驻红色「从库中移除」大按钮。
 - **快捷键提示**（`shortcutHint`）不再常驻占一整列：`.pv-hint` 建框时浮出，5s 内自动淡出。

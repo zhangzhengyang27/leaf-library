@@ -18,7 +18,7 @@ export interface ModuleMeta {
   label: string
   /** 描述 */
   description: string
-  /** AppIcon 图标名（Eagle 提取图标，见 renderer assets/eagle-icons） */
+  /** AppIcon 图标名（本地图标资产，见 renderer AppIcon） */
   icon: string
   /** 所在分组 */
   group: ModuleGroup

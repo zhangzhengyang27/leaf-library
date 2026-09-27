@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 120" fill="none">
+  <!-- 空状态插画 · 搜索无结果（暗色）· 本仓原创绘制 -->
+  <circle cx="82" cy="57" r="41" stroke="#3E434C" stroke-width="1.5" stroke-dasharray="3 7" stroke-linecap="round"/>
+  <circle cx="74" cy="50" r="17" stroke="#5B626D" stroke-width="2.5"/>
+  <path d="M86.5 62.5 99 75" stroke="#5B626D" stroke-width="2.5" stroke-linecap="round"/>
+  <path d="M66 60Q63.5 45.5 79 43.5Q80.5 57.5 66 60Z" fill="#6E9455"/>
+  <path d="M68 57.5Q73 51 77.5 45.5" stroke="#577E41" stroke-width="1.3" stroke-linecap="round"/>
+</svg>

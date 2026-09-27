@@ -208,7 +208,7 @@
 
 **日期**：2026-09-02
 
-**决策**：项目目标升级为「一比一复刻 Eagle」。基于 2026-09-02 对 Eagle 实测（工具栏布局弹层 / 排列方式 / 筛选维度 / 智能文件夹编辑器 / 标签管理页 / 偏好设置 / 资源库菜单），制定分阶段对齐计划（见《素材库与Eagle差距分析.md》2026-09-02 版）。
+**决策**：项目目标升级为「一比一复刻 Eagle」。基于 2026-09-02 对 Eagle 实测（工具栏布局弹层 / 排列方式 / 筛选维度 / 智能文件夹编辑器 / 标签管理页 / 偏好设置 / 资源库菜单），制定分阶段对齐计划（见《素材库与Eagle差距分析.md》2026-09-02 版，原文已归档本地 `references/eagle/docs/`）。
 
 **与 D-011 的关系**：推翻 D-011 第 3 条「搜索框移入 FilterBar 行首」与排序控件位置——Eagle 实测排序与搜索都在顶部工具栏，布局+排列+显示开关合为一个弹层。其余 D-011 决策（单行工具栏、树形侧栏、卡片常驻元信息）保留。
 
@@ -607,3 +607,31 @@ P4 插件 API 扩容（窗口类扩展点）各立专项。
 注册表单测（enabled 过滤/乐观回滚/单例）、真 app e2e（导入→中心可见→禁用→重启持久→
 卸载确认全链）。实施过程教训入账：Promise 执行器参数不得叫 resolve（遮蔽 path.resolve）；
 yauzl lazyEntries 必须显式首次 readEntry 起泵。
+
+## Decision-026 · 开源发布清理：素材本地化与历史重写
+
+**日期**：2026-09-27
+
+**决策**：仓库接入 GitHub 公开发布前，完成三类清理：
+
+1. **Eagle 素材与逆向文档出库**：`docs/` 下逆向交接/提取文档、`eagle-gap-analysis`/
+   `eagle-parity-plan`、全部《素材库与Eagle差距分析》轮次文档与 `docs/research/eagle/`，
+   连同 `assets/eagle-icons/` 的提取资产（icons 378 + masks 174 + 插画 2），全部转入本地
+   `references/eagle/` 归档、不再进版本库（素材在 src 原位 gitignore，本机构建不受影响）；
+   插件中心空态插画与「已安装」状态点换本仓原创 SVG。公开口径统一为「设计参考 Eagle 的
+   独立实现」。
+2. **历史重写**：`git filter-repo --invert-paths` 从全部历史剥离 ① Eagle 素材/文档全部路径
+   ② `_compiled-from-cache`、`build-snapshot-2026-09-21T2122`、`_错位-src根` 三个事故恢复/
+   编译产物目录（约 3.5 万处个人绝对路径）③ 历史 tsbuildinfo。原始完整历史备份在仓库外
+   `~/Desktop/leaf-library-backup-pre-rewrite-20260927.bundle`（考古走 bundle，不再走
+   git log）；commit 映射存 `references/rewrite-20260927-commit-map.txt`。代价：既有文档
+   引用的历史提交哈希全部失效，对照换算走 bundle 或 commit-map。
+3. **身份**：提交作者邮箱保留 QQ 邮箱（1074385735@qq.com），用户拍板接受公开。
+
+**边界声明**：CHANGELOG/DECISIONS/BACKLOG 中「Eagle 式 / 对齐 Eagle」等表述属设计参照，
+保留；图标资产本体（ic-*/mask 体系）暂以本地形态维持构建，fresh clone 图标为空槽——
+整体替换为原创/开源图标集已列 BACKLOG P2，完成后素材恢复入库。
+
+**验证**：`pnpm lint/typecheck/test/build` 全绿后提交清理 commit，再执行 filter-repo
+（工作区文件不动，素材在盘上原位保留）；重写后 `git log --name-only` 全历史对
+eagle / build-snapshot / _compiled / _错位 / tsbuildinfo 路径零命中。

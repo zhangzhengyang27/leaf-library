@@ -38,9 +38,9 @@ import { isEscTop, popEscScope, pushEscScope } from '@renderer/utils/escStack'
 import { PLUGIN_CATEGORY_LABELS } from '@renderer/types/plugin'
 import type { PluginCategory } from '@renderer/types/plugin'
 import { useDialogs } from '@views/photos/composables/useDialogs'
-import illuSearchEmptyLight from '../../assets/eagle-icons/illustrations/plugin-search-empty-light.png'
-import illuSearchEmptyDark from '../../assets/eagle-icons/illustrations/plugin-search-empty-dark.png'
-import statusInstalledDot from '../../assets/eagle-icons/icons/ic-plugin-list-installed.svg'
+import illuSearchEmptyLight from '../../assets/illustrations/plugin-search-empty-light.svg'
+import illuSearchEmptyDark from '../../assets/illustrations/plugin-search-empty-dark.svg'
+import statusInstalledDot from '../../assets/icons/plugin-status-installed.svg'
 
 const props = defineProps<{ modelValue: boolean }>()
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()

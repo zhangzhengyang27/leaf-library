@@ -22,7 +22,14 @@ coverage
 references
 
 # ── 2026-09-25 清创：误删事故恢复产物与一次性探针，只留在盘上，不再进版本库 ──
-# （历史版本里仍在，需要考古时走 git log 旧路径；这些目录的来历见 docs/复盘-2026-09-21误删事故.md）
+# （2026-09-27 开源前 filter-repo 已将下列目录从全部历史剥离，git log 里不再有旧版本；
+#   原始完整历史备份在 ~/Desktop/leaf-library-backup-pre-rewrite-20260927.bundle，
+#   新旧 commit 映射在 references/rewrite-20260927-commit-map.txt，来历见 docs/复盘-2026-09-21误删事故.md）
+
+# ── 2026-09-27 开源清理（D-026）：Eagle 提取资产只留本地，不入库；归档在 references/eagle/ ──
+src/renderer/src/assets/eagle-icons/icons/
+src/renderer/src/assets/eagle-icons/masks/
+src/renderer/src/assets/eagle-icons/illustrations/
 /_compiled-from-cache/
 /_recovered-usable/
 /_recovery-partials/
