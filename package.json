@@ -1,7 +1,7 @@
 {
   "name": "leaf-library",
   "version": "1.0.0",
-  "description": "Leaf 素材库 · 本地优先的多类型素材管理（图片/视频/音频/字体/文件/书签）",
+  "description": "Leaf 素材库 · 把散落的叶子收成一册 —— 本地优先的多类型素材管理（图片/视频/音频/字体/文件/书签）",
   "main": "./out/main/index.js",
   "author": "Leaf",
   "homepage": "https://leaf.app",
