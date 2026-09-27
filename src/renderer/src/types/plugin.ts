@@ -1,16 +1,6 @@
-/** 插件系统类型（阶段 5.1 MVP，与主进程 PluginService 对齐） */
-
-export type PluginCategory = 'inspector' | 'format' | 'window' | 'development'
-
-export interface InstalledPlugin {
-  id: string
-  name: string
-  version: string
-  category: PluginCategory
-  entry: string
-  formats: string[]
-  dir: string
-}
+/** 插件系统类型（阶段 5.1 MVP）—— P1（D-025）起单源下沉 @shared/plugin，本文件只留展示映射 */
+export type { PluginCategory, PluginManifest, InstalledPlugin, ManagedPlugin } from '@shared/plugin'
+import type { PluginCategory } from '@shared/plugin'
 
 export const PLUGIN_CATEGORY_LABELS: Record<PluginCategory, string> = {
   inspector: '检查器',

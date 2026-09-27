@@ -108,7 +108,8 @@
     "vite": "^7.1.6",
     "vitest": "^1.6.0",
     "vue-eslint-parser": "^10.2.0",
-    "vue-tsc": "^3.0.7"
+    "vue-tsc": "^3.0.7",
+    "yazl": "^3.3.1"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

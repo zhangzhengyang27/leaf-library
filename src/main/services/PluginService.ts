@@ -13,47 +13,31 @@ import {
   readFileSync,
   existsSync,
   lstatSync,
+  rmSync,
   statSync,
   realpathSync
 } from 'fs'
-import { join, resolve, sep } from 'path'
+import { dirname, join, resolve, sep } from 'path'
+import { createWriteStream, mkdirSync } from 'fs'
 import { app } from 'electron'
+import yauzl from 'yauzl'
+import type { ManagedPlugin, PluginCategory, PluginManifest, InstalledPlugin } from '@shared/plugin'
 import { prefRepository } from '../db/repos/PrefRepository'
 import type { PrefRepository } from '../db/repos/PrefRepository'
 
-export type PluginCategory = 'inspector' | 'format' | 'window' | 'development'
-
-export interface PluginManifest {
-  id: string
-  name: string
-  version: string
-  category: PluginCategory
-  /** 相对插件目录的入口 HTML（如 index.html） */
-  entry: string
-  /** 声明的能力（保留字段，MVP 未执行） */
-  permissions?: string[]
-  /** format 类插件声明的扩展名（不含点，小写），如 ['txt','md'] */
-  formats?: string[]
-}
-
-export interface InstalledPlugin {
-  id: string
-  name: string
-  version: string
-  category: PluginCategory
-  entry: string
-  formats: string[]
-  dir: string
-}
 
 const PLUGIN_ROOT = 'plugins'
 const EXTRA_DIR_PREF = 'plugins:extraDir'
+const ENABLED_PREF_PREFIX = 'plugins:enabled:'
 
 function parseManifest(dir: string): PluginManifest | null {
   try {
     const raw = readFileSync(join(dir, 'manifest.json'), 'utf-8')
     const m = JSON.parse(raw) as Partial<PluginManifest>
     if (!m.id || !m.name || !m.version || !m.category || !m.entry) return null
+    // D-025 终审 C1：id 参与目录名拼接（join(root, id)），不做字符集校验等于给
+    // 恶意包一条「../../ 任意写盘」的路。目录名只允许安全字符。
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(String(m.id))) return null
     // category 枚举校验（审查 P3-11）：非法值会让渲染层 PluginCategory switch 静默落空
     const VALID_CATEGORIES: PluginCategory[] = ['inspector', 'format', 'window', 'development']
     if (!VALID_CATEGORIES.includes(m.category)) return null
@@ -63,6 +47,7 @@ function parseManifest(dir: string): PluginManifest | null {
       version: String(m.version),
       category: m.category,
       entry: String(m.entry),
+      description: m.description ? String(m.description) : undefined,
       permissions: Array.isArray(m.permissions) ? m.permissions.map(String) : [],
       formats: Array.isArray(m.formats) ? m.formats.map((f) => f.toLowerCase()) : []
     }
@@ -165,6 +150,186 @@ export class PluginService {
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
+    }
+  }
+
+  /** 启停：pref 键缺失 = 启用（存量兼容，D-025） */
+  isEnabled(id: string): boolean {
+    return this.prefs.get(ENABLED_PREF_PREFIX + id) !== 'false'
+  }
+
+  setEnabled(id: string, enabled: boolean): { ok: boolean; error?: string } {
+    if (!this.list().some((p) => p.id === id)) return { ok: false, error: `插件不存在: ${id}` }
+    this.prefs.set(ENABLED_PREF_PREFIX + id, enabled ? 'true' : 'false')
+    return { ok: true }
+  }
+
+  /** 中心面板视图：userData 安装件 + extraDir 开发者件，带 enabled 与来源 */
+  listAll(): ManagedPlugin[] {
+    const builtinIds = new Set(this.listBuiltin().map((p) => p.id))
+    const extra = this.getExtraDir()
+    const out: ManagedPlugin[] = []
+    const seen = new Set<string>()
+    const push = (dir: string, source: ManagedPlugin['source']) => {
+      const m = parseManifest(dir)
+      if (!m || seen.has(m.id)) return
+      seen.add(m.id)
+      out.push({ ...m, formats: m.formats ?? [], dir, enabled: this.isEnabled(m.id), source })
+    }
+    for (const dir of listPluginDirs(this.root)) {
+      const id = parseManifest(dir)?.id ?? ''
+      push(dir, builtinIds.has(id) ? 'builtin' : 'imported')
+    }
+    if (extra) for (const dir of listPluginDirs(extra)) push(dir, 'dev')
+    return out
+  }
+
+  /** 卸载：只删 userData/plugins 安装件（extraDir 开发者目录与内置原件不归卸载管）；幂等 */
+  uninstall(id: string): { ok: boolean; error?: string } {
+    const installed = this.list().find((p) => p.id === id)
+    if (!installed) return { ok: false, error: `插件不存在或未安装: ${id}` }
+    const resolvedDir = resolve(installed.dir)
+    if (!resolvedDir.startsWith(resolve(this.root) + sep))
+      return { ok: false, error: '该插件来自开发者目录，请在设置中移除自定义目录或手动删除' }
+    try {
+      rmSync(resolvedDir, { recursive: true, force: true })
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  }
+
+  /**
+   * 导入 .leafplugin（zip）：解到临时目录 → manifest/entry 校验 → 同 id 冲突检查 →
+   * 落 userData/plugins/<id>/。zip slip（entry 逃逸目标目录）整包拒绝。
+   * 同 id 已装 P1 拒绝（版本覆盖升级属 P3，spec §2.5）。
+   */
+  async importPlugin(zipPath: string): Promise<{ ok: boolean; id?: string; error?: string }> {
+    if (!existsSync(zipPath)) return { ok: false, error: '插件包不存在' }
+    const tempDir = join(this.root, `.import-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    try {
+      mkdirSync(tempDir, { recursive: true })
+      const extractRes = await this.extractPluginZip(zipPath, tempDir)
+      if (!extractRes.ok) return { ok: false, error: extractRes.error }
+      const m = parseManifest(tempDir)
+      if (!m) return { ok: false, error: '包内 manifest.json 缺失或非法' }
+      if (m.entry.includes('..') || resolve(tempDir, m.entry).startsWith(resolve(tempDir) + sep) === false)
+        return { ok: false, error: `入口文件路径非法: ${m.entry}` }
+      if (!existsSync(join(tempDir, m.entry)))
+        return { ok: false, error: `入口文件缺失: ${m.entry}` }
+      mkdirSync(this.root, { recursive: true })
+      const target = join(this.root, m.id)
+      // C1 双保险：id 校验之后仍断言落点在 root 内（不信任上游单层防线）
+      if (!resolve(target).startsWith(resolve(this.root) + sep))
+        return { ok: false, error: '插件 id 非法（解析后越出插件目录）' }
+      if (existsSync(target)) return { ok: false, error: '已安装同 id 插件，请先卸载后再导入' }
+      cpSync(tempDir, target, { recursive: true })
+      return { ok: true, id: m.id }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
+    }
+  }
+
+  /** 解包 zip 到 destDir；zip slip（entry 路径逃逸 destDir）整包拒绝 */
+  private extractPluginZip(
+    zipPath: string,
+    destDir: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    return new Promise((settle) => {
+      yauzl.open(zipPath, { lazyEntries: true, autoClose: true }, (err, zip) => {
+        if (err || !zip) {
+          settle({ ok: false, error: '插件包损坏或不是有效的 zip' })
+          return
+        }
+        const safeRoot = resolve(destDir) + sep
+        let failed: string | null = null
+        zip.on('entry', (entry: yauzl.Entry) => {
+          if (failed) return
+          const name = entry.fileName
+          if (name.endsWith('/')) {
+            zip.readEntry()
+            return
+          }
+          if (name.includes('\0') || name.includes('..') || resolve(destDir, name).startsWith(safeRoot) === false) {
+            failed = `包内含不安全的路径: ${name}`
+            zip.close()
+            settle({ ok: false, error: failed })
+            return
+          }
+          zip.openReadStream(entry, (serr, stream) => {
+            if (serr || !stream) {
+              failed = '包内条目无法读取'
+              zip.close()
+              settle({ ok: false, error: failed })
+              return
+            }
+            const target = resolve(destDir, name)
+            mkdirSync(dirname(target), { recursive: true })
+            const out = createWriteStream(target)
+            out.on('close', () => zip.readEntry())
+            out.on('error', () => {
+              failed = '解包写盘失败'
+              zip.close()
+              settle({ ok: false, error: failed })
+            })
+            // I2：读流（inflate）出错必须有人接——无监听的 'error' 事件是未捕获异常，
+            // 损坏/构造的包可以击穿主进程
+            stream.on('error', (streamErr) => {
+              failed = `包内条目解压失败: ${(streamErr as Error).message}`
+              out.destroy()
+              zip.close()
+              settle({ ok: false, error: failed })
+            })
+            stream.pipe(out)
+          })
+        })
+        zip.on('end', () => {
+          if (!failed) settle({ ok: true })
+        })
+        zip.on('error', () => settle({ ok: false, error: '插件包损坏或不是有效的 zip' }))
+        // lazyEntries 起泵：注册完监听后必须先读一条，entry/end 事件才会开始流动
+        zip.readEntry()
+      })
+    })
+  }
+
+  /**
+   * 两段式导入第一段：解包到临时目录解析 manifest 后即弃（不落盘），
+   * 回传安装确认所需的元数据。校验口径与 importPlugin 完全一致。
+   */
+  async inspectPlugin(zipPath: string): Promise<{
+    ok: boolean
+    error?: string
+    meta?: { id: string; name: string; version: string; category: PluginCategory; description?: string; permissions: string[] }
+  }> {
+    if (!existsSync(zipPath)) return { ok: false, error: '插件包不存在' }
+    const tempDir = join(this.root, `.inspect-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    try {
+      mkdirSync(tempDir, { recursive: true })
+      const extractRes = await this.extractPluginZip(zipPath, tempDir)
+      if (!extractRes.ok) return { ok: false, error: extractRes.error }
+      const m = parseManifest(tempDir)
+      if (!m) return { ok: false, error: '包内 manifest.json 缺失或非法' }
+      if (m.entry.includes('..') || resolve(tempDir, m.entry).startsWith(resolve(tempDir) + sep) === false)
+        return { ok: false, error: `入口文件路径非法: ${m.entry}` }
+      if (!existsSync(join(tempDir, m.entry))) return { ok: false, error: `入口文件缺失: ${m.entry}` }
+      return {
+        ok: true,
+        meta: {
+          id: m.id,
+          name: m.name,
+          version: m.version,
+          category: m.category,
+          description: m.description,
+          permissions: m.permissions ?? []
+        }
+      }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true })
     }
   }
 

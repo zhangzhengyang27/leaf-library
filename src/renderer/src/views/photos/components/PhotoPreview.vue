@@ -764,13 +764,13 @@ import { useVideoSubtitles } from '../composables/useVideoSubtitles'
 import { usePhotoActions } from '../composables/usePhotoActions'
 import { useWallpaper } from '../composables/useWallpaper'
 import PluginSandbox from '@components/plugins/PluginSandbox.vue'
+import { usePluginRegistry } from '@renderer/composables/usePluginRegistry'
 import AppIcon from '@components/AppIcon.vue'
 import AudioPlayer from './AudioPlayer.vue'
 import AnnotationTickRail from './AnnotationTickRail.vue'
 import PhotoAnnotationOverlay from './PhotoAnnotationOverlay.vue'
 import { encodeMediaPath } from '@renderer/utils/mediaPath'
 import { renderMarkdown } from '@renderer/utils/markdownPreview'
-import type { InstalledPlugin } from '@renderer/types/plugin'
 
 const actions = usePhotoActions()
 const wallpaper = useWallpaper()
@@ -1360,11 +1360,15 @@ watch(
 )
 
 // —— 阶段 5.1：格式预览插件扩展点（category=format，按扩展名匹配） ——
-const formatPlugins = ref<InstalledPlugin[]>([])
+// P1（D-025）：改读 usePluginRegistry 的 enabled 视图——禁用插件即时退出格式匹配
+const { enabledPlugins: registryEnabled, reload: reloadRegistry } = usePluginRegistry()
+const formatPlugins = computed(() => registryEnabled.value)
 const textPreview = ref<{ fileName: string; ext: string; content: string } | null>(null)
 
 const formatPlugin = computed(
-  () => formatPlugins.value.find((p) => p.formats.includes(fileExt.value)) ?? null
+  () =>
+    formatPlugins.value.find((p) => p.category === 'format' && p.formats.includes(fileExt.value)) ??
+    null
 )
 
 // 插件声明该格式时读取文本内容注入沙箱；读取失败/非文本 → 交给兜底卡片
@@ -1385,14 +1389,7 @@ watch(
   { immediate: true }
 )
 
-onMounted(async () => {
-  try {
-    const list = await window.api.plugins.list()
-    formatPlugins.value = list.filter((p) => p.category === 'format')
-  } catch {
-    formatPlugins.value = []
-  }
-})
+onMounted(() => void reloadRegistry())
 
 // —— 阶段 4.3：PDF/AI 多页预览（pdfjs 渲染 + 翻页；rawfile:// 加载原文件） ——
 const isPdf = computed(() => /\.(pdf|ai)$/i.test(props.photo?.fileName ?? ''))

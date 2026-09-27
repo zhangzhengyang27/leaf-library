@@ -10,7 +10,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import AppIcon from '@components/AppIcon.vue'
 import PluginSandbox from '@components/plugins/PluginSandbox.vue'
-import type { InstalledPlugin } from '@renderer/types/plugin'
+import { usePluginRegistry } from '@renderer/composables/usePluginRegistry'
 import { Map as MLMap, Marker } from 'maplibre-gl'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import type { Photo } from '../../../types/photo'
@@ -76,15 +76,12 @@ const folderChain = computed(() => {
 const isBatch = computed(() => photos.value.length > 1)
 
 // —— 阶段 5.1 检查器插件扩展点（category=inspector 的插件渲染到面板底部） ——
-const inspectorPlugins = ref<InstalledPlugin[]>([])
-onMounted(async () => {
-  try {
-    const list = await window.api.plugins.list()
-    inspectorPlugins.value = list.filter((p) => p.category === 'inspector')
-  } catch {
-    inspectorPlugins.value = []
-  }
-})
+// P1（D-025）：改读 usePluginRegistry 的 enabled 视图——禁用插件即时消失
+const { enabledPlugins: registryEnabled, reload: reloadRegistry } = usePluginRegistry()
+const inspectorPlugins = computed(() =>
+  registryEnabled.value.filter((p) => p.category === 'inspector')
+)
+onMounted(() => void reloadRegistry())
 
 /** 注入给插件的当前素材摘要（白名单字段，避免暴露 filePath 等敏感路径） */
 const pluginPayload = computed(() => {

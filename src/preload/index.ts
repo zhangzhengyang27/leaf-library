@@ -32,7 +32,15 @@ const api: API = {
     readAsset: (pluginId, relativePath) =>
       ipcRenderer.invoke('plugins:readAsset', pluginId, relativePath),
     listBuiltin: () => ipcRenderer.invoke('plugins:listBuiltin'),
-    installBuiltin: (id) => ipcRenderer.invoke('plugins:installBuiltin', id)
+    installBuiltin: (id) => ipcRenderer.invoke('plugins:installBuiltin', id),
+    // 插件中心（D-025）：启停 / 卸载 / 导入 / 全量视图
+    setEnabled: (id, enabled) =>
+      ipcRenderer.invoke('plugins:setEnabled', String(id ?? ''), enabled === true),
+    uninstall: (id) => ipcRenderer.invoke('plugins:uninstall', String(id ?? '')),
+    importPlugin: (zipPath) => ipcRenderer.invoke('plugins:importPlugin', String(zipPath ?? '')),
+    listAll: () => ipcRenderer.invoke('plugins:listAll'),
+    pickPluginZip: () => ipcRenderer.invoke('plugins:pickPluginZip'),
+    inspectPlugin: (zipPath) => ipcRenderer.invoke('plugins:inspectPlugin', String(zipPath ?? ''))
   },
   // 阶段 4.4 监控文件夹自动导入
   storage: {
