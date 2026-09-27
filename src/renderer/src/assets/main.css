@@ -129,6 +129,11 @@
 body {
   width: 100vw;
   height: 100vh;
+  /* v4 tokens 的主题文字色必须落在 body 上：Tailwind preflight 之下，凡没显式写
+     text-fg-* 的元素都从这里继承——否则暗色主题下继承的是浏览器默认黑（实测：
+     UModal #title 插槽等 teleport 到 body 的内容黑字黑底）。亮色下 #26272b 与
+     默认黑肉眼难辨，所以这个坑只在暗色暴露。 */
+  color: var(--text-primary);
 }
 
 /* === v4 · macOS Native 补充层 ============================================== */
