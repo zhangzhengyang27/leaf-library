@@ -599,6 +599,10 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
   // …更多▸（置顶/封面/壁纸/收藏/评分/移出）收敛为平铺区（UContextMenu 无层级）；
   // 加入相册… 为 Leaf 扩展保留（Eagle 无相册）。
   const isSingle = ids.length === 1
+  // kind 感知菜单：图片专属项只在「所选全部是位图」时出现——Markdown/文本/视频
+  // 等类型不需要看到反向图搜/设为壁纸/转换为/黑白预览这些图片动作（Eagle 同款按
+  // 素材类型裁剪菜单；多选混合类型时按更保守口径整段隐藏）
+  const allImages = byIds(ids).length > 0 && byIds(ids).every((p) => p.kind === 'image')
   const lastFolderId = (() => {
     try {
       return localStorage.getItem('leaf.last-used-folder')
@@ -659,19 +663,23 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
           } as MenuItem
         ]
       : []),
-    // F3（Eagle 格式转换器）：转换为子菜单
-    {
-      key: 'convert',
-      label: '转换为…',
-      icon: 'context-menu/ic-export',
-      children: [
-        { key: 'webp', label: 'WebP（质量 82）' },
-        { key: 'png', label: 'PNG' },
-        { key: 'jpg', label: 'JPG' },
-        { key: 'avif', label: 'AVIF' },
-        { key: 'custom', label: '质量 / 尺寸自定…' }
-      ]
-    },
+    // F3（Eagle 格式转换器）：转换为子菜单（图片专属——格式转换只对位图有意义）
+    ...(allImages
+      ? [
+          {
+            key: 'convert',
+            label: '转换为…',
+            icon: 'context-menu/ic-export',
+            children: [
+              { key: 'webp', label: 'WebP（质量 82）' },
+              { key: 'png', label: 'PNG' },
+              { key: 'jpg', label: 'JPG' },
+              { key: 'avif', label: 'AVIF' },
+              { key: 'custom', label: '质量 / 尺寸自定…' }
+            ]
+          } as MenuItem
+        ]
+      : []),
     { key: 'd3', divider: true },
     { key: 'share', label: '分享', icon: 'ic_earth' },
     { key: 'd4', divider: true },
@@ -711,7 +719,9 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
         { key: 'copy-desc', label: '复制注释', disabled: !isSingle || !photo.description },
         { key: 'copy-folder-path', label: '复制文件夹路径', disabled: !isSingle },
         { key: 'copy-thumb', label: '复制缩略图', disabled: !isSingle },
-        { key: 'copy-base64', label: '复制 Base64', disabled: !isSingle }
+        ...(allImages
+          ? [{ key: 'copy-base64', label: '复制 Base64', disabled: !isSingle }]
+          : [])
       ]
     },
     { key: 'paste-tags', label: '粘贴标签 ⌘V', icon: 'context-menu/ic-tag-paste' },
@@ -753,47 +763,56 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
         ]
       : []),
     { key: 'refresh-thumb', label: '刷新缩略图', icon: 'context-menu/ic-video-update-thumbnail' },
-    { key: 'reanalyze-color', label: '重新分析颜色', icon: 'context-menu/ic-filter-item-color' },
-    { key: 'similar', label: '以图搜图', icon: 'context-menu/ic-search-by-image' },
-    // 反向图搜▸（Eagle find > reverse）：引擎只认 URL/上传，本地位图先进剪贴板再开页粘贴；
-    // 只对位图类素材显示（kind 判定与「设为壁纸」同口径），多选禁用
-    {
-      key: 'reverse-search',
-      label: '反向图搜',
-      icon: 'context-menu/ic-reverse-search',
-      disabled: ids.length > 1 || photo.kind !== 'image',
-      children: REVERSE_SEARCH_ENGINES.map((e) => ({ key: e.id, label: e.name }))
-    },
-    { key: 'gray-preview', label: '黑白预览', icon: 'context-menu/ic-grayscale' },
-    // 缩略图背景▸（Eagle 子菜单形态）
-    { key: 'd-thumbbg', divider: true },
-    {
-      key: 'thumbbg',
-      label: '缩略图背景…',
-      icon: 'context-menu/ic-file-transparent-grid',
-      children: [
-        {
-          key: 'auto',
-          label: '自动',
-          checked: tabs.active.display.thumbBackground === 'auto'
-        },
-        {
-          key: 'white',
-          label: '白色',
-          checked: tabs.active.display.thumbBackground === 'white'
-        },
-        {
-          key: 'dark',
-          label: '深色棋盘',
-          checked: tabs.active.display.thumbBackground === 'dark'
-        },
-        {
-          key: 'transparent',
-          label: '透明',
-          checked: tabs.active.display.thumbBackground === 'transparent'
-        }
-      ]
-    },
+    // 以下四项均为图片专属（颜色分析/pHash 以图搜图/反向图搜/黑白预览），非位图整段隐藏
+    ...(allImages
+      ? [
+          { key: 'reanalyze-color', label: '重新分析颜色', icon: 'context-menu/ic-filter-item-color' },
+          { key: 'similar', label: '以图搜图', icon: 'context-menu/ic-search-by-image' },
+          // 反向图搜▸（Eagle find > reverse）：引擎只认 URL/上传，本地位图先进剪贴板再开页粘贴；
+          // 多选禁用（一次只贴一张）
+          {
+            key: 'reverse-search',
+            label: '反向图搜',
+            icon: 'context-menu/ic-reverse-search',
+            disabled: ids.length > 1,
+            children: REVERSE_SEARCH_ENGINES.map((e) => ({ key: e.id, label: e.name }))
+          },
+          { key: 'gray-preview', label: '黑白预览', icon: 'context-menu/ic-grayscale' }
+        ]
+      : []),
+    // 缩略图背景▸（Eagle 子菜单形态；棋盘底只作用于位图缩略图）
+    ...(allImages
+      ? [
+          { key: 'd-thumbbg', divider: true },
+          {
+            key: 'thumbbg',
+            label: '缩略图背景…',
+            icon: 'context-menu/ic-file-transparent-grid',
+            children: [
+              {
+                key: 'auto',
+                label: '自动',
+                checked: tabs.active.display.thumbBackground === 'auto'
+              },
+              {
+                key: 'white',
+                label: '白色',
+                checked: tabs.active.display.thumbBackground === 'white'
+              },
+              {
+                key: 'dark',
+                label: '深色棋盘',
+                checked: tabs.active.display.thumbBackground === 'dark'
+              },
+              {
+                key: 'transparent',
+                label: '透明',
+                checked: tabs.active.display.thumbBackground === 'transparent'
+              }
+            ]
+          }
+        ]
+      : []),
     {
       key: 'brief',
       label: '进入简报模式 F5',
@@ -814,17 +833,21 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
       icon: 'context-menu/ic-folder-set-cover',
       disabled: !isSingle || !filters.activeFolder.value
     },
-    {
-      key: 'set-wallpaper',
-      label: '设为壁纸',
-      icon: 'ic_texture',
-      disabled: ids.length > 1 || photo.kind !== 'image',
-      // 父项与首子项都是自动适配（父项在子菜单展开时不易点，故子菜单里也给出）
-      children: (['auto', 'cover', 'blurred', 'original'] as WallpaperMode[]).map((key) => ({
-        key,
-        label: key === 'auto' ? `${MODE_LABEL.auto}（按屏判定）` : MODE_LABEL[key]
-      }))
-    },
+    ...(allImages
+      ? [
+          {
+            key: 'set-wallpaper',
+            label: '设为壁纸',
+            icon: 'ic_texture',
+            disabled: ids.length > 1,
+            // 父项与首子项都是自动适配（父项在子菜单展开时不易点，故子菜单里也给出）
+            children: (['auto', 'cover', 'blurred', 'original'] as WallpaperMode[]).map((key) => ({
+              key,
+              label: key === 'auto' ? `${MODE_LABEL.auto}（按屏判定）` : MODE_LABEL[key]
+            }))
+          } as MenuItem
+        ]
+      : []),
     {
       key: 'favorite',
       label: photo.isFavorite ? '取消收藏' : '收藏',
