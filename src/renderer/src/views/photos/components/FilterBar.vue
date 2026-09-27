@@ -12,7 +12,7 @@
  * 行尾出现 保存筛选/锁定筛选/清除全部 三图标。
  * 状态全部随活动视图（useLibraryTabs），组件不持有本地筛选状态。
  */
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AppIcon from '@components/AppIcon.vue'
 import { useLibraryTabs, type OrientationValue } from '@renderer/stores/libraryTabs'
 import type { SmartAlbumRules } from '../../../types/photo'
@@ -20,9 +20,11 @@ import { buildFiltersSpec } from '../composables/usePhotoFilterSpec'
 import { rulesToFilters } from '../composables/rulesToFilters'
 import { saveSearchScopes } from '../constants/searchScopes'
 import { useSemanticSearch } from '../constants/semanticSearch'
+import { useLibraryUI } from '@composables/useLibraryUI'
 import SavedFiltersPopover from './SavedFiltersPopover.vue'
 import {
   DIMENSION_LABEL,
+  ensurePinned,
   loadDimensionOrder,
   loadPinnedDimensions,
   reorderDimension,
@@ -97,23 +99,58 @@ const dimOrder = ref<DimensionId[]>(loadDimensionOrder())
 /** 筛选行渲染序 = 维度顺序 ∩ 已固定（Eagle 池拖拽决定顺序） */
 const pinnedOrdered = computed(() => dimOrder.value.filter((id) => pinned.value.includes(id)))
 
-/** 九轮：⌘⇧T 打开标签筛选弹层（Eagle open.tagfilter）。
- * 审查 I2：模板 ref 位于 v-for 作用域内时 Vue 存的是实例数组而非单个实例 */
-const tagsChipRef = ref<
-  InstanceType<typeof DimensionChip> | InstanceType<typeof DimensionChip>[] | null
->(null)
+/** 筛选行可见性（D-012 修复轮）：默认隐藏，固定/点行时 ensure 展开——
+ *  否则 chip 落在一个 display:none 的行里，用户视角就是「固定了没反应」 */
+const { ensureFilterBarVisible } = useLibraryUI()
+
+/** 已固定维度 chip 实例（openDimension 用 show() 锚定开面板；卸载的 chip 置空） */
+type ChipInstance = InstanceType<typeof DimensionChip>
+const chipEls: Partial<Record<DimensionId, ChipInstance>> = {}
+function setChipRef(id: DimensionId) {
+  return (el: unknown) => {
+    chipEls[id] = (el as ChipInstance | null) ?? undefined
+  }
+}
+/** 无取值面板的动作 chip（AI 维度）：点行只固定，show() 对它们无意义 */
+const PANEL_LESS_DIMS = new Set<DimensionId>(['aiImage', 'aiSemantic'])
+
+/** 九轮：⌘⇧T 打开标签筛选弹层（Eagle open.tagfilter）——走 chipEls 统一实例表 */
 function openTagFilter(): void {
-  const chip = Array.isArray(tagsChipRef.value) ? tagsChipRef.value[0] : tagsChipRef.value
-  chip?.show()
+  chipEls['tags']?.show()
 }
 defineExpose({ openTagFilter })
 
 function togglePin(id: DimensionId): void {
-  const i = pinned.value.indexOf(id)
-  if (i >= 0) pinned.value.splice(i, 1)
-  else pinned.value.push(id)
+  const adding = !pinned.value.includes(id)
+  pinned.value = adding ? ensurePinned(pinned.value, id) : pinned.value.filter((d) => d !== id)
   savePinnedDimensions([...pinned.value])
+  // 固定必须立即可见：筛选行藏着时 chip 会落进看不见的行（「固定没反应」的根因）
+  if (adding) ensureFilterBarVisible()
   window.dispatchEvent(new CustomEvent('leaf:dimensions-changed'))
+}
+
+/**
+ * Eagle 点行语义（D-012 修复轮）：点维度行 = 「用这个筛选」——固定如未固定、
+ * 展开筛选行、立即弹出该维度取值面板。图钉路径（togglePin）仍是纯开关。
+ */
+async function openDimension(id: DimensionId): Promise<void> {
+  const next = ensurePinned(pinned.value, id)
+  if (next !== pinned.value) {
+    pinned.value = next
+    savePinnedDimensions([...pinned.value])
+    window.dispatchEvent(new CustomEvent('leaf:dimensions-changed'))
+  }
+  ensureFilterBarVisible()
+  if (PANEL_LESS_DIMS.has(id)) return
+  // 刚固定的 chip 要等下一轮渲染才挂载，之后才能锚定 show()
+  await nextTick()
+  chipEls[id]?.show()
+}
+
+/** TitleBar 漏斗点行的跨组件转发（池弹层两处宿主共用同一套语义） */
+function onOpenPanelEvent(e: Event): void {
+  const id = (e as CustomEvent<DimensionId>).detail
+  if (typeof id === 'string') void openDimension(id)
 }
 
 /** 池内拖拽排序（DimensionPoolPopover 转发；TitleBar 同步经 window 事件） */
@@ -127,8 +164,14 @@ function onDimsChanged(): void {
   pinned.value = loadPinnedDimensions()
   dimOrder.value = loadDimensionOrder()
 }
-onMounted(() => window.addEventListener('leaf:dimensions-changed', onDimsChanged))
-onBeforeUnmount(() => window.removeEventListener('leaf:dimensions-changed', onDimsChanged))
+onMounted(() => {
+  window.addEventListener('leaf:dimensions-changed', onDimsChanged)
+  window.addEventListener('leaf:dimension-open-panel', onOpenPanelEvent)
+})
+onBeforeUnmount(() => {
+  window.removeEventListener('leaf:dimensions-changed', onDimsChanged)
+  window.removeEventListener('leaf:dimension-open-panel', onOpenPanelEvent)
+})
 
 // ── 多选维度：行三态 + 包含/排除切换（左键包含 / 右键排除，Eagle 弹层语义） ──
 
@@ -840,6 +883,7 @@ watch(
         <!-- 颜色 -->
         <DimensionChip
           v-if="dimId === 'color'"
+          :ref="setChipRef(dimId)"
           label="颜色"
           icon="context-menu/ic-filter-item-color"
           :active="!!tab.colorFilter || !!tab.colorClose"
@@ -852,7 +896,7 @@ watch(
         <!-- 标签（Eagle 式双栏弹层；⌘⇧T 外部打开） -->
         <DimensionChip
           v-else-if="dimId === 'tags'"
-          ref="tagsChipRef"
+          :ref="setChipRef(dimId)"
           label="标签"
           icon="context-menu/ic-filter-item-tag"
           :active="isTagsActive"
@@ -866,6 +910,7 @@ watch(
         <!-- 文件夹 -->
         <DimensionChip
           v-else-if="dimId === 'folders'"
+          :ref="setChipRef(dimId)"
           label="文件夹"
           icon="context-menu/ic-filter-item-folder"
           :active="isFoldersActive"
@@ -879,6 +924,7 @@ watch(
         <!-- 形状（多选 + 比例 + 自定，Eagle 形状弹层） -->
         <DimensionChip
           v-else-if="dimId === 'shape'"
+          :ref="setChipRef(dimId)"
           label="形状"
           icon="context-menu/ic-filter-item-shape"
           :active="isDimActive('shape')"
@@ -942,6 +988,7 @@ watch(
         <!-- 评分（精确星级复选 + 尚未评分，Eagle 评分弹层） -->
         <DimensionChip
           v-else-if="dimId === 'rating'"
+          :ref="setChipRef(dimId)"
           label="评分"
           icon="context-menu/ic-filter-item-rating"
           :active="isDimActive('rating')"
@@ -967,6 +1014,7 @@ watch(
         <!-- 格式（多选 + 搜索 + 提示条，Eagle 格式弹层） -->
         <DimensionChip
           v-else-if="dimId === 'format'"
+          :ref="setChipRef(dimId)"
           label="格式"
           icon="context-menu/ic-filter-item-ext"
           :active="isDimActive('format')"
@@ -1007,6 +1055,7 @@ watch(
         <!-- 尺寸（分辨率预设 + 计数） -->
         <DimensionChip
           v-else-if="dimId === 'resolution'"
+          :ref="setChipRef(dimId)"
           label="尺寸"
           icon="context-menu/ic-filter-item-resolution"
           :active="!!tab.resolutionFilter"
@@ -1033,6 +1082,7 @@ watch(
         <!-- 添加日期（预设 + 自定义区间） -->
         <DimensionChip
           v-else-if="dimId === 'time'"
+          :ref="setChipRef(dimId)"
           label="添加日期"
           icon="context-menu/ic-filter-item-import"
           :active="!!tab.timeFilter || !!tab.customTime"
@@ -1079,6 +1129,7 @@ watch(
         <!-- 大小（预设 + 自定义区间） -->
         <DimensionChip
           v-else-if="dimId === 'size'"
+          :ref="setChipRef(dimId)"
           label="大小"
           icon="context-menu/ic-filter-item-size"
           :active="!!tab.sizeRange"
@@ -1121,6 +1172,7 @@ watch(
         <!-- 时长 -->
         <DimensionChip
           v-else-if="dimId === 'duration'"
+          :ref="setChipRef(dimId)"
           label="时长"
           icon="context-menu/ic-filter-item-duration"
           :active="!!tab.durationRange"
@@ -1147,6 +1199,7 @@ watch(
         <!-- 注释（描述关键词） -->
         <DimensionChip
           v-else-if="dimId === 'notes'"
+          :ref="setChipRef(dimId)"
           label="注释"
           icon="context-menu/ic-filter-item-note"
           :active="!!tab.noteKeyword"
@@ -1181,6 +1234,7 @@ watch(
         <!-- 标注（有/无标注两档，Eagle「标注」维；计数来自客户端在场缓存） -->
         <DimensionChip
           v-else-if="dimId === 'annotations'"
+          :ref="setChipRef(dimId)"
           label="标注"
           icon="context-menu/ic-filter-item-comment"
           :active="!!tab.annotationFilter"
@@ -1211,6 +1265,7 @@ watch(
         <!-- 链接（来源 URL 关键词） -->
         <DimensionChip
           v-else-if="dimId === 'url'"
+          :ref="setChipRef(dimId)"
           label="链接"
           icon="context-menu/ic-filter-item-url"
           :active="!!tab.urlKeyword"
@@ -1245,6 +1300,7 @@ watch(
         <!-- 修改日期（预设 + 自定义区间） -->
         <DimensionChip
           v-else-if="dimId === 'modifiedDate'"
+          :ref="setChipRef(dimId)"
           label="修改日期"
           icon="context-menu/ic-filter-item-modify"
           :active="!!tab.modifiedTimeRange"
@@ -1322,7 +1378,12 @@ watch(
       </template>
 
       <!-- 「＋」维度池弹层（DimensionPoolPopover，与 TitleBar 漏斗同源） -->
-      <DimensionPoolPopover :pinned="pinned" @toggle="togglePin" @reorder="onReorder">
+      <DimensionPoolPopover
+        :pinned="pinned"
+        @toggle="togglePin"
+        @open="openDimension"
+        @reorder="onReorder"
+      >
         <template #default="{ toggle }">
           <button
             type="button"

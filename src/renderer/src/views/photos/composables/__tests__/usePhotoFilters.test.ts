@@ -89,6 +89,40 @@ describe('usePhotoFilters · 图库视图与快筛', () => {
     expect(filters.isSearchMode.value).toBe(false)
   })
 
+  it('随机模式视图下关键词搜索接管（搜索覆盖随机池）', () => {
+    const data = usePhotoData()
+    const filters = usePhotoFilters()
+    data.allPhotos.value = [
+      makePhoto({ id: 'cat1', tags: ['猫'] }),
+      makePhoto({ id: 'dog', tags: ['狗'] })
+    ]
+    filters.tab.value.view = 'random'
+    // 无关键词：随机视图照旧显示整个池
+    expect(filters.flatDisplayPhotos.value).toHaveLength(2)
+    filters.tab.value.searchKeyword = '猫'
+    expect(filters.isSearchMode.value).toBe(true)
+    // 搜索接管：显示搜索结果，而不是随机池原样（回归：随机分支曾抢在搜索前且不含关键词）
+    expect(filters.flatDisplayPhotos.value.map((p) => p.id)).toEqual(['cat1'])
+    filters.tab.value.searchKeyword = ''
+    expect(filters.flatDisplayPhotos.value).toHaveLength(2)
+  })
+
+  it('回收站视图支持关键词过滤', () => {
+    const data = usePhotoData()
+    const filters = usePhotoFilters()
+    filters.tab.value.view = 'trash'
+    data.recycleBinPhotos.value = [
+      makePhoto({ id: 'cat-del', tags: ['猫'] }),
+      makePhoto({ id: 'dog-del', tags: ['狗'] })
+    ]
+    expect(filters.flatDisplayPhotos.value).toHaveLength(2)
+    filters.tab.value.searchKeyword = '猫'
+    expect(filters.isTrashView.value).toBe(true)
+    expect(filters.flatDisplayPhotos.value.map((p) => p.id)).toEqual(['cat-del'])
+    filters.tab.value.searchKeyword = ''
+    expect(filters.flatDisplayPhotos.value).toHaveLength(2)
+  })
+
   it('收藏视图过滤 isFavorite；回收站视图展示回收站数据', () => {
     const data = usePhotoData()
     const filters = usePhotoFilters()

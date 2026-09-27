@@ -717,7 +717,16 @@ function build() {
       sortPhotos(photos, viewSortBy.value, tab.value.sortAsc)
 
     if (isTrashView.value) {
-      return groupByDate(data.recycleBinPhotos.value)
+      // 回收站搜索（拍板 2026-09-27）：关键词在回收站池内过滤（客户端匹配，与搜索
+      // 回退路径同口径的 scope 语义）。回收站无快筛 UI，不叠加 matchAll。
+      const kw = tab.value.searchKeyword
+      if (kw.trim() === '') return groupByDate(data.recycleBinPhotos.value)
+      const folderMap = new Map(data.folders.value.map((f) => [f.id, f]))
+      return groupByDate(
+        data.recycleBinPhotos.value.filter((p) =>
+          matchKeyword(p, kw, { scopes: searchScopes.value, ...folderScopeTextOf(p, folderMap) })
+        )
+      )
     }
 
     if (isDuplicateView.value) {
@@ -731,18 +740,6 @@ function build() {
           photos: sortForView(similarMatches.value)
         }
       ]
-    }
-
-    // §2.C 随机模式：在当前候选池上打散（回收站/查重/相似/AI 视图不受影响）
-    // 顺序由 stableShuffleOrder 缓存，筛选/排序变化不重排，仅池成员变化才重洗
-    // 三轮 G3：侧栏固定项「随机模式」= 专有视图（Eagle 同名入口），与 shuffle 开关叠加生效
-    if (tab.value.shuffle || tab.value.view === 'random') {
-      const pool = currentPool.value
-      const order = stableShuffleOrder(pool)
-      const orderIndex = new Map(order.map((id, i) => [id, i]))
-      const filtered = pool.filter((p) => matchAll(p))
-      filtered.sort((a, b) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0))
-      return [{ dateSection: `随机 · ${filtered.length} 张`, photos: filtered }]
     }
 
     if (isSearchMode.value) {
@@ -772,6 +769,20 @@ function build() {
         ...s,
         photos: sortForView(s.photos)
       }))
+    }
+
+    // §2.C 随机模式：在当前候选池上打散（查重/相似/AI 视图不受影响；有关键词时上面
+    // 的搜索分支已接管——此分支必须排在搜索之后，否则随机视图/ shuffle 开关下搜索
+    // 静默失效（2026-09-27 探针复现的回归））
+    // 顺序由 stableShuffleOrder 缓存，筛选/排序变化不重排，仅池成员变化才重洗
+    // 三轮 G3：侧栏固定项「随机模式」= 专有视图（Eagle 同名入口），与 shuffle 开关叠加生效
+    if (tab.value.shuffle || tab.value.view === 'random') {
+      const pool = currentPool.value
+      const order = stableShuffleOrder(pool)
+      const orderIndex = new Map(order.map((id, i) => [id, i]))
+      const filtered = pool.filter((p) => matchAll(p))
+      filtered.sort((a, b) => (orderIndex.get(a.id) ?? 0) - (orderIndex.get(b.id) ?? 0))
+      return [{ dateSection: `随机 · ${filtered.length} 张`, photos: filtered }]
     }
 
     if (tab.value.view === 'favorites') {

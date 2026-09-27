@@ -40,11 +40,22 @@ function toggleFilterBar(): void {
   }
 }
 
+/**
+ * 筛选行默认隐藏（十八轮），但「固定维度」必须立即可见——D-012 修复轮：
+ * 池弹层固定/点行时若筛选行藏着，chip 会出现在一个看不见的行里（用户视角
+ * 即「固定了没反应」）。隐藏时展开并持久化，已可见时幂等。
+ */
+function ensureFilterBarVisible(): void {
+  if (filterBarVisible.value) return
+  toggleFilterBar()
+}
+
 export function useLibraryUI(): {
   panelVisible: typeof panelVisible
   togglePanel: typeof togglePanel
   filterBarVisible: typeof filterBarVisible
   toggleFilterBar: typeof toggleFilterBar
+  ensureFilterBarVisible: typeof ensureFilterBarVisible
 } {
-  return { panelVisible, togglePanel, filterBarVisible, toggleFilterBar }
+  return { panelVisible, togglePanel, filterBarVisible, toggleFilterBar, ensureFilterBarVisible }
 }

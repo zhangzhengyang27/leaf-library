@@ -136,6 +136,14 @@ export function savePinnedDimensions(ids: DimensionId[]): void {
   }
 }
 
+/**
+ * Eagle 点行语义（D-012 修复轮）：「用这个筛选」= 固定如未固定，永不取消
+ * （取消固定是图钉的职责）。纯函数：不改入参，已固定时返回原数组引用。
+ */
+export function ensurePinned(ids: DimensionId[], id: DimensionId): DimensionId[] {
+  return ids.includes(id) ? ids : [...ids, id]
+}
+
 /** 二十六轮：维度展示顺序（Eagle 池拖拽排序；缺省 = 注册表顺序） */
 export function loadDimensionOrder(): DimensionId[] {
   try {

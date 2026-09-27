@@ -23,8 +23,10 @@ const props = defineProps<{
 }>()
 
 const emit = defineEmits<{
-  /** 点击维度行：固定/取消固定 */
+  /** 点击图钉：固定/取消固定（纯开关） */
   (e: 'toggle', id: DimensionId): void
+  /** 点击维度行（Eagle「用这个筛选」）：固定如未固定 + 打开取值面板 */
+  (e: 'open', id: DimensionId): void
   /** 拖拽排序：把 from 移到 to 位置 */
   (e: 'reorder', from: DimensionId, to: DimensionId): void
 }>()
@@ -128,7 +130,7 @@ defineExpose({ close })
         @dragover="onDragOver(d.id, $event)"
         @drop="onDrop(d.id, $event)"
         @dragend="onDragEnd"
-        @click="emit('toggle', d.id)"
+        @click="emit('open', d.id)"
       >
         <!-- 拖拽手柄（Eagle ic-drag-help） -->
         <AppIcon icon="ic-drag-help" :size="11" class="shrink-0 cursor-grab text-fg-muted" />
@@ -139,14 +141,21 @@ defineExpose({ close })
           class="shrink-0 rounded-sm bg-brand-500/15 px-0.5 text-[9px] leading-3 text-brand-600 dark:text-brand-400"
           >AI</span
         >
-        <AppIcon
-          :icon="
-            pinned.includes(d.id) ? 'context-menu/ic-filter-pinned' : 'context-menu/ic-filter-pin'
-          "
-          :size="13"
-          class="shrink-0"
+        <!-- 图钉独立成钮（D-012 修复轮）：行点击是「用这个筛选」，图钉才是纯固定开关 -->
+        <button
+          type="button"
+          class="pin-btn shrink-0 rounded-sm p-0.5 transition-colors duration-fast hover:bg-surface-hover"
           :class="pinned.includes(d.id) ? 'text-brand-500' : 'text-fg-muted'"
-        />
+          :title="pinned.includes(d.id) ? '取消固定' : '固定到筛选行'"
+          @click.stop="emit('toggle', d.id)"
+        >
+          <AppIcon
+            :icon="
+              pinned.includes(d.id) ? 'context-menu/ic-filter-pinned' : 'context-menu/ic-filter-pin'
+            "
+            :size="13"
+          />
+        </button>
       </div>
       <p v-if="results.length === 0" class="px-1 py-2 text-[11px] text-fg-muted">无匹配维度</p>
     </div>
