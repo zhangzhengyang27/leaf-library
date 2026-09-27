@@ -51,6 +51,10 @@
 
 ## P3 · 有空再看
 
+- [ ] 测试去偶发：`SmartAlbumModal.groups.test.ts` 的实时计数用例在全量电池并发下偶挂
+  （单文件跑恒绿、两轮全量复跑全绿；2026-09-27 二次复现）——疑似 fake timers + debounce
+  与并行 worker 的时序交互，需隔离挂因后加确定性闸。
+
 - [ ] 大库性能：真 JS 虚拟滚动、排序下推（文档口径「库变大再做」，先立此存照）。
 - [ ] `preload/index.d.ts` 死类型清理（893 行契约文件里有已删通道的残留）；`libraryTabs.ts` 的
   `aiSearchMode` 死字段已于 09-26 清掉。
