@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "category": "inspector",
   "entry": "index.html",
+  "description": "绘制选中图片的 RGB 通道与亮度直方图",
   "permissions": [],
   "formats": []
 }

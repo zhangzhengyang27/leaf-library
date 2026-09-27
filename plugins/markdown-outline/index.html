@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>Markdown 大纲</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.outline{user-select:text}
+.h{display:flex;align-items:stretch;gap:6px;padding:2px 0}
+.h .bar{width:3px;border-radius:2px;flex-shrink:0}
+.h .t{flex:1;min-width:0;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.h .n{color:#9ca3af;font-size:10px;flex-shrink:0;font-family:ui-monospace,Menlo,monospace}
+.counts{margin-top:8px;padding-top:6px;border-top:1px solid #f3f4f6;color:#9ca3af;font-size:11px}
+.counts i{display:inline-block;width:8px;height:8px;border-radius:2px;margin-right:2px;vertical-align:-1px}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+/** H1–H6 层级色条（照常用 Markdown 渲染器的六级色感） */
+var LEVEL_COLORS=['#ef4444','#f97316','#eab308','#22c55e','#3b82f6','#8b5cf6'];
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+ var lines=p.content.split('\n');
+ // 逐行解析标题；``` 围栏代码块内的 # 行不算标题
+ var headings=[],counts=[0,0,0,0,0,0],inFence=false;
+ for(var i=0;i<lines.length;i++){
+   var line=lines[i];
+   if(/^\s*(```|~~~)/.test(line)){inFence=!inFence;continue}
+   if(inFence)continue;
+   var m2=/^(#{1,6})\s+(.+?)\s*#*\s*$/.exec(line);
+   if(m2){
+     var lv=m2[1].length;
+     headings.push({level:lv,text:m2[2],line:i+1});
+     counts[lv-1]++;
+   }
+ }
+ var text=p.content.replace(/\s/g,'');
+ var html='<div class="meta">'+escapeHtml(p.fileName||'')+' · 全文 '+p.content.length+' 字符（不含空白 '+text.length+'）· '+lines.length+' 行</div>';
+ if(!headings.length){
+   app.className='empty';
+   app.innerHTML=html+'<div>未找到 Markdown 标题（# 开头行）</div>';
+   return;
+ }
+ app.className='';
+ html+='<div class="outline">';
+ for(i=0;i<headings.length;i++){
+   var hd=headings[i];
+   html+='<div class="h" title="第 '+hd.line+' 行">'+
+     '<span class="bar" style="background:'+LEVEL_COLORS[hd.level-1]+'"></span>'+
+     '<span class="t" style="padding-left:'+((hd.level-1)*14)+'px;font-weight:'+(hd.level<=2?700:400)+'">'+escapeHtml(hd.text)+'</span>'+
+     '<span class="n">H'+hd.level+'</span></div>';
+ }
+ html+='</div><div class="counts">各级计数：';
+ var any=false;
+ for(i=0;i<6;i++){
+   if(counts[i]){html+=(any?' · ':'')+'<i style="background:'+LEVEL_COLORS[i]+'"></i>H'+(i+1)+' ×'+counts[i];any=true}
+ }
+ html+='</div>';
+ app.innerHTML=html;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

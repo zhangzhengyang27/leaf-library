@@ -122,6 +122,12 @@ interface RowItem {
 
 const builtinRaw = ref<Array<{ id: string; name: string; version: string; category: string; entry: string; description?: string; permissions?: string[] }>>([])
 
+/** 示例插件不上货架，保留在仓库供开发者参考：id 以 hello- 开头的内置件一律不展示 */
+const HIDDEN_EXAMPLE_PREFIX = 'hello-'
+
+/** 内置未安装列表（filteredBuiltin）：剔除 hello-* 示例件后的可上架项 */
+const filteredBuiltin = computed(() => builtinRaw.value.filter((b) => !b.id.startsWith(HIDDEN_EXAMPLE_PREFIX)))
+
 /** 来源 → props「开发者」行文案（Leaf 无在线作者体系） */
 const SOURCE_LABEL: Record<RowItem['source'], string> = {
   builtin: 'Leaf 内置',
@@ -144,7 +150,7 @@ const allRows = computed<RowItem[]>(() => {
     entry: p.entry
   }))
   const installedIds = new Set(plugins.value.map((p) => p.id))
-  const builtinRows: RowItem[] = builtinRaw.value
+  const builtinRows: RowItem[] = filteredBuiltin.value
     .filter((b) => !installedIds.has(b.id))
     .map((b) => ({
       id: b.id,

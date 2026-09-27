@@ -1,0 +1,10 @@
+{
+  "id": "palette-pro",
+  "name": "色板提取器",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "description": "从选中图片提取 8 色主色板，点击色块即可复制 HEX 色值",
+  "permissions": [],
+  "formats": []
+}

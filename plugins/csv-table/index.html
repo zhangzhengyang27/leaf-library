@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>CSV 表格预览</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.tablewrap{overflow:auto;max-height:440px;border:1px solid #e5e7eb;border-radius:6px}
+table{border-collapse:collapse;font-size:11px;min-width:100%}
+th,td{padding:3px 8px;border-bottom:1px solid #f3f4f6;border-right:1px solid #f3f4f6;text-align:left;white-space:nowrap;max-width:220px;overflow:hidden;text-overflow:ellipsis}
+th{background:#f9fafb;font-weight:700;color:#111827;position:sticky;top:0}
+td{color:#374151;user-select:text}
+tr:hover td{background:#f9fafb}
+.types{margin-top:6px;color:#9ca3af;font-size:10px;line-height:1.7}
+.types b{color:#4b5563;font-weight:600}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var MAX_ROWS=100; // 预览上限
+/** RFC4180 风格解析：支持引号包裹与 "" 转义，兼容 \r\n */
+function parseCsv(text,delim){
+  var rows=[],field='',row=[],inQuotes=false;
+  for(var i=0;i<text.length;i++){
+    var ch=text[i];
+    if(inQuotes){
+      if(ch==='"'){
+        if(text[i+1]==='"'){field+='"';i++}
+        else inQuotes=false;
+      }else field+=ch;
+    }else if(ch==='"'){inQuotes=true}
+    else if(ch===delim){row.push(field);field=''}
+    else if(ch==='\n'){row.push(field);rows.push(row);field='';row=[]}
+    else if(ch==='\r'){/* 忽略，交给 \n */}
+    else field+=ch;
+  }
+  // 收尾：最后一行无换行符
+  if(field!==''||row.length){row.push(field);rows.push(row)}
+  return rows;
+}
+/** 每列类型推断：数字/文本占非空单元格比例 */
+function columnTypes(rows,colCount){
+  var out=[];
+  for(var c=0;c<colCount;c++){
+    var num=0,total=0;
+    for(var r=1;r<rows.length;r++){
+      var v=(rows[r][c]??'').trim();
+      if(v==='')continue;
+      total++;
+      if(!isNaN(Number(v)))num++;
+    }
+    if(total===0)out.push('空列');
+    else{
+      var np=Math.round(num/total*100);
+      out.push('数字 '+np+'% / 文本 '+(100-np)+'%');
+    }
+  }
+  return out;
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+ var content=p.content.replace(/^\uFEFF/,''); // 去 BOM
+ if(!content.trim()){app.textContent='文件内容为空';return}
+ // 分隔符识别：首行 \t 与逗号计数取多者；.tsv 文件直接按 \t
+ var firstLine=content.split('\n',1)[0]||'';
+ var delim=(p.ext==='tsv'||(firstLine.split('\t').length-1)>=(firstLine.split(',').length-1))?'\t':',';
+ var rows=parseCsv(content,delim);
+ if(!rows.length){app.textContent='没有可解析的数据行';return}
+ var header=rows[0]||[];
+ var maxLen=rows.length>1?Math.max.apply(null,rows.slice(1).map(function(r){return r.length})):0;
+ var colCount=Math.max(header.length,maxLen);
+ var types=columnTypes(rows,colCount);
+ var dataRows=rows.slice(1);
+ var html='<div class="meta">'+escapeHtml(p.fileName||'')+' · 分隔符 '+(delim==='\t'?'TAB':'逗号')+
+   ' · 共 '+dataRows.length+' 行 × '+colCount+' 列';
+ if(dataRows.length>MAX_ROWS)html+='（仅显示前 '+MAX_ROWS+' 行）';
+ html+='</div><div class="tablewrap"><table><thead><tr>';
+ for(var c=0;c<colCount;c++)html+='<th>'+(header[c]!=null?escapeHtml(header[c]):'')+'</th>';
+ html+='</tr></thead><tbody>';
+ var shown=Math.min(dataRows.length,MAX_ROWS);
+ for(var r=0;r<shown;r++){
+   html+='<tr>';
+   for(c=0;c<colCount;c++){
+     var v=dataRows[r][c];
+     html+='<td>'+(v!=null&&v!==''?escapeHtml(v):'')+'</td>';
+   }
+   html+='</tr>';
+ }
+ html+='</tbody></table></div>';
+ // 每列类型占比（列数多时截断展示，完整内容进 title）
+ var typeHtml='';
+ var showCols=Math.min(colCount,12);
+ for(c=0;c<showCols;c++){
+   var name=header[c]!=null&&header[c]!==''?header[c]:'列'+(c+1);
+   typeHtml+='<b>'+escapeHtml(String(name))+'</b>：'+types[c]+(c<showCols-1?'　':'');
+ }
+ if(colCount>12)typeHtml+='…（共 '+colCount+' 列）';
+ html+='<div class="types" title="'+escapeHtml(header.map(function(h,i){return (h||'列'+(i+1))+'：'+types[i]}).join('\n'))+'">'+typeHtml+'</div>';
+ app.className='';
+ app.innerHTML=html;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

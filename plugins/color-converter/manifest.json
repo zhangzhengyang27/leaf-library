@@ -1,0 +1,10 @@
+{
+  "id": "color-converter",
+  "name": "颜色转换器",
+  "version": "1.0.0",
+  "category": "window",
+  "entry": "index.html",
+  "description": "HEX/RGB/HSL 三格式双向互转，支持取色器、常用色快捷块与一键复制",
+  "permissions": [],
+  "formats": []
+}

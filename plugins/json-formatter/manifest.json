@@ -1,0 +1,10 @@
+{
+  "id": "json-formatter",
+  "name": "JSON 格式化器",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "解析 JSON 文件：语法着色美化、结构统计与一键压缩，错误时标注行列位置",
+  "permissions": [],
+  "formats": ["json"]
+}

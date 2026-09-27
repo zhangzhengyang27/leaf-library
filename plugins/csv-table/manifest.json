@@ -1,0 +1,10 @@
+{
+  "id": "csv-table",
+  "name": "CSV 表格预览",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "把 CSV/TSV 文件渲染成表格（自动识别分隔符），附行列与每列类型占比统计",
+  "permissions": [],
+  "formats": ["csv", "tsv"]
+}

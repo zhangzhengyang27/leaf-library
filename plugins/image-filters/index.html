@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>滤镜预览</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.bar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+.bar button{height:24px;padding:0 10px;border-radius:5px;border:1px solid #e5e7eb;background:#fff;color:#4b5563;font-size:12px;cursor:pointer}
+.bar button:hover{background:#f3f4f6}
+.bar button.active{background:#111827;border-color:#111827;color:#fff}
+canvas{display:none;width:100%;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa}
+.meta{margin-top:4px;color:#9ca3af;font-size:11px}
+</style></head>
+<body>
+<div id="app" class="empty">等待素材数据…</div>
+<div id="bar" class="bar" style="display:none"></div>
+<canvas id="cv"></canvas>
+<div id="meta" class="meta" style="display:none"></div>
+<script>
+/** 五个滤镜的像素级实现：入参/出参均为 RGBA 字节数组，原地写回 */
+var FILTERS=[
+  {key:'none',name:'原图',fn:function(d){void d}},
+  {key:'gray',name:'灰度',fn:function(d){
+    for(var i=0;i<d.length;i+=4){
+      var v=d[i]*0.299+d[i+1]*0.587+d[i+2]*0.114;
+      d[i]=d[i+1]=d[i+2]=v;
+    }}},
+  {key:'invert',name:'反色',fn:function(d){
+    for(var i=0;i<d.length;i+=4){d[i]=255-d[i];d[i+1]=255-d[i+1];d[i+2]=255-d[i+2]}
+  }},
+  {key:'sepia',name:'褐色',fn:function(d){
+    for(var i=0;i<d.length;i+=4){
+      var r=d[i],g=d[i+1],b=d[i+2];
+      d[i]=Math.min(255,0.393*r+0.769*g+0.189*b);
+      d[i+1]=Math.min(255,0.349*r+0.686*g+0.168*b);
+      d[i+2]=Math.min(255,0.272*r+0.534*g+0.131*b);
+    }}},
+  {key:'warm',name:'暖色',fn:function(d){
+    for(var i=0;i<d.length;i+=4){
+      d[i]=Math.min(255,d[i]+30);   // 提升红通道
+      d[i+1]=Math.min(255,d[i+1]+8);
+      d[i+2]=Math.max(0,d[i+2]-30); // 压低蓝通道
+    }}}
+];
+var pristine=null; // 原始像素（未加滤镜），切滤镜时从此复制
+function render(idx){
+  var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+  if(!pristine)return;
+  var out=new Uint8ClampedArray(pristine.data); // 每次从原图出发，滤镜不叠加
+  FILTERS[idx].fn(out);
+  var imgData=new ImageData(out,pristine.width,pristine.height);
+  ctx.putImageData(imgData,0,0);
+  var btns=document.querySelectorAll('#bar button');
+  for(var i=0;i<btns.length;i++)btns[i].className=Number(btns[i].dataset.idx)===idx?'active':'';
+}
+function setup(img,p){
+  var cv=document.getElementById('cv'),ctx=cv.getContext('2d');
+  // 内部分辨率封顶 480 宽，够预览且像素运算轻
+  var w=Math.min(480,img.naturalWidth);
+  var h=Math.max(1,Math.round(w*img.naturalHeight/img.naturalWidth));
+  cv.width=w;cv.height=h;
+  ctx.drawImage(img,0,0,w,h);
+  var data;
+  try{data=ctx.getImageData(0,0,w,h)}catch(err){
+    var app=document.getElementById('app');
+    app.style.display='';app.textContent='无法读取像素（跨域限制），滤镜预览不可用';
+    return;
+  }
+  pristine=data;
+  ctx.putImageData(data,0,0);
+  cv.style.display='block';
+  document.getElementById('app').style.display='none';
+  var bar=document.getElementById('bar');
+  bar.innerHTML=FILTERS.map(function(f,idx){
+    return '<button type="button" data-idx="'+idx+'"'+(idx===0?' class="active"':'')+'>'+f.name+'</button>'}).join('');
+  bar.style.display='flex';
+  // onclick 赋值而非 addEventListener：payload 反复推送时避免监听器叠加
+  bar.onclick=function(ev){
+    var btn=ev.target.closest('button');if(!btn)return;
+    render(Number(btn.dataset.idx));
+  };
+  var meta=document.getElementById('meta');
+  meta.style.display='';
+  meta.textContent='预览分辨率 '+w+'×'+h+'（原图 '+img.naturalWidth+'×'+img.naturalHeight+'）'+(p.fileName?' · '+p.fileName:'');
+  render(0);
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p){app.style.display='';app.textContent='未选中素材';return}
+ if(p.kind!=='image'){app.style.display='';app.textContent='仅图片素材支持滤镜预览';return}
+ var img=new Image();img.crossOrigin='anonymous';
+ img.onload=function(){setup(img,p)};
+ img.onerror=function(){app.style.display='';app.textContent='缩略图加载失败'};
+ img.src=p.bigThumbUrl||p.thumbUrl;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

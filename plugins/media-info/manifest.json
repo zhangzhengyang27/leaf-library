@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "category": "inspector",
   "entry": "index.html",
+  "description": "查看选中素材的尺寸、体积、评分与标签等基本信息",
   "permissions": [],
   "formats": []
 }

@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>JSON 格式化器</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.stats{color:#9ca3af;font-size:11px;flex:1;min-width:0}
+.btn{border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#4b5563;font-size:11px;height:22px;padding:0 8px;cursor:pointer;flex-shrink:0}
+.btn:hover{background:#f3f4f6}
+pre{margin:0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:420px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+.tok-key{color:#7c3aed}.tok-str{color:#16a34a}.tok-num{color:#2563eb}
+.tok-bool{color:#ea580c;font-weight:600}.tok-null{color:#9ca3af;font-style:italic}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+/** 着色：键/字符串/数字/布尔/null 五类 token，逐段 escape 后拼 span */
+function colorize(src){
+  var re=/("(?:[^"\\]|\\.)*")(\s*:)?|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false)|(null)/g;
+  var out='',last=0,m;
+  while((m=re.exec(src))!==null){
+    out+=escapeHtml(src.slice(last,m.index));
+    if(m[1]!==undefined){
+      // m[0] = 字符串 + 可选冒号；token 只包字符串本体，冒号原样拼接
+      out+='<span class="'+(m[2]!==undefined?'tok-key':'tok-str')+'">'+escapeHtml(m[1])+'</span>'+
+        (m[2]!==undefined?escapeHtml(m[2]):'');
+    }
+    else if(m[3]!==undefined)out+='<span class="tok-num">'+escapeHtml(m[0])+'</span>';
+    else if(m[4]!==undefined)out+='<span class="tok-bool">'+escapeHtml(m[0])+'</span>';
+    else if(m[5]!==undefined)out+='<span class="tok-null">'+escapeHtml(m[0])+'</span>';
+    last=m.index+m[0].length;
+  }
+  return out+escapeHtml(src.slice(last));
+}
+/** 结构统计：顶层键数 / 最大深度 / 总节点数（对象+数组+叶子各计一） */
+function stats(v){
+  var nodes=0,depth=0;
+  function walk(x,d){
+    nodes++;if(d>depth)depth=d;
+    if(Array.isArray(x)){for(var i=0;i<x.length;i++)walk(x[i],d+1)}
+    else if(x&&typeof x==='object'){for(var k in x)walk(x[k],d+1)}
+  }
+  walk(v,1);
+  var top=Array.isArray(v)?v.length:(v&&typeof v==='object'?Object.keys(v).length:0);
+  return {top:top,depth:depth,nodes:nodes};
+}
+var parsed=null,compact=false,curName='',curLen=0;
+function render(){
+  if(parsed===null)return;
+  var app=document.getElementById('app');
+  var s=stats(parsed);
+  var text=compact?JSON.stringify(parsed):JSON.stringify(parsed,null,2);
+  app.className='';
+  app.innerHTML=
+    '<div class="head"><span class="stats">'+(curName?escapeHtml(curName)+' · ':'')+'顶层键数 '+s.top+' · 最大深度 '+s.depth+
+    ' · 总节点数 '+s.nodes+' · 输出 '+(compact?'压缩':'2 空格美化')+'</span>'+
+    '<button type="button" class="btn" id="toggle">'+(compact?'美化':'压缩')+'</button></div>'+
+    '<pre>'+colorize(text)+'</pre>';
+  document.getElementById('toggle').addEventListener('click',function(){compact=!compact;render()});
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+ app.className='';
+ curName=p.fileName||'';curLen=p.content.length;
+ try{
+   parsed=JSON.parse(p.content);
+   compact=false;
+   render();
+ }catch(err){
+   parsed=null;
+   var msg=String((err&&err.message)||err);
+   // V8 的 SyntaxError 带 "position N"：换算成行/列标注
+   var pos=/position (\d+)/i.exec(msg);
+   var where='';
+   if(pos){
+     var idx=Number(pos[1]);
+     var before=p.content.slice(0,idx);
+     var line=before.split('\n').length;
+     var col=idx-before.lastIndexOf('\n');
+     where='\n位置：第 '+line+' 行，第 '+col+' 列';
+   }
+   app.innerHTML='<div class="err">解析失败：'+escapeHtml(msg)+where+'</div>';
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

@@ -1,0 +1,10 @@
+{
+  "id": "markdown-outline",
+  "name": "Markdown 大纲",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "解析 Markdown 标题层级生成可读大纲树，附各级计数与全文字数统计",
+  "permissions": [],
+  "formats": ["md", "markdown"]
+}

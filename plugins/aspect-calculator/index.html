@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>尺寸与比例</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed #e5e7eb}
+.row:last-child{border-bottom:none}.k{color:#9ca3af;flex-shrink:0}.v{color:#111827;text-align:right}
+.sec{margin:10px 0 4px;font-weight:700;color:#111827}
+table{width:100%;border-collapse:collapse;font-size:11px}
+th,td{text-align:left;padding:3px 4px;border-bottom:1px solid #f3f4f6;word-break:break-all}
+th{color:#9ca3af;font-weight:600;background:#f9fafb}
+td.advice{white-space:nowrap}
+.tag{display:inline-block;padding:0 5px;border-radius:3px;font-size:10px;line-height:16px}
+.tag.up{background:#dcfce7;color:#15803d}
+.tag.down{background:#dbeafe;color:#1d4ed8}
+.tag.crop{background:#fef3c7;color:#b45309}
+</style></head>
+<body><div id="app" class="empty">等待素材数据…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+/** 标准比例库：landscape 值 = 宽/高；竖图用 1/值比对 */
+var RATIOS=[
+  {label:'1:1',v:1},{label:'5:4',v:1.25},{label:'4:3',v:4/3},{label:'3:2',v:1.5},
+  {label:'16:10',v:1.6},{label:'5:3',v:5/3},{label:'16:9',v:16/9},{label:'21:9',v:21/9},
+  {label:'2:3',v:2/3},{label:'3:4',v:3/4},{label:'9:16',v:9/16},{label:'1:2',v:0.5}
+];
+/** 常见社交/输出尺寸对照（用途文案 + 建议判断） */
+var TARGETS=[
+  {w:1080,h:1080,use:'Instagram 方图 / 头像'},
+  {w:1920,h:1080,use:'全高清横屏 / YouTube 封面'},
+  {w:1080,h:1920,use:'竖屏短视频 / Reels / 抖音'},
+  {w:1200,h:630,use:'网页分享图（Open Graph）'},
+  {w:1280,h:720,use:'高清横屏 / 幻灯片'},
+  {w:2048,h:2048,use:'电商主图放大版'}
+];
+function humanSize(n){
+  if(n==null||isNaN(n))return null;
+  if(n<1024)return n+' B';
+  if(n<1024*1024)return (n/1024).toFixed(1)+' KB';
+  return (n/1024/1024).toFixed(2)+' MB';
+}
+function gcd(a,b){return b===0?a:gcd(b,a%b)}
+function nearestRatio(w,h){
+  var cur=w/h,inv=h/w,best=null;
+  for(var i=0;i<RATIOS.length;i++){
+    var r=RATIOS[i];
+    // 横图按 宽/高、竖图按 高/宽 双向比对，取相对误差最小者
+    var err=Math.min(Math.abs(cur-r.v)/r.v,Math.abs(inv-r.v)/r.v);
+    if(!best||err<best.err)best={label:r.label,err:err};
+  }
+  return best;
+}
+function tagOf(w,h,tw,th){
+  // 比例一致（±2%）走等比放缩；否则需要裁切
+  var ratioSame=Math.abs((w/h)/(tw/th)-1)<=0.02;
+  if(ratioSame)return tw>w||th>h
+    ?'<span class="tag up">等比放大</span>'
+    :(tw<w||th<h?'<span class="tag down">等比缩小</span>':'<span class="tag">已符合</span>');
+  return '<span class="tag crop">裁切</span>';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){document.getElementById('app').textContent='未选中素材';return}
+ var w=p.width,h=p.height;
+ if(!w||!h){document.getElementById('app').textContent='该素材没有宽高信息（可能是音视频或未扫描的文件）';return}
+ var g=gcd(w,h)||1;
+ var near=nearestRatio(w,h);
+ var bpp=p.fileSize&&w&&h?(p.fileSize*8/(w*h)):null; // 压缩后平均位深估算
+ var rows=[
+   ['文件名',p.fileName],
+   ['尺寸',w+' × '+h+' px'],
+   ['宽高比（原始）',g>1?w/g+' : '+h/g+'（未约分 '+w+' : '+h+'）':w+' : '+h],
+   ['最近标准比例',near.label+'（误差 '+(near.err*100).toFixed(2)+'%，阈值 2%）'],
+   ['方向',w>h?'横图':(w<h?'竖图':'方图')],
+   ['文件体积',humanSize(p.fileSize)],
+   ['平均位深估算',bpp!=null?bpp.toFixed(2)+' bit/px（含压缩，仅参考）':null],
+   ['总像素',w*h>=1e6?(w*h/1e6).toFixed(2)+' MP':w*h+' px']
+ ];
+ rows=rows.filter(function(r){return r[1]!==null&&r[1]!==undefined&&r[1]!==''});
+ var html='<div>'+rows.map(function(r){
+   return '<div class="row"><span class="k">'+r[0]+'</span><span class="v">'+escapeHtml(r[1])+'</span></div>'}).join('');
+ html+='<div class="sec">常见社交尺寸对照</div>';
+ html+='<table><thead><tr><th>目标尺寸</th><th>用途</th><th>建议</th></tr></thead><tbody>';
+ for(var i=0;i<TARGETS.length;i++){
+   var t=TARGETS[i];
+   html+='<tr><td>'+t.w+'×'+t.h+'</td><td>'+escapeHtml(t.use)+'</td><td class="advice">'+tagOf(w,h,t.w,t.h)+'</td></tr>';
+ }
+ html+='</tbody></table>';
+ document.getElementById('app').innerHTML=html;
+ document.getElementById('app').className='';
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

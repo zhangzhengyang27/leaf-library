@@ -1,0 +1,10 @@
+{
+  "id": "image-filters",
+  "name": "滤镜预览",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "description": "对选中图片实时预览灰度、反色、褐色、暖色等像素级滤镜效果",
+  "permissions": [],
+  "formats": []
+}

@@ -1,0 +1,10 @@
+{
+  "id": "text-stats",
+  "name": "文本统计",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "统计文本的字数、行数、段落数与预估阅读时长，并列出高频词 Top10",
+  "permissions": [],
+  "formats": ["txt", "log", "srt"]
+}

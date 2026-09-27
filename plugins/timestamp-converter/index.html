@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>时间戳转换</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.sec{margin:2px 0 4px;font-weight:700;color:#111827}
+.row{display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px dashed #e5e7eb}
+.row:last-of-type{border-bottom:none}
+.row .k{color:#9ca3af;width:76px;flex-shrink:0}
+.row .v{color:#111827;text-align:right;flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;user-select:text;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.row input{flex:1;min-width:0;font:12px ui-monospace,Menlo,monospace;color:#111827;border:1px solid #e5e7eb;border-radius:5px;padding:3px 6px;outline:none;background:#fff}
+.btn{border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#4b5563;font-size:11px;height:22px;padding:0 8px;cursor:pointer;flex-shrink:0}
+.btn:hover{background:#f3f4f6}
+.note{margin-top:4px;color:#9ca3af;font-size:10px}
+</style></head>
+<body>
+<div class="sec">时间戳 → 日期时间</div>
+<div class="row">
+  <span class="k">Unix 值</span>
+  <input id="ts" spellcheck="false" placeholder="输入秒或毫秒时间戳，自动识别" />
+  <button type="button" class="btn" id="now">现在</button>
+</div>
+<div class="row"><span class="k">识别为</span><span class="v" id="unit">—</span></div>
+<div class="row"><span class="k">本地时间</span><span class="v" id="local">—</span></div>
+<div class="row"><span class="k">UTC</span><span class="v" id="utc">—</span></div>
+<div class="sec" style="margin-top:10px">日期时间 → 时间戳</div>
+<div class="row">
+  <span class="k">选择时刻</span>
+  <input type="datetime-local" id="dt" step="1" />
+</div>
+<div class="row"><span class="k">毫秒</span><span class="v" id="ms">—</span></div>
+<div class="row"><span class="k">秒</span><span class="v" id="sec">—</span></div>
+<div id="note" class="note"></div>
+<script>
+function pad(n){return n<10?'0'+n:''+n}
+function padMs(n){return n<10?'00'+n:(n<100?'0'+n:''+n)}
+/** 秒/毫秒自动识别：13 位毫秒与 10 位秒的分界取 1e11 */
+function parseTs(raw){
+  var s=raw.trim();
+  if(!/^-?\d+$/.test(s))return null;
+  var n=Number(s);
+  if(Math.abs(n)<1e11)return {ms:n*1000,unit:'秒（×1000 转毫秒）'};
+  return {ms:n,unit:'毫秒'};
+}
+function fmtLocal(ms){
+  var d=new Date(ms);
+  return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+' '+
+    pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())+'.'+padMs(d.getMilliseconds());
+}
+function fmtUtc(ms){
+  var d=new Date(ms);
+  return d.getUTCFullYear()+'-'+pad(d.getUTCMonth()+1)+'-'+pad(d.getUTCDate())+' '+
+    pad(d.getUTCHours())+':'+pad(d.getUTCMinutes())+':'+pad(d.getUTCSeconds())+'.'+padMs(d.getUTCMilliseconds())+' UTC';
+}
+/** 本地时区的 datetime-local 值 → 毫秒（避免 Date.parse 的 UTC 歧义，手动拼） */
+function localInputToMs(v){
+  var m=/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(v);
+  if(!m)return null;
+  return new Date(+m[1],+m[2]-1,+m[3],+m[4],+m[5],+(m[6]||0),0).getTime();
+}
+function fmtTsFromInput(){
+  var ms=localInputToMs(document.getElementById('dt').value);
+  if(ms==null||isNaN(ms)){document.getElementById('ms').textContent='—';document.getElementById('sec').textContent='—';return}
+  document.getElementById('ms').textContent=String(ms);
+  document.getElementById('sec').textContent=String(Math.floor(ms/1000));
+}
+function fmtTsToDates(){
+  var raw=document.getElementById('ts').value;
+  var el={unit:document.getElementById('unit'),local:document.getElementById('local'),utc:document.getElementById('utc')};
+  if(!raw.trim()){el.unit.textContent='—';el.local.textContent='—';el.utc.textContent='—';return}
+  var r=parseTs(raw);
+  if(!r){el.unit.textContent='无法识别（仅支持整数）';el.local.textContent='—';el.utc.textContent='—';return}
+  el.unit.textContent=r.unit;
+  el.local.textContent=fmtLocal(r.ms);
+  el.utc.textContent=fmtUtc(r.ms);
+}
+document.getElementById('ts').addEventListener('input',fmtTsToDates);
+document.getElementById('dt').addEventListener('input',fmtTsFromInput);
+// 「现在」：同时填两栏
+document.getElementById('now').addEventListener('click',function(){
+  var now=new Date();
+  document.getElementById('ts').value=String(now.getTime());
+  var v=now.getFullYear()+'-'+pad(now.getMonth()+1)+'-'+pad(now.getDate())+
+    'T'+pad(now.getHours())+':'+pad(now.getMinutes())+':'+pad(now.getSeconds());
+  document.getElementById('dt').value=v;
+  fmtTsToDates();fmtTsFromInput();
+});
+// payload 若带创建时刻（createdAt / takenAt / importedAt）则预填两栏
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p)return;
+ var iso=p.createdAt||p.takenAt||p.importedAt;
+ if(!iso)return;
+ var ms=Date.parse(iso);
+ if(isNaN(ms))return;
+ var d=new Date(ms);
+ document.getElementById('ts').value=String(ms);
+ document.getElementById('dt').value=d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+
+   'T'+pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds());
+ document.getElementById('note').textContent='已从素材时间字段预填：'+iso;
+ fmtTsToDates();fmtTsFromInput();
+})
+// 初始即显示当前时刻，打开即有可用输出
+document.getElementById('ts').value=String(Date.now());
+fmtTsToDates();
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

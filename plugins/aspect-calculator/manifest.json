@@ -1,0 +1,10 @@
+{
+  "id": "aspect-calculator",
+  "name": "尺寸与比例",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "description": "计算图片最近标准比例，并对照常见社交尺寸给出放大/缩小/裁切建议",
+  "permissions": [],
+  "formats": []
+}

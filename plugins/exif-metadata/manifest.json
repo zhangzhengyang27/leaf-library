@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "category": "inspector",
   "entry": "index.html",
+  "description": "读取选中照片的 EXIF 拍摄信息（相机、镜头、曝光参数与 GPS）",
   "permissions": [],
   "formats": []
 }

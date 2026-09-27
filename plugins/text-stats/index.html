@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>文本统计</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.row{display:flex;justify-content:space-between;gap:8px;padding:3px 0;border-bottom:1px dashed #e5e7eb}
+.row:last-child{border-bottom:none}.k{color:#9ca3af;flex-shrink:0}.v{color:#111827;text-align:right}
+.sec{margin:10px 0 4px;font-weight:700;color:#111827}
+.w{display:flex;align-items:center;gap:6px;padding:2px 0}
+.w .t{width:110px;flex-shrink:0;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.w .bar{height:8px;border-radius:4px;background:#3b82f6;opacity:.75;flex-shrink:0}
+.w .n{color:#9ca3af;font-size:10px;flex-shrink:0}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+/** 高频词：英文按连续字母词（小写化），中文按 2-gram */
+function topWords(text){
+  var counts={},cjkRuns=text.match(/[\u4e00-\u9fff]+/g)||[];
+  var words=text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g)||[];
+  var i,w;
+  for(i=0;i<words.length;i++){w=words[i].toLowerCase();counts[w]=(counts[w]||0)+1}
+  for(i=0;i<cjkRuns.length;i++){
+    var run=cjkRuns[i];
+    for(var j=0;j+1<run.length;j++){
+      var g=run.slice(j,j+2);
+      counts[g]=(counts[g]||0)+1;
+    }
+  }
+  return Object.keys(counts).map(function(k){return {w:k,n:counts[k]}})
+    .sort(function(a,b){return b.n-a.n||a.w.localeCompare(b.w)})
+    .slice(0,10);
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+ if(!p.content.trim()){app.textContent='文件内容为空';return}
+ var text=p.content;
+ var noSpace=text.replace(/\s/g,'');
+ var cjk=(text.match(/[\u4e00-\u9fff]/g)||[]).length;
+ var enWords=(text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g)||[]).length;
+ var lines=text.split('\n').length;
+ var paras=text.split(/\n\s*\n/).filter(function(s){return s.trim()!==''}).length;
+ // 预估阅读时长：中文 300 字/分（英文词折算按同口径并入）
+ var totalWords=cjk+enWords;
+ var minutes=totalWords/300;
+ var readTime=minutes<1?'少于 1 分钟':(minutes<10?Math.ceil(minutes)+' 分钟':Math.round(minutes)+' 分钟');
+ var rows=[
+   ['字符数（含空白）',text.length],
+   ['字符数（不含空白）',noSpace.length],
+   ['中文字数（CJK）',cjk],
+   ['英文词数',enWords],
+   ['行数',lines],
+   ['段落数',paras||1],
+   ['预估阅读时长',readTime]
+ ];
+ var html='<div>'+(p.fileName?'<div class="row"><span class="k">文件名</span><span class="v">'+escapeHtml(p.fileName)+'</span></div>':'')+
+   rows.map(function(r){return '<div class="row"><span class="k">'+r[0]+'</span><span class="v">'+escapeHtml(r[1])+'</span></div>'}).join('')+
+   '</div>';
+ var top=topWords(text);
+ if(top.length){
+   html+='<div class="sec">高频词 Top10</div>';
+   var max=top[0].n;
+   for(var i=0;i<top.length;i++){
+     html+='<div class="w"><span class="t" title="'+escapeHtml(top[i].w)+'">'+escapeHtml(top[i].w)+'</span>'+
+       '<span class="bar" style="width:'+Math.max(4,Math.round(top[i].n/max*120))+'px"></span>'+
+       '<span class="n">×'+top[i].n+'</span></div>';
+   }
+ }
+ app.className='';
+ app.innerHTML=html;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

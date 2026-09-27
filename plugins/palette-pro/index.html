@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>色板提取器</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.palette{display:flex;flex-wrap:wrap;gap:8px}
+.swatch{width:40px;cursor:pointer;text-align:center;border:none;background:none;padding:0;font:inherit;color:inherit}
+.swatch .block{width:40px;height:40px;border-radius:6px;box-shadow:inset 0 0 0 1px rgba(0,0,0,.08)}
+.swatch .hex{margin-top:2px;font-size:10px;font-family:ui-monospace,Menlo,monospace;color:#4b5563;user-select:text}
+.swatch:hover .block{box-shadow:inset 0 0 0 1px rgba(0,0,0,.08),0 0 0 2px #93c5fd}
+.hint{margin-top:8px;color:#9ca3af;font-size:11px;min-height:16px}
+.hint.ok{color:#16a34a}
+.meta{margin-top:6px;color:#9ca3af;font-size:11px}
+</style></head>
+<body>
+<div id="app" class="empty">等待素材数据…</div>
+<div id="palette" class="palette" style="display:none"></div>
+<div id="meta" class="meta" style="display:none"></div>
+<div id="hint" class="hint"></div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+function setHint(text,ok){var h=document.getElementById('hint');h.textContent=text;h.className='hint'+(ok?' ok':'')}
+/** 提取色板：64×64 离屏采样 → 4bit/通道分桶计数 → 取前 8 色（去近似色） */
+function extract(img){
+  var w=64,h=64;
+  var off=document.createElement('canvas');off.width=w;off.height=h;
+  var octx=off.getContext('2d');octx.drawImage(img,0,0,w,h);
+  var d;
+  try{d=octx.getImageData(0,0,w,h).data}catch(err){
+    showEmpty('无法读取像素（跨域限制），色板提取不可用');return}
+  // 分桶：RGB 各取高 4bit 作桶 key；同时累计通道和，桶代表色取桶内均值
+  var buckets={};
+  for(var i=0;i<d.length;i+=4){
+    if(d[i+3]<128)continue; // 半透明像素不参与统计
+    var key=(d[i]>>4)<<8|(d[i+1]>>4)<<4|(d[i+2]>>4);
+    var b=buckets[key];
+    if(!b)b=buckets[key]={n:0,r:0,g:0,b:0};
+    b.n++;b.r+=d[i];b.g+=d[i+1];b.b+=d[i+2];
+  }
+  var list=[];
+  for(var k in buckets){var b2=buckets[k];list.push({n:b2.n,r:Math.round(b2.r/b2.n),g:Math.round(b2.g/b2.n),b:Math.round(b2.b/b2.n)})}
+  list.sort(function(a,c){return c.n-a.n});
+  // 去近似：与已保留色的 RGB 欧氏距离 <60 时丢弃（保留频次高的——列表已按频次降序）
+  var kept=[];
+  for(i=0;i<list.length&&kept.length<8;i++){
+    var c=list[i],close=false;
+    for(var j=0;j<kept.length;j++){
+      var q=kept[j];
+      var dist=Math.sqrt(Math.pow(c.r-q.r,2)+Math.pow(c.g-q.g,2)+Math.pow(c.b-q.b,2));
+      if(dist<60){close=true;break}
+    }
+    if(!close)kept.push(c);
+  }
+  if(!kept.length){showEmpty('图片没有可统计的不透明像素');return}
+  var el=document.getElementById('palette');
+  el.innerHTML=kept.map(function(c,idx){
+    var hex='#'+[c.r,c.g,c.b].map(function(v){var s=v.toString(16);return s.length<2?'0'+s:s}).join('').toUpperCase();
+    return '<button type="button" class="swatch" data-idx="'+idx+'" title="点击复制 '+escapeHtml(hex)+
+      '（占比 '+ (c.n/(64*64)*100).toFixed(1) +'%）"><div class="block" style="background:'+hex+'"></div><div class="hex">'+hex+'</div></button>'}).join('');
+  el.style.display='flex';
+  document.getElementById('meta').style.display='';
+  document.getElementById('meta').textContent='共 '+list.length+' 个色桶，保留 '+kept.length+' 色（近似色距离阈值 60）';
+  // 点击色块复制 HEX：clipboard API 优先，execCommand 兜底
+  // （用 onclick 赋值而非 addEventListener：payload 每次推送都重建色板，避免监听器叠加）
+  el.onclick=function(ev){
+    var btn=ev.target.closest('.swatch');if(!btn)return;
+    var hex=kept[Number(btn.dataset.idx)];
+    hex='#'+[hex.r,hex.g,hex.b].map(function(v){var s=v.toString(16);return s.length<2?'0'+s:s}).join('').toUpperCase();
+    copyText(hex);
+  };
+}
+function copyText(text){
+  function done(){setHint('已复制 '+text,true)}
+  function fallback(){
+    try{
+      var ta=document.createElement('textarea');ta.value=text;
+      ta.style.position='fixed';ta.style.opacity='0';
+      document.body.appendChild(ta);ta.select();
+      var ok=document.execCommand('copy');
+      document.body.removeChild(ta);
+      if(ok)done();else setHint('复制失败，请手动选择 HEX 值');
+    }catch(err){setHint('复制失败，请手动选择 HEX 值')}
+  }
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(done,fallback)
+  }else fallback();
+}
+function showEmpty(msg){
+  var app=document.getElementById('app');
+  app.style.display='';app.textContent=msg;
+  document.getElementById('palette').style.display='none';
+  document.getElementById('meta').style.display='none';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){showEmpty('未选中素材');return}
+ if(p.kind!=='image'){showEmpty('仅图片素材支持色板提取');return}
+ var img=new Image();img.crossOrigin='anonymous';
+ img.onload=function(){document.getElementById('app').style.display='none';extract(img)};
+ img.onerror=function(){showEmpty('缩略图加载失败')};
+ img.src=p.bigThumbUrl||p.thumbUrl;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>
