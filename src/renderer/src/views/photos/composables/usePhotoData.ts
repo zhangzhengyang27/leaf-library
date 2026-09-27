@@ -230,6 +230,27 @@ const loadFolders = async (): Promise<void> => {
   }
 }
 
+/**
+ * 特性（Eagle 标志性交互）：父文件夹视图网格顶部的子文件夹卡片数据源。
+ * activeFolderId 从 tabs.activeView 派生（与 usePhotoFilters 同一口径）；
+ * 顺序 = 数据库序（listPhotoFolders 的 sort_order ASC, created_at ASC，即侧栏
+ * 「排列：自定义」口径；侧栏的名称/日期排列是 LibraryPanel 本地态，v1 不联动）。
+ * 计数复用 PhotoFolder.photoCount（listPhotoFolders 整表一次 SQL 聚合，无新增 IPC）：
+ * 口径 =「直属素材数（folder_id 直配且 deleted_at IS NULL）」——不含后代、不含回收站，
+ * 与侧栏树行徽标同源。
+ */
+const childFolders = computed<PhotoFolder[]>(() => {
+  let view: string
+  try {
+    view = useLibraryTabs().activeView
+  } catch {
+    return []
+  }
+  if (!view.startsWith('folder:')) return []
+  const parentId = view.slice(7)
+  return folders.value.filter((f) => f.parentId === parentId)
+})
+
 const loadSmartAlbums = async (): Promise<void> => {
   try {
     smartAlbums.value = await window.api.photos.listSmartAlbums()
@@ -307,8 +328,39 @@ let favoritesPageInFlight = false
 const folderCursor = ref<string | null>(null)
 const folderHasMore = ref(false)
 let folderPageInFlight = false
+/** 在飞期间又来了 reset（如「显示子文件夹内容」开关翻转）：记下待重置，
+ *  本轮响应落地后重取——直接 return 会把翻转后的第一页丢掉（loadMainPage 同款守卫） */
+let folderPendingReset = false
 /** 当前分页文件夹（refreshFolderPhotos 记录；loadMore 复用） */
 let pagedFolderId: string | null = null
+/**
+ * 文件夹拍平 scope（「显示子文件夹内容」，D-012）：
+ * null = 直属语义（view:'folder' 的 folder_id = ?）；非空 = 根 ∪ 全部后代 id 集
+ * （由 usePhotoFilters 的 descendantFolderIds 算好经 setFolderPageScope 注入，
+ * 取数改走 view:'all' + filters.folderIds IN 下推，keyset 分页照旧——大库安全）。
+ * 值只在分页/取数瞬间被读，不参与响应式。
+ */
+let pagedFolderScopeIds: string[] | null = null
+
+function setFolderPageScope(ids: string[] | null): void {
+  pagedFolderScopeIds = ids
+}
+
+/**
+ * 拍平取数的 spec 合并：scope（根∪后代）与用户维度 spec 里的 folderIds（文件夹筛选）
+ * 同占一个 SQL 字段，只能下发一份 IN——按客户端语义（池限定 AND 文件夹筛选）取交集。
+ * 'none'（未分类）与真实 id 集恒为空交集，直接丢弃；「every 逻辑 + none+具体夹」
+ * 这类组合的精度差异在直属模式同样存在，不在本路径单追。
+ */
+function mergeFolderScopeFilters(
+  spec: SmartAlbumRules | undefined,
+  scope: readonly string[]
+): SmartAlbumRules {
+  const userFids = spec?.folderIds
+  if (!userFids || userFids.length === 0) return { ...(spec ?? {}), folderIds: [...scope] }
+  const real = new Set(userFids.filter((id) => id !== 'none'))
+  return { ...(spec ?? {}), folderIds: scope.filter((id) => real.has(id)) }
+}
 
 function usePagedFavorites(): boolean {
   try {
@@ -355,24 +407,54 @@ const loadMoreFavorites = (): void => {
 }
 
 const loadFolderPage = async (reset: boolean): Promise<void> => {
-  if (folderPageInFlight) return
+  if (folderPageInFlight) {
+    // 在飞期间又来了 reset（开关翻转/筛选变化）：记下待重置，本轮落地后重取
+    if (reset) folderPendingReset = true
+    return
+  }
   if (!pagedFolderId) return
   if (!reset && !folderHasMore.value) return
   folderPageInFlight = true
   try {
-    const page = await window.api.photos.getPage({
-      view: 'folder',
-      folderId: pagedFolderId,
-      sort: 'imported_at',
-      desc: true,
-      cursor: reset ? undefined : (folderCursor.value ?? undefined),
-      limit: FOLDER_PAGE_SIZE
-    })
-    folderPhotos.value = reset ? page.items : [...folderPhotos.value, ...page.items]
-    folderCursor.value = page.nextCursor
-    folderHasMore.value = page.nextCursor !== null
-    // M3：文件夹窗口落地即刷新标注数
-    void refreshAnnotationCounts(page.items.map((p) => p.id))
+    let doReset = reset
+    for (;;) {
+      folderPendingReset = false
+      // 「显示子文件夹内容」开启（D-012 拍平）：走 view:'all' 基线 + scope folderIds IN 下推，
+      // keyset 分页照旧（大库安全）；关闭保持直属语义（view:'folder' 的 folder_id = ?）。
+      // 两条路径都把维度 spec 一并下推——displaySections 的分页分支据此跳过窗口内 matchAll
+      // （该注释自阶段 3 起就写明「已下推」，此处补齐真实传参）。
+      const scope = pagedFolderScopeIds
+      const page = await window.api.photos.getPage(
+        scope && scope.length > 0
+          ? {
+              view: 'all',
+              filters: mergeFolderScopeFilters(pagedFilters, scope),
+              sort: 'imported_at',
+              desc: true,
+              cursor: doReset ? undefined : (folderCursor.value ?? undefined),
+              limit: FOLDER_PAGE_SIZE
+            }
+          : {
+              view: 'folder',
+              folderId: pagedFolderId,
+              filters: pagedFilters,
+              sort: 'imported_at',
+              desc: true,
+              cursor: doReset ? undefined : (folderCursor.value ?? undefined),
+              limit: FOLDER_PAGE_SIZE
+            }
+      )
+      if (folderPendingReset) {
+        doReset = true
+        continue
+      }
+      folderPhotos.value = doReset ? page.items : [...folderPhotos.value, ...page.items]
+      folderCursor.value = page.nextCursor
+      folderHasMore.value = page.nextCursor !== null
+      // M3：文件夹窗口落地即刷新标注数
+      void refreshAnnotationCounts(page.items.map((p) => p.id))
+      break
+    }
   } catch (error) {
     console.error('加载文件夹失败:', error)
   } finally {
@@ -472,7 +554,15 @@ const refreshFolderPhotos = async (folderId: string | null): Promise<void> => {
     return
   }
   try {
-    folderPhotos.value = await window.api.photos.getFolderPhotos(folderId)
+    // 非分页回滚路径（localStorage 门控关）：「显示子文件夹内容」开启时改走一次
+    // queryPhotosByRules 的 folderIds IN 下推（根 ∪ 后代一次取全，单条 SQL 无逐夹往返）；
+    // 取舍：回滚门控本就是小库兜底路径，接受非分页全量换取实现简单。
+    // 两条路径都不再依赖主视图 allPhotos 分页累积池（该池过期/部分，正是本次回归根因）。
+    const scope = pagedFolderScopeIds
+    folderPhotos.value =
+      scope && scope.length > 0
+        ? await window.api.photos.queryPhotosByRules({ folderIds: [...scope] })
+        : await window.api.photos.getFolderPhotos(folderId)
     // M3：文件夹池（非分页回滚路径）落地即刷新标注数
     void refreshAnnotationCounts(folderPhotos.value.map((p) => p.id))
   } catch (error) {
@@ -630,6 +720,7 @@ export function usePhotoData(): {
   smartAlbums: typeof smartAlbums
   albums: typeof albums
   folders: typeof folders
+  childFolders: typeof childFolders
   dictionaryTags: typeof dictionaryTags
   recycleBinPhotos: typeof recycleBinPhotos
   recycleCount: typeof recycleCount
@@ -670,6 +761,7 @@ export function usePhotoData(): {
   mainHasMore: typeof mainHasMore
   registerMainPageGate: typeof registerMainPageGate
   setPagedFilters: typeof setPagedFilters
+  setFolderPageScope: typeof setFolderPageScope
   mainPagedActive: typeof mainPagedActive
   refreshAlbumPhotos: typeof refreshAlbumPhotos
   refreshFolderPhotos: typeof refreshFolderPhotos
@@ -689,6 +781,7 @@ export function usePhotoData(): {
     smartAlbums,
     albums,
     folders,
+    childFolders,
     dictionaryTags,
     recycleBinPhotos,
     recycleCount,
@@ -729,6 +822,7 @@ export function usePhotoData(): {
     mainHasMore,
     registerMainPageGate,
     setPagedFilters,
+    setFolderPageScope,
     mainPagedActive,
     refreshAlbumPhotos,
     refreshFolderPhotos,
@@ -739,7 +833,7 @@ export function usePhotoData(): {
     setLastViewed,
     replacePhotoLocal,
     byIds,
-    livePhoto,
+    livePhoto
   }
 }
 /**
@@ -802,4 +896,3 @@ export function bindViewWatcher(): () => void {
   offViewWatcher = stop
   return stop
 }
-

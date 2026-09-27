@@ -8,9 +8,10 @@
 import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import AppIcon from '@components/AppIcon.vue'
 import { KIND_LABELS } from '@shared/assetTypes'
-import type { Photo, PhotoSection } from '../../../types/photo'
+import type { Photo, PhotoFolder, PhotoSection } from '../../../types/photo'
 import { loadDoubleClickAction } from '../constants/appPreferences'
 import AssetThumb from './AssetThumb.vue'
+import FolderCard from './FolderCard.vue'
 import { useMarquee } from '../composables/useMarquee'
 import { usePhotoClipboard } from '../composables/usePhotoClipboard'
 
@@ -28,12 +29,20 @@ const props = withDefaults(
     hasMore?: boolean
     /** D-012：父层（右键「重命名」/ F2 / ⌘R）驱动的行内就地重命名 */
     renamingId?: string | null
+    /** 特性：子文件夹卡片（父文件夹视图、includeSubfolders 关闭时由 index.vue 传入） */
+    folders?: PhotoFolder[]
   }>(),
-  { mode: 'normal', navActiveId: null, renamingId: null }
+  { mode: 'normal', navActiveId: null, renamingId: null, folders: () => [] }
 )
 
 // F1：剪切态（Eagle：已剪切素材半透明）
 const clipboard = usePhotoClipboard()
+
+/**
+ * 特性：卡片单击选中高亮（v1 边界：文件夹卡片不进多选集——selectedIds 只装素材 id，
+ * 框选橡皮筋以 .list-row 为准也不会框到卡片；切视图随组件卸载重置）
+ */
+const selectedFolderId = ref<string | null>(null)
 
 const emit = defineEmits<{
   /** 分页化阶段 1：已渲染完所有已加载项且数据源还有下一页 */
@@ -273,9 +282,9 @@ onUnmounted(() => io?.disconnect())
     <!-- 加载状态 -->
     <div v-if="loading" class="flex items-center justify-center py-20 text-fg-muted">加载中...</div>
 
-    <!-- 空状态 -->
+    <!-- 空状态（有子文件夹卡片时不算空——卡片本身就是内容） -->
     <div
-      v-else-if="flatCount === 0"
+      v-else-if="flatCount === 0 && folders.length === 0"
       class="flex flex-col items-center justify-center py-20 text-fg-muted"
     >
       <div class="mb-4 text-6xl">📷</div>
@@ -284,6 +293,20 @@ onUnmounted(() => io?.disconnect())
     </div>
 
     <div v-else class="space-y-6">
+      <!-- 特性：子文件夹卡片行（Eagle 标志性交互，「显示子文件夹内容」关闭时显示；
+           FreeformCanvas 与地图视图不渲染卡片——index.vue 对该两布局不传 folders） -->
+      <div v-if="folders.length > 0" data-test="folder-cards">
+        <div class="overflow-hidden rounded-md border border-line-subtle">
+          <FolderCard
+            v-for="f in folders"
+            :key="`folder-${f.id}`"
+            :folder="f"
+            variant="row"
+            :selected="selectedFolderId === f.id"
+            @select="selectedFolderId = $event"
+          />
+        </div>
+      </div>
       <div v-for="section in cappedSections" :key="section.dateSection">
         <div class="mb-1.5 flex items-baseline gap-2 px-1">
           <h2 class="text-sm font-semibold text-fg-primary">

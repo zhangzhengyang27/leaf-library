@@ -20,9 +20,10 @@
     <!-- 加载状态 -->
     <div v-if="loading" class="flex items-center justify-center py-20 text-fg-muted">加载中...</div>
 
-    <!-- 空状态（二十四轮对齐 Eagle：插画 + 拖放引导 + 双按钮；回收站保留原样） -->
+    <!-- 空状态（二十四轮对齐 Eagle：插画 + 拖放引导 + 双按钮；回收站保留原样；
+         文件夹视图有子文件夹卡片时不算空——卡片本身就是内容） -->
     <div
-      v-else-if="sections.length === 0"
+      v-else-if="sections.length === 0 && folders.length === 0"
       class="flex flex-col items-center justify-center py-20 text-fg-muted"
     >
       <template v-if="mode === 'trash'">
@@ -111,6 +112,20 @@
 
     <!-- 内容网格（无日期分组头；section 仅作窗口化容器） -->
     <div v-else class="space-y-8">
+      <!-- 特性：子文件夹卡片段（Eagle 标志性交互，「显示子文件夹内容」关闭时显示）。
+           卡片等宽走网格语义（复用方格布局列宽档），不参与瀑布流分列/自适应成行；
+           FreeformCanvas 与地图视图不渲染卡片（index.vue 对该两布局不传 folders）。 -->
+      <div v-if="folders.length > 0" data-test="folder-cards">
+        <div :class="gridColsClass">
+          <FolderCard
+            v-for="f in folders"
+            :key="`folder-${f.id}`"
+            :folder="f"
+            :selected="selectedFolderId === f.id"
+            @select="selectedFolderId = $event"
+          />
+        </div>
+      </div>
       <div v-for="section in cappedSections" :key="section.dateSection" class="photo-section">
         <!-- ── 网格：正方形裁切（Eagle 网格）── -->
         <div v-if="layout === 'grid'" :class="gridColsClass">
@@ -293,7 +308,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, nextTick, onUnmounted, ref, watch } from 'vue'
-import type { Photo, PhotoSection } from '../../../types/photo'
+import type { Photo, PhotoFolder, PhotoSection } from '../../../types/photo'
 import { loadDoubleClickAction } from '../constants/appPreferences'
 import {
   makeDisplayOptions,
@@ -303,6 +318,7 @@ import {
 import HoverPreview from './HoverPreview.vue'
 import PhotoGridOverlay from './PhotoGridOverlay.vue'
 import CardMeta from './CardMeta.vue'
+import FolderCard from './FolderCard.vue'
 import { useMarquee } from '../composables/useMarquee'
 import { usePhotoClipboard } from '../composables/usePhotoClipboard'
 
@@ -327,6 +343,8 @@ const props = withDefaults(
     renamingId?: string | null
     /** 分页化阶段 1：数据源还有下一页（触底后 emit load-more） */
     hasMore?: boolean
+    /** 特性：子文件夹卡片（父文件夹视图、includeSubfolders 关闭时由 index.vue 传入） */
+    folders?: PhotoFolder[]
   }>(),
   {
     mode: 'normal',
@@ -334,12 +352,19 @@ const props = withDefaults(
     navActiveId: null,
     thumbSize: 'md',
     display: makeDisplayOptions,
-    renamingId: null
+    renamingId: null,
+    folders: () => []
   }
 )
 
 // F1：剪切态（Eagle：已剪切素材半透明）
 const clipboard = usePhotoClipboard()
+
+/**
+ * 特性：卡片单击选中高亮（v1 边界：文件夹卡片不进多选集——selectedIds 只装素材 id，
+ * 框选橡皮筋以 .photo-item 为准也不会框到卡片；点素材卡不清除它，切视图随组件卸载重置）
+ */
+const selectedFolderId = ref<string | null>(null)
 
 // —— 容器宽度（masonry 列数 / justified 成行依赖；contentRect 已剔除 p-5 内边距）——
 const gridEl = ref<HTMLElement | null>(null)

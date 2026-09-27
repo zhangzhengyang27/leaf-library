@@ -3,7 +3,7 @@ import { describe, it, expect, beforeAll, beforeEach } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useLibraryTabs } from '@renderer/stores/libraryTabs'
 import { usePhotoData } from '../usePhotoData'
-import { usePhotoFilters, installSearchPools } from '../usePhotoFilters'
+import { usePhotoFilters, installSearchPools, descendantFolderIds } from '../usePhotoFilters'
 import { buildFiltersSpec } from '../usePhotoFilterSpec'
 import type { Photo } from '@renderer/types/photo'
 
@@ -163,5 +163,68 @@ describe('usePhotoFilters · 图库视图与快筛', () => {
     expect(buildFiltersSpec().annotationFilter).toBe('none')
     filters.tab.value.annotationFilter = ''
     expect(buildFiltersSpec().annotationFilter).toBeUndefined()
+  })
+})
+
+describe('descendantFolderIds · 根 ∪ 后代 id 集（「显示子文件夹内容」拍平 scope）', () => {
+  const folders = [
+    { id: 'root', parentId: null },
+    { id: 'a', parentId: 'root' },
+    { id: 'b', parentId: 'root' },
+    { id: 'a1', parentId: 'a' },
+    { id: 'a1x', parentId: 'a1' },
+    { id: 'other', parentId: null }
+  ]
+
+  it('多级子树：包含根与全部后代，不含兄弟/外部文件夹', () => {
+    const ids = descendantFolderIds(folders, 'root')
+    expect(ids.has('root')).toBe(true)
+    expect(ids.has('a')).toBe(true)
+    expect(ids.has('b')).toBe(true)
+    expect(ids.has('a1')).toBe(true)
+    expect(ids.has('a1x')).toBe(true)
+    expect(ids.has('other')).toBe(false)
+    expect(ids.size).toBe(5)
+  })
+
+  it('中间节点：只含该节点及其以下（子树口径）', () => {
+    const ids = descendantFolderIds(folders, 'a')
+    expect([...ids].sort()).toEqual(['a', 'a1', 'a1x'])
+  })
+
+  it('叶子节点：只有自身', () => {
+    expect([...descendantFolderIds(folders, 'a1x')]).toEqual(['a1x'])
+  })
+
+  it('脏数据（父级环链）：每个节点只挂一次，不死循环', () => {
+    const cyclic = [
+      { id: 'x', parentId: 'y' },
+      { id: 'y', parentId: 'x' }
+    ]
+    // 从任一端进入都能终止且两节点齐全
+    expect(descendantFolderIds(cyclic, 'x').size).toBe(2)
+    expect(descendantFolderIds(cyclic, 'y').size).toBe(2)
+  })
+})
+
+describe('usePhotoFilters · 文件夹视图「显示子文件夹内容」（回归）', () => {
+  it('开关开启（分页态）：拍平池只认 folderPhotos，不再依赖 allPhotos 分页累积池', () => {
+    const data = usePhotoData()
+    const filters = usePhotoFilters()
+    data.folderPhotos.value = [makePhoto({ id: 'in-root' }), makePhoto({ id: 'in-child' })]
+    // 主视图分页池里只有池外素材——旧实现从这里 filter 后代集，结果必然缺员/过期
+    data.allPhotos.value = [makePhoto({ id: 'main-pool-only' })]
+    filters.tab.value.view = 'folder:root'
+    filters.tab.value.display.includeSubfolders = true
+    expect(filters.flatDisplayPhotos.value.map((p) => p.id)).toEqual(['in-root', 'in-child'])
+  })
+
+  it('开关关闭（分页态）：直属语义不变', () => {
+    const data = usePhotoData()
+    const filters = usePhotoFilters()
+    data.folderPhotos.value = [makePhoto({ id: 'in-root' })]
+    filters.tab.value.view = 'folder:root'
+    filters.tab.value.display.includeSubfolders = false
+    expect(filters.flatDisplayPhotos.value.map((p) => p.id)).toEqual(['in-root'])
   })
 })

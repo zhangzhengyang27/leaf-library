@@ -121,8 +121,8 @@ function groupByDate(photos: Photo[]): PhotoSection[] {
     .sort((a, b) => b.dateSection.localeCompare(a.dateSection))
 }
 
-/** D-012「显示子文件夹内容」：根文件夹 ∪ 全部后代的 id 集 */
-function descendantFolderIds(
+/** D-012「显示子文件夹内容」：根文件夹 ∪ 全部后代的 id 集（导出供单测断言形状） */
+export function descendantFolderIds(
   folders: Array<{ id: string; parentId: string | null }>,
   rootId: string
 ): Set<string> {
@@ -626,6 +626,43 @@ function build() {
     if (on !== off) void data.loadPhotos()
   })
 
+  // ── 文件夹拍平 scope 注入（特性：子文件夹卡片 + D-012「显示子文件夹内容」回归修复）──
+  // 生效值 = viewDisplay（文件夹覆盖已并入全局），卡片显隐与拍平取数共用这一个真值源。
+  // scope（根 ∪ 后代 id 集）交给 usePhotoData 决定两条取数路径：分页走
+  // view:'all' + filters.folderIds IN 下推；非分页回滚走 queryPhotosByRules——
+  // 两条都不再依赖主视图 allPhotos 分页累积池（过期/部分，正是原回归根因）。
+  // 视图切换时的池刷新由 bindViewWatcher 负责（其 watcher 在本文件之后创建，
+  // 回调先于它执行，scope 先就位）；这里只在「开关原地翻转 / folders 落地改变
+  // scope」时补一次刷新，避免与 bindViewWatcher 双重拉取。
+  const includeSubfoldersActive = computed(() => viewDisplay.value.includeSubfolders)
+  let lastFolderScopeKey = ''
+  let prevScopedFolderId: string | null = null
+  watch(
+    [activeFolderId, includeSubfoldersActive, () => data.folders.value],
+    ([fid, inc]) => {
+      if (!fid) {
+        data.setFolderPageScope(null)
+        prevScopedFolderId = null
+        lastFolderScopeKey = ''
+        return
+      }
+      const scope = inc ? Array.from(descendantFolderIds(data.folders.value, fid)) : null
+      data.setFolderPageScope(scope)
+      const key = scope ? [...scope].sort().join(',') : ''
+      const fidUnchanged = fid === prevScopedFolderId
+      prevScopedFolderId = fid
+      // 同一文件夹内的原地翻转（或 folders 晚到改变后代集）才需要本侧补刷新；
+      // 换文件夹的刷新由 bindViewWatcher 兜住，这里只记 key 不拉取
+      if (!fidUnchanged || key === lastFolderScopeKey) {
+        lastFolderScopeKey = key
+        return
+      }
+      lastFolderScopeKey = key
+      void data.refreshFolderPhotos(fid)
+    },
+    { immediate: true }
+  )
+
   // ── 翻页池（视图候选池，未叠加快筛）──
 
   const currentPool = computed<Photo[]>(() => {
@@ -769,20 +806,17 @@ function build() {
     }
 
     if (activeFolderId.value) {
-      // 阶段 3：文件夹分页态（未开「显示子文件夹内容」）维度已下推，跳过 matchAll
-      if (data.usePagedFolder() && !tab.value.display.includeSubfolders) {
+      // 分页态（直属与「显示子文件夹内容」拍平同池）：维度与 folderIds 均已下推 SQL，
+      // 窗口内不再二次 matchAll（loadFolderPage 的两种取数形状见 usePhotoData）
+      if (data.usePagedFolder()) {
         return groupByDate(data.folderPhotos.value).map((s) => ({
           ...s,
           photos: sortForView(s.photos)
         }))
       }
-      // D-012「显示子文件夹内容」开启时，池扩为 活动文件夹 ∪ 全部后代
-      let pool = data.folderPhotos.value
-      if (tab.value.display.includeSubfolders) {
-        const ids = descendantFolderIds(data.folders.value, activeFolderId.value)
-        pool = data.allPhotos.value.filter((p) => p.folderId != null && ids.has(p.folderId))
-      }
-      return groupByDate(pool.filter(matchAll)).map((s) => ({
+      // 非分页回滚路径：池已由 refreshFolderPhotos 按 scope 一次取好（直属或 根 ∪ 后代
+      // 的 queryPhotosByRules 全量），窗口内本地 matchAll——不再碰 allPhotos 分页累积池
+      return groupByDate(data.folderPhotos.value.filter(matchAll)).map((s) => ({
         ...s,
         photos: sortForView(s.photos)
       }))

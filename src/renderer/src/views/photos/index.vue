@@ -75,8 +75,10 @@
               @open-scan-settings="scan.openDuplicateScan"
             />
             <div v-else-if="filters.isMapView.value" class="min-h-0 flex-1">
+              <!-- 地图视图不渲染子文件夹卡片（地理视角无文件夹语义） -->
               <PhotoMapView :photos="allPhotos" :loading="loading" @select-photo="onPreviewById" />
             </div>
+            <!-- FreeformCanvas 不渲染子文件夹卡片：自由网格只摆放素材（folderCards 对该布局恒为空） -->
             <FreeformCanvas
               v-else-if="effectiveLayout === 'freeform'"
               :photos="filters.flatDisplayPhotos.value"
@@ -95,6 +97,7 @@
               :has-more="hasMoreForView"
               :nav-active-id="keyboard.navActiveId.value"
               :renaming-id="renamingId"
+              :folders="folderCards"
               @select-photo="handleSelectPhoto"
               @preview-photo="onPreviewPhoto"
               @open-photo="onOpenPhotoExternal"
@@ -120,6 +123,7 @@
               :has-more="hasMoreForView"
               :nav-active-id="keyboard.navActiveId.value"
               :renaming-id="renamingId"
+              :folders="folderCards"
               @load-more="onLoadMore"
               @rename-commit="onRenameCommit"
               @rename-cancel="renamingId = null"
@@ -358,6 +362,18 @@ const showLibraryInfo = computed(
     !filters.isMapView.value &&
     !filters.isDuplicateView.value
 )
+/**
+ * 特性（Eagle 标志性交互）：网格顶部的子文件夹卡片。
+ * 仅在文件夹视图 + 「显示子文件夹内容」关闭（拍平语义下卡片隐藏）时给数；
+ * FreeformCanvas 与地图视图不渲染卡片（各自分支不消费该 prop，见下方模板注释）。
+ */
+const folderCards = computed(() =>
+  filters.activeFolderId.value &&
+  !filters.viewDisplay.value.includeSubfolders &&
+  effectiveLayout.value !== 'freeform'
+    ? data.childFolders.value
+    : []
+)
 /** 代码审查 P0-10：选中集 Set 化，网格/列表卡片 O(1) 判定 */
 const selectedSet = computed(() => new Set(selectedIds.value))
 
@@ -478,8 +494,9 @@ function pagedViewTarget(): 'trash' | 'search' | 'favorites' | 'folder' | 'main'
   if (filters.tab.value.view === 'favorites' && data.usePagedFavorites()) return 'favorites'
   if (
     filters.activeFolderId.value &&
-    data.usePagedFolder() &&
-    !filters.tab.value.display.includeSubfolders
+    data.usePagedFolder()
+    // 「显示子文件夹内容」开启时文件夹池改为拍平取数（folderIds 下推），
+    // 翻页目标仍是同一文件夹池，不再排除（排除会把 load-more 错挂到主池）
   ) {
     return 'folder'
   }
