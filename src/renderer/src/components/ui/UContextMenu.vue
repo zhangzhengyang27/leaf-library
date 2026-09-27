@@ -151,6 +151,12 @@ function onKeydown(e: KeyboardEvent): void {
         ? pickable[(cur + 1) % pickable.length]
         : pickable[(cur - 1 + pickable.length) % pickable.length]
     activeIndex.value = next
+    // 主菜单可滚动后，键盘高亮必须跟滚进视口（否则长菜单里高亮停在看不见的地方）
+    void nextTick(() => {
+      panelRef.value
+        ?.querySelector(`[data-menu-index="${next}"]`)
+        ?.scrollIntoView({ block: 'nearest' })
+    })
     return
   }
   if (e.key === 'Enter') {
@@ -215,7 +221,7 @@ onBeforeUnmount(() => {
       v-if="state"
       ref="panelRef"
       role="menu"
-      class="fixed z-[1300] min-w-[176px] overflow-hidden rounded-lg border border-line-default bg-surface-3 py-1 shadow-md"
+      class="fixed z-[1300] min-w-[176px] max-h-[calc(100vh-16px)] overflow-y-auto overflow-x-hidden rounded-lg border border-line-default bg-surface-3 py-1 shadow-md app-scroll"
       :style="{ left: `${pos.x}px`, top: `${pos.y}px` }"
       @mousedown.stop
       @contextmenu.prevent
@@ -257,6 +263,7 @@ onBeforeUnmount(() => {
           type="button"
           role="menuitem"
           :disabled="pair.item.disabled"
+          :data-menu-index="pair.index"
           class="menu-item mx-1 flex w-[calc(100%-8px)] items-center gap-2.5 rounded-sm px-2.5 py-1.5 text-left text-xs transition-colors duration-instant disabled:cursor-not-allowed disabled:opacity-40"
           :class="[
             pair.item.danger ? 'text-danger' : 'text-fg-primary',
