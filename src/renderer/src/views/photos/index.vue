@@ -555,17 +555,38 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
   const ids = selectedIds.value.includes(photo.id) ? [...selectedIds.value] : [photo.id]
 
   if (inTrash) {
+    // 批量恢复语义写进行标签（5 千条回收站里右键多选时看得清作用范围）；
+    // 文件已丢失的素材「在访达中打开」必然失败 → 有断链标记即禁用；
+    // 清空回收站复用侧栏同款确认弹窗（彻底删除必须有确认）
+    const trashed = byIds(ids)
     menu.open(
       x,
       y,
       [
-        { key: 'restore', label: '恢复', icon: 'ic_refresh' },
+        {
+          key: 'restore',
+          label: ids.length > 1 ? `恢复（${ids.length} 条）` : '恢复',
+          icon: 'ic_refresh'
+        },
         { key: 'd1', divider: true },
-        { key: 'reveal', label: '在访达中打开', icon: 'context-menu/ic-open-finder' }
+        {
+          key: 'reveal',
+          label: '在访达中打开',
+          icon: 'context-menu/ic-open-finder',
+          disabled: trashed.some((p) => p.missingAt != null)
+        },
+        { key: 'd2', divider: true },
+        {
+          key: 'clear',
+          label: '清空回收站…',
+          icon: 'context-menu/ic-trash-empty',
+          danger: true
+        }
       ],
       (key) => {
         if (key === 'restore') actions.handleRestoreIds(ids)
         else if (key === 'reveal') actions.revealInFolder(byIds(ids))
+        else if (key === 'clear') actions.handleClearRecycleBin()
       }
     )
     return
