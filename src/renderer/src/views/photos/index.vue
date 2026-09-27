@@ -438,7 +438,7 @@ function openBlankContextMenu(e: MouseEvent): void {
   if (target?.closest('[data-photo-id], .photo-item, [data-rename-input]')) return
   const items: MenuItem[] = [
     { key: 'new-folder', label: '新建文件夹', icon: 'context-menu/ic-folder-new-folder' },
-    { key: 'new-smart', label: '新增智能文件夹', icon: 'context-menu/ic-smart-folder-rule' },
+    { key: 'new-smart', label: '新增智能文件夹', icon: 'ic_smart-folder' },
     { key: 'd1', divider: true },
     { key: 'paste', label: '粘贴 ⌘V', icon: 'context-menu/ic-file-copy' },
     { key: 'd2', divider: true },

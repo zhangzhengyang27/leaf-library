@@ -140,7 +140,7 @@ function smartTreeItem(a: SmartAlbum): TreeItem {
     key: `smart:${a.id}`,
     view: `smart:${a.id}`,
     title: a.name,
-    icon: 'context-menu/ic-smart-folder-rule'
+    icon: 'ic_smart-folder'
   }
 }
 

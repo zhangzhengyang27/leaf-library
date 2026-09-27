@@ -257,7 +257,7 @@ function onKeydown(e: KeyboardEvent): void {
                 : active === 1
                   ? 'context-menu/ic-tag-normal'
                   : active === 2
-                    ? 'context-menu/ic-smart-folder-rule'
+                    ? 'ic_smart-folder'
                     : 'context-menu/ic-filter-item-ext'
             "
            

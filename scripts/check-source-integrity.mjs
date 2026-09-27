@@ -148,6 +148,44 @@ for (const f of candidates) {
   if (!referenced) notices.push(`${f}  ← 全仓无人 import（排期中的骨架？还是又一件死文件？）`)
 }
 
+// ── 5. 被引用的 Eagle 图标必须真的能被 AppIcon 解析（icons/ + masks/ 递归 + 裸 basename）──
+// 为什么需要它：icon-sizes.ts 是从 Eagle 全量提取的尺寸目录（557 项），但资产文件在
+// 2026-09-21 误删中丢了 masks/ 整目录与部分 SVG——引用名解析不到时 AppIcon 静默渲染
+// 空槽（不报错不显示），侧栏于是出现「箭头与名称之间空一大截」这类看不出原因的暗伤
+// （2026-09-27 用户报告，实测侧栏固定项图标其实也全空了）。此处把解析失败变成红灯。
+const ICON_ROOT = path.join(ROOT, 'src/renderer/src/assets/eagle-icons')
+const iconReal = new Set()
+const walkIcons = (dir) => {
+  if (!existsSync(dir)) return
+  for (const f of readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, f.name)
+    if (f.isDirectory()) walkIcons(p)
+    else if (/\.(svg|png)$/.test(f.name)) {
+      let rel = path.relative(ICON_ROOT, p).replace(/\.(svg|png)$/, '')
+      rel = rel.replace(/^(icons|masks)\//, '') // AppIcon manifest 的键剥顶层目录
+      iconReal.add(rel)
+      iconReal.add(rel.split('/').pop())
+    }
+  }
+}
+walkIcons(ICON_ROOT)
+// 动态拼名的跳过名单（不是字面量，无法静态解析）
+const ICON_DYNAMIC_SKIP = new Set(['LAYOUT_TOOLBAR_ICON', 'icon'])
+const iconRefs = new Set()
+for (const dir of ['src/renderer', 'src/shared', 'src/main', 'src/preload']) {
+  for (const f of walk(dir)) {
+    if (!/\.(vue|ts)$/.test(f)) continue
+    if (f.includes('__tests__') || /\.(test|spec)\./.test(f)) continue // 测试里的图标名是数据不是渲染引用
+    const t = readFileSync(f, 'utf8')
+    for (const m of t.matchAll(/icon(?:=|"|\s*:\s*)['"]([a-zA-Z0-9/_-]+)['"]/g)) iconRefs.add(m[1])
+  }
+}
+const missingIcons = [...iconRefs].filter((n) => !iconReal.has(n) && !ICON_DYNAMIC_SKIP.has(n))
+if (missingIcons.length) {
+  for (const n of missingIcons)
+    errors.push(`图标 "${n}" 被引用但 assets/eagle-icons 里没有对应文件（AppIcon 会静默渲染空槽）`)
+}
+
 for (const line of notices) console.log('提示  ' + line)
 if (errors.length) {
   for (const line of errors) console.error('错误  ' + line)

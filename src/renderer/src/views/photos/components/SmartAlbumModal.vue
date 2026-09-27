@@ -2,7 +2,7 @@
   <UModal :model-value="true" size="md" @update:model-value="$emit('close')">
     <template #title>
       <span class="flex items-center gap-2">
-        <AppIcon icon="context-menu/ic-smart-folder-rule" />
+        <AppIcon icon='ic_smart-folder' />
         {{ album ? '编辑智能文件夹' : '新增智能文件夹' }}
       </span>
     </template>
