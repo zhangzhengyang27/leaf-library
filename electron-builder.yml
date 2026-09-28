@@ -60,6 +60,9 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
+  # zip 产物名钉 ASCII（GitHubPublisher 拼 API 路径不转义）；dmg 用自己的
+  # dmg.artifactName 覆盖
+  artifactName: ${name}-${version}-mac.${ext}
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSCameraUsageDescription: Application requests access to the device's camera.
@@ -79,8 +82,6 @@ mac:
   notarize: true
   hardenedRuntime: true
   gatekeeperAssess: false
-  zip:
-    artifactName: ${name}-${version}-mac.${ext}
   # signing identity：
   # - CI：通过 CSC_LINK / CSC_KEY_PASSWORD 注入 .p12 证书
   # - 本地：electron-builder 默认走系统 keychain 查找
