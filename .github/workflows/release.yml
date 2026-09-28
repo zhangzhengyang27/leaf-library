@@ -50,22 +50,20 @@ jobs:
           node-version: 20
           cache: pnpm
 
-      # 两平台统一确定性路径：--ignore-scripts 装依赖（跳过 install-app-deps——
-      # 其 remote-rebuild 会拉起旧 node-gyp/在 win 上扫到 darwin-only 模块），
-      # 再用 node-gyp 11（pnpm.overrides 强制，兼容 Python 3.12+）精准重建。
-      # better-sqlite3 需 electron ABI；macos-share 是分享面板（darwin only，
-      # require 有 catch 回退）；onnxruntime-node 等为 N-API/平台包无需重建。
+      # 原生依赖事实（028 发布链实测）：better-sqlite3 v13 与 leaf-macos-share
+      # 均为 N-API 模块——前者 8 平台预编译随 npm 包分发，后者 darwin-only。
+      # --ignore-scripts 安装即得到可用二进制（electron ABI 无关）；跳过
+      # install-app-deps（remote-rebuild 会拉旧 node-gyp / 在 win 扫到 darwin
+      # 模块）。electron 二进制由 electron-builder 打包时自取。
       - name: Install dependencies (macOS)
         if: matrix.target != 'win-x64'
         run: |
           pnpm install --frozen-lockfile --ignore-scripts
-          npx electron-rebuild -f -o better-sqlite3,leaf-macos-share
+          npx electron-rebuild -f -o leaf-macos-share
 
       - name: Install dependencies (Windows)
         if: matrix.target == 'win-x64'
-        run: |
-          pnpm install --frozen-lockfile --ignore-scripts
-          npx electron-rebuild -f -o better-sqlite3
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Build & publish to GitHub Releases
         env:
