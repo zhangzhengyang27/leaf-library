@@ -1,0 +1,52 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Leaf 素材库 dock 图标母版（1024）
+       语义：一叶 = 一页书（leaf of a book），中脉即折痕；身后淡叶 = 万叶集
+       规范：Big Sur squircle 824x824 @ 1024 画布，圆角 184 -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#7BCD95"/>
+      <stop offset="0.55" stop-color="#4CB573"/>
+      <stop offset="1" stop-color="#2B8F51"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.32" cy="0.2" r="0.85">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.30"/>
+      <stop offset="0.6" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <clipPath id="tile"><rect x="100" y="100" width="824" height="824" rx="184"/></clipPath>
+    <clipPath id="leafClip">
+      <path d="M 0 -250 C 148 -158 162 62 0 235 C -162 62 -148 -158 0 -250 Z"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tile)">
+    <rect x="100" y="100" width="824" height="824" fill="url(#bg)"/>
+    <rect x="100" y="100" width="824" height="824" fill="url(#glow)"/>
+  </g>
+  <rect x="101.5" y="101.5" width="821" height="821" rx="182.5" fill="none" stroke="#1E6B3B" stroke-opacity="0.16" stroke-width="3"/>
+
+  <!-- 身后的叶（万叶集：一叶之后还有叶） -->
+  <g transform="translate(690,338) rotate(40) scale(0.40)" opacity="0.20" fill="#ffffff">
+    <path d="M 0 -250 C 148 -158 162 62 0 235 C -162 62 -148 -158 0 -250 Z"/>
+  </g>
+  <g transform="translate(322,678) rotate(220) scale(0.30)" opacity="0.12" fill="#ffffff">
+    <path d="M 0 -250 C 148 -158 162 62 0 235 C -162 62 -148 -158 0 -250 Z"/>
+  </g>
+
+  <!-- 主叶：白色，中脉即书页折痕，右半页微染 -->
+  <g transform="translate(512,494)">
+    <path d="M 0 -250 C 148 -158 162 62 0 235 C -162 62 -148 -158 0 -250 Z" fill="#ffffff"/>
+    <g clip-path="url(#leafClip)">
+      <rect x="2" y="-250" width="176" height="490" fill="#E3F4E9"/>
+    </g>
+    <path d="M 0 -216 L 0 224" stroke="#3AA463" stroke-width="20" stroke-linecap="round" fill="none"/>
+    <g stroke="#3AA463" stroke-width="11" stroke-linecap="round" fill="none" opacity="0.9">
+      <path d="M 0 -130 Q 56 -128 84 -84"/>
+      <path d="M 0 -50 Q 60 -46 96 -4"/>
+      <path d="M 0 30 Q 56 34 84 74"/>
+      <path d="M 0 -130 Q -56 -128 -84 -84"/>
+      <path d="M 0 -50 Q -60 -46 -96 -4"/>
+      <path d="M 0 30 Q -56 34 -84 74"/>
+    </g>
+    <path d="M 0 232 C 2 280 16 312 50 336" stroke="#ffffff" stroke-width="26" stroke-linecap="round" fill="none"/>
+  </g>
+</svg>

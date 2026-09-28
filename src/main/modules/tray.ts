@@ -1,12 +1,12 @@
 /**
  * Leaf · 托盘（D-013 阶段 3，对齐 Eagle「在系统选单上显示图示」）
  *
- * - 左键/单击：显示或聚焦主窗口（darwin 隐藏时不退出，配合 window-all-closed 分支）
- * - 右键菜单：显示主窗口 / 打开素材库 / 退出
+ * - 左键/右键：都打开菜单（2026-09-28 定稿：原「一点即截」误触率高，截图走菜单项）
+ * - 菜单：显示主窗口 / 截图 / 退出
  */
 import { app, BrowserWindow, Menu, nativeImage, Tray } from 'electron'
-import { join } from 'node:path'
-import icon from '../../../resources/icon.png?asset'
+import { assetPath } from '../utils/assetPath'
+import trayIcon from '../../../resources/tray.png?asset'
 import { screenshotService } from '../services/ScreenshotService'
 
 let tray: Tray | null = null
@@ -23,21 +23,27 @@ function showMainWindow(): void {
 
 export function createTray(): void {
   if (tray) return
-  const image = nativeImage.createFromPath(join(__dirname, icon)).resize({ width: 16, height: 16 })
-  image.setTemplateImage(true)
+  // 18pt 彩色叶（tray.png + 同名 @2x 自动配对，系统按 18pt 画）；macOS 26 下 template
+  // 形态状态项不被系统注册（electron#48812），故全平台统一彩色非 template 形态
+  const imgPath = assetPath(trayIcon, __dirname)
+  const image = nativeImage.createFromPath(imgPath)
   tray = new Tray(image)
-  tray.setToolTip('Leaf 素材库（点击截图）')
+  if (image.isEmpty()) {
+    // 空图会得到一个 16px 宽、0 高的隐形状态项（2026-09-28 排查坑），必须显形
+    console.warn(`[tray] 图标加载为空图: ${imgPath}`)
+  }
+  tray.setToolTip('Leaf 素材库')
   tray.setContextMenu(
     Menu.buildFromTemplate([
+      {
+        label: '显示主窗口',
+        click: () => showMainWindow()
+      },
       {
         label: '截图',
         click: () => {
           void screenshotService.startCapture('region')
         }
-      },
-      {
-        label: '显示主窗口',
-        click: () => showMainWindow()
       },
       { type: 'separator' },
       {
@@ -49,10 +55,6 @@ export function createTray(): void {
       }
     ])
   )
-  // 左键单击 = 立即截图（用户要求：菜单栏按钮一点即截）；主窗口从右键菜单进
-  tray.on('click', () => {
-    void screenshotService.startCapture('region')
-  })
 }
 
 export function removeTray(): void {
