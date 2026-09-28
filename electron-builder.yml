@@ -85,6 +85,11 @@ mac:
   #   "Developer ID Application: Your Name (TEAMID)"，故本地通常无需额外配置
 dmg:
   artifactName: ${name}-${version}.${ext}
+# GitHubPublisher 把文件名拼进 API 路径不转义——含中文/空格的 artifact 名
+# （默认取 productName「Leaf 素材库」）会在上传时抛
+# 「Request path contains unescaped characters」，故全部钉成 ASCII。
+zip:
+  artifactName: ${name}-${version}-mac.${ext}
 linux:
   target:
     - AppImage

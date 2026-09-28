@@ -27,7 +27,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Lint (ESLint)
         run: pnpm run lint
@@ -66,10 +66,8 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
-      - name: Build native modules
-        run: pnpm rebuild:native || echo "Native rebuild skipped (no better-sqlite3)"
 
       - name: Run tests
         run: pnpm test -- --reporter=verbose
@@ -94,10 +92,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Rebuild native modules
-        run: pnpm rebuild:native
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: electron-vite build
         env:
@@ -162,10 +157,7 @@ jobs:
           cache: pnpm
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Rebuild native modules
-        run: pnpm rebuild:native
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install Electron system deps + xvfb
         run: |
@@ -173,6 +165,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             libnss3 libatk1.0-0 libatk-bridge2.0-0 libgtk-3-0 libxss1 \
             libasound2t64 xvfb
+
+      - name: Download Electron binary (--ignore-scripts 跳过了 postinstall)
+        run: node node_modules/electron/install.js
 
       - name: electron-vite build
         run: pnpm exec electron-vite build
