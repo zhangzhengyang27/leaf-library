@@ -40,6 +40,9 @@ import {
   unregisterScreenshotShortcut
 } from './modules'
 import { dbPathOf, ensureRegistry, getActiveLibrary } from './modules/libraryRegistry'
+// dev 下 dock 显示 Electron 默认图标（打包态由 build/icon.icns 提供），这里补设
+import dockIconPath from '../../resources/icon.png?asset'
+import { assetPath } from './utils/assetPath'
 // SQLite 单例
 import { installDatabase, setDatabasePath, uninstallDatabase } from './db/database'
 import { log, installGlobalLogHandlers } from './services/LogService'
@@ -128,6 +131,16 @@ if (!gotTheLock) {
   app.whenReady().then(() => {
     // 注册协议（image:// thumb:// rawfile:// video://）
     registerProtocols()
+
+    // dev 补 dock 图标：macOS 26 砍了 dock 私有 API——NativeImage 形态静默失效（electron#47327），
+    // 路径字符串形态在 Electron 44 可用（zhiye 同款实证）。打包态走 icns 不需要。
+    if (process.platform === 'darwin' && !app.isPackaged) {
+      try {
+        app.dock?.setIcon(assetPath(dockIconPath, __dirname))
+      } catch (e) {
+        console.warn('[dock] setIcon failed:', e)
+      }
+    }
 
 
     // 格式能力探测：把 sharp 真实解码面写进日志，白名单与解码通道脱节时显形

@@ -12,7 +12,8 @@ import {
 } from 'fs'
 import { tmpdir } from 'node:os'
 import type { BrowserWindow, OpenDialogOptions } from 'electron'
-import { clipboard, dialog, ipcMain, nativeImage, shell } from 'electron'
+import { ClipboardItem, clipboard, dialog, ipcMain, shell } from 'electron'
+import { pathToFileURL } from 'node:url'
 import { showOpenDialogFor, showSaveDialogFor } from '../modules/dialogs'
 import { getActiveLibrary, activeSubdir } from '../modules/libraryRegistry'
 import { screenshotFileName } from '../utils/screenshotFile'
@@ -228,31 +229,25 @@ export function registerPhotoIpcHandlers(
       }
       return [...loose, ...mirrored]
     },
-    /** §2.A ⌘V 粘贴：从系统剪贴板读取文件路径（macOS 优先 NSFilenamesPboardType，回退文本/文件 URL） */
-    getClipboardFiles: (): string[] => {
+    /** §2.A ⌘V 粘贴：从系统剪贴板读取文件路径（Electron 44 剪贴板异步化+MIME 化：
+     *  文件=uri-list，回退纯文本；旧 NSFilenamesPboardType/public.file-url 同步 API 已移除） */
+    getClipboardFiles: async (): Promise<string[]> => {
       const out: string[] = []
       try {
-        const buf = clipboard.readBuffer('NSFilenamesPboardType')
-        if (buf && buf.length > 0) {
-          const text = buf.toString('utf8')
-          // NSFilenamesPboardType 里是 plist，路径含中文时任何 ASCII 白名单都会把
-          // 一条路径截成几段不存在的路径，⌘V 静默导入 0 个文件，所以只能按控制字符切
-          // eslint-disable-next-line no-control-regex
-          const segs = text.match(/[^\x00-\x1f<>]+/g)
-          if (segs) {
-            for (const m of segs) {
-              // plist 里的 & < > 是转义过的：不解码就 existsSync 不上（a&b.png 直接导不进）
-              const p = m
-                .replace(/&apos;/g, "'")
-                .replace(/&quot;/g, '"')
-                .replace(/&gt;/g, '>')
-                .replace(/&lt;/g, '<')
-                .replace(/&amp;/g, '&')
-                .trim()
+        for (const item of await clipboard.read()) {
+          if (!item.types.includes('text/uri-list')) continue
+          const list = await ((await item.getType('text/uri-list')) as Blob).text()
+          for (const line of list.split(/\r?\n/)) {
+            const u = line.trim()
+            if (!u.startsWith('file://')) continue
+            try {
+              const p = decodeURIComponent(new URL(u).pathname)
               // 必须是绝对路径：existsSync 会按 cwd 解析相对串（Finder 启动的 .app
               // cwd 是 /），于是剪贴板里一个 "Applications" 就能过闸，再被 importPaths
               // 当目录整棵导进来，绕开 photos:importFolderTree 的目录白名单
               if (p.includes('/') && isAbsolute(p) && existsSync(p)) out.push(p)
+            } catch {
+              /* 非法 URL 跳过 */
             }
           }
         }
@@ -260,20 +255,13 @@ export function registerPhotoIpcHandlers(
         /* 非 macOS 或无文件时忽略 */
       }
       if (out.length === 0) {
-        const txt = clipboard.readText()
+        const txt = await clipboard.readText()
         if (txt) {
           for (const line of txt.split(/\r?\n/)) {
             const p = line.trim()
             // 同样只认绝对路径（纯文本回退最容易混进相对词）
             if (p && isAbsolute(p) && existsSync(p)) out.push(p)
           }
-        }
-      }
-      if (out.length === 0) {
-        const url = clipboard.read('public.file-url')
-        if (typeof url === 'string' && url.startsWith('file://')) {
-          const p = decodeURIComponent(url.slice('file://'.length))
-          if (existsSync(p)) out.push(p)
         }
       }
       return Array.from(new Set(out))
@@ -662,25 +650,19 @@ export function registerPhotoIpcHandlers(
       return photoStore.renamePhotos(items, { libraryName })
     },
     // D-012：右键「复制文件」（macOS NSFilenamesPboardType，Finder 可直接粘贴）
-    copyToClipboard: (filePaths: string[]): boolean => {
+    copyToClipboard: async (filePaths: string[]): Promise<boolean> => {
       if (!Array.isArray(filePaths) || filePaths.length === 0) return false
       const paths = filePaths.filter((p) => typeof p === 'string' && existsSync(p))
       if (paths.length === 0) return false
-      if (process.platform === 'darwin') {
-        const esc = (s: string): string =>
-          s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-        const xml =
-          `<?xml version="1.0" encoding="UTF-8"?>\n` +
-          `<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" ` +
-          `"http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n` +
-          `<plist version="1.0"><array>` +
-          paths.map((p) => `<string>${esc(p)}</string>`).join('') +
-          `</array></plist>`
-        clipboard.writeBuffer('NSFilenamesPboardType', Buffer.from(xml, 'utf8'))
-        return true
-      }
-      // Windows/Linux：写文件路径文本兜底
-      clipboard.writeText(paths.join('\n'))
+      // NSFilenamesPboardType 随 Electron 44 同步剪贴板 API 移除：改写 uri-list
+      // （平台侧映射文件 URL 语义）+ 纯文本双份，路径不丢；Finder 能否直接当文件
+      // 粘贴取决于平台映射，纯文本兜底保证路径始终可取
+      await clipboard.write([
+        new ClipboardItem({
+          'text/uri-list': paths.map((p) => pathToFileURL(p).href).join('\n'),
+          'text/plain': paths.join('\n')
+        })
+      ])
       return true
     },
     convertPhotosToWebP: async (ids: string[]) => {
@@ -724,7 +706,11 @@ export function registerPhotoIpcHandlers(
       const tmpFrame = join(tmpdir(), `leaf-frame_${id}_${Date.now()}.png`)
       try {
         await extractVideoFrame(p.filePath, tmpFrame)
-        clipboard.writeImage(nativeImage.createFromPath(tmpFrame))
+        await clipboard.write([
+          new ClipboardItem({
+            'image/png': new Blob([new Uint8Array(readFileSync(tmpFrame))], { type: 'image/png' })
+          })
+        ])
         return { ok: true }
       } finally {
         rmSync(tmpFrame, { force: true })
@@ -827,25 +813,29 @@ export function registerPhotoIpcHandlers(
 
     // —— D-012 二轮 R2/R5 ——
     /** 复制文本到系统剪贴板（复制文件路径/标题/标签共用） */
-    copyText: (text: string): boolean => {
-      clipboard.writeText(String(text ?? ''))
+    copyText: async (text: string): Promise<boolean> => {
+      await clipboard.writeText(String(text ?? ''))
       return true
     },
     /** 读取系统剪贴板文本（粘贴标签用） */
-    getClipboardText: (): string => clipboard.readText(),
+    getClipboardText: async (): Promise<string> => clipboard.readText(),
     // ④-3（Eagle 4 复制菜单扩展）：复制缩略图位图到剪贴板
-    copyThumbToClipboard: (id: string): boolean => {
+    copyThumbToClipboard: async (id: string): Promise<boolean> => {
       const photo = photoStore.getPhotoById(id)
       if (!photo) return false
       const p = getThumbnailService().getCachedPath(id, 256)
       if (!p) return false
-      const img = nativeImage.createFromPath(p)
-      if (img.isEmpty()) return false
-      clipboard.writeImage(img)
+      const png = readFileSync(p)
+      if (png.length === 0) return false
+      await clipboard.write([
+        new ClipboardItem({
+          'image/png': new Blob([new Uint8Array(png)], { type: 'image/png' })
+        })
+      ])
       return true
     },
     // ④-3：复制原文件 Base64（5MB 上限，防剪贴板爆炸）
-    copyBase64: (id: string): { ok: boolean; error?: string } => {
+    copyBase64: async (id: string): Promise<{ ok: boolean; error?: string }> => {
       const photo = photoStore.getPhotoById(id)
       if (!photo) return { ok: false, error: '素材不存在' }
       if (photo.fileSize > 5 * 1024 * 1024) return { ok: false, error: '文件超过 5MB' }
@@ -921,7 +911,7 @@ export function registerPhotoIpcHandlers(
         }
       }
       try {
-        clipboard.writeText(readFileSync(photo.filePath).toString('base64'))
+        await clipboard.writeText(readFileSync(photo.filePath).toString('base64'))
         return { ok: true }
       } catch (err) {
         return { ok: false, error: sanitizeIpcMessage(err) }
@@ -931,7 +921,7 @@ export function registerPhotoIpcHandlers(
     // 所以位图复制进系统剪贴板 + 打开引擎页，用户在页面里 ⌘V 粘贴。
     // 路径只按 id 从库里反查（渲染层传不进任意路径，与 openWithDefault 同一信任模型）；
     // 非图片/文件缺失返回 { ok:false }，异常路径走 registerPrefixedHandlers 的统一脱敏通道。
-    reverseImageSearch: (payload: { id?: unknown; engineId?: unknown }) => {
+    reverseImageSearch: async (payload: { id?: unknown; engineId?: unknown }) => {
       const engine = getReverseSearchEngine(payload?.engineId)
       if (!engine) return { ok: false as const, error: '未知的搜索引擎' }
       const photo = photoStore.getPhotoById(String(payload?.id ?? ''))
@@ -941,10 +931,20 @@ export function registerPhotoIpcHandlers(
       if (!existsSync(photo.filePath)) {
         return { ok: false as const, error: '文件不存在或已被移动' }
       }
-      const img = nativeImage.createFromPath(photo.filePath)
-      // SVG 等矢量 kind 也归 image，但 nativeImage 解不出位图，这里兜住
-      if (img.isEmpty()) return { ok: false as const, error: '图片不可读（矢量或已损坏）' }
-      clipboard.writeImage(img)
+      // 原图可能是任意位图格式，统一转 PNG 再进剪贴板（Electron 44 走 MIME）
+      let png: Buffer
+      try {
+        const sharp = (await import('sharp')).default
+        png = await sharp(photo.filePath).png().toBuffer()
+      } catch {
+        // SVG 等矢量 kind 也归 image，但解不出位图，这里兜住
+        return { ok: false as const, error: '图片不可读（矢量或已损坏）' }
+      }
+      await clipboard.write([
+        new ClipboardItem({
+          'image/png': new Blob([new Uint8Array(png)], { type: 'image/png' })
+        })
+      ])
       openReverseSearchEngine(engine.id, (url) => void shell.openExternal(url))
       return { ok: true as const, engine: engine.name }
     },

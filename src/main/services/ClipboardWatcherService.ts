@@ -58,8 +58,12 @@ export class ClipboardWatcherService {
   start(): void {
     if (this.timer) return
     // 以启动瞬间的剪贴板为基线，避免开启瞬间把历史内容整个导入
-    this.lastFingerprint = this.fingerprint()
+    void this.refreshBaseline()
     this.timer = setInterval(() => void this.tick(), POLL_MS)
+  }
+
+  private async refreshBaseline(): Promise<void> {
+    this.lastFingerprint = await this.fingerprint()
   }
 
   stop(): void {
@@ -67,61 +71,68 @@ export class ClipboardWatcherService {
     this.timer = null
   }
 
-  private fingerprint(): string {
-    const text = clipboard.readText()
+  /** Electron 44 剪贴板异步化+MIME 化：readImage/readBuffer 移除，图片统一走 image/png。
+   *  指纹取「大小 + 头尾 64KB」分片哈希：平台 PNG 每次轮询都会全量给到，全量 md5 在
+   *  大截图下每秒可到几十 ms（P2-27 审查关注点），分片对变更检测足够。 */
+  private async fingerprint(): Promise<string> {
+    const text = await clipboard.readText()
     if (text) return 'text:' + createHash('md5').update(text).digest('hex')
-    const img = clipboard.readImage()
-    if (!img.isEmpty()) {
-      // 廉价指纹（审查 P2-27）：旧实现每秒对整张图做完整 PNG 编码再哈希，
-      // 5K 截图下主进程每秒数百 ms 阻塞；改为尺寸+缩放图哈希
-      const size = img.getSize()
-      const thumb = img.resize({ width: 32, height: 32 })
-      return (
-        'img:' +
-        size.width +
-        'x' +
-        size.height +
-        ':' +
-        createHash('md5').update(thumb.toPNG()).digest('hex')
-      )
+    const png = await this.clipboardPng()
+    if (png) {
+      const head = png.subarray(0, 65536)
+      const tail = png.length > 65536 ? png.subarray(png.length - 65536) : Buffer.alloc(0)
+      const h = createHash('md5').update(head).update(tail).digest('hex')
+      return 'img:' + png.length + ':' + h
     }
     return ''
   }
 
   private freeze(): void {
     this.frozenUntil = Date.now() + FREEZE_MS
-    this.lastFingerprint = this.fingerprint()
+    void this.refreshBaseline()
   }
 
   private async tick(): Promise<void> {
     if (Date.now() < this.frozenUntil) return
-    const fp = this.fingerprint()
+    const fp = await this.fingerprint()
     if (!fp || fp === this.lastFingerprint) return
     this.lastFingerprint = fp
 
-    const paths = this.extractPaths()
+    const paths = await this.extractPaths()
     if (paths.length > 0) {
       this.import(paths, `剪贴板 ${paths.length} 个文件`)
       return
     }
-    const png = this.readImagePng()
+    const png = await this.readImagePng()
     if (png) {
       this.import([png], '剪贴板图片')
     }
   }
 
   /** 文本 → 逐行绝对路径 / file:// URL（解析逻辑见 utils/clipboardPaths） */
-  private extractPaths(): string[] {
-    const text = clipboard.readText()
+  private async extractPaths(): Promise<string[]> {
+    const text = await clipboard.readText()
     if (!text) return []
     return extractPathsFromText(text, existsSync, MAX_PATHS)
   }
 
-  private readImagePng(): string | null {
-    const img = clipboard.readImage()
-    if (img.isEmpty()) return null
-    const png = img.toPNG()
-    if (png.length === 0) return null
+  private async clipboardPng(): Promise<Buffer | null> {
+    try {
+      for (const item of await clipboard.read()) {
+        if (!item.types.includes('image/png')) continue
+        const blob = (await item.getType('image/png')) as Blob
+        const buf = Buffer.from(await blob.arrayBuffer())
+        if (buf.length > 0) return buf
+      }
+    } catch {
+      /* 无图片内容 */
+    }
+    return null
+  }
+
+  private async readImagePng(): Promise<string | null> {
+    const png = await this.clipboardPng()
+    if (!png) return null
     const dir = activeSubdir('clips')
     mkdirSync(dir, { recursive: true })
     const file = join(dir, `clipboard-${Date.now()}.png`)

@@ -1,5 +1,6 @@
 import { Notification } from 'electron'
 import { existsSync } from 'fs'
+import { assetPath } from '../utils/assetPath'
 import icon from '../../../resources/icon.png?asset'
 
 /**
@@ -184,7 +185,7 @@ export class NotificationService {
 
     // 根据类型返回默认图标
     // 目前使用应用图标，后续可以添加类型特定的图标
-    return icon
+    return assetPath(icon, __dirname)
   }
 
   /**

@@ -5,7 +5,7 @@
  * 偏好设置、贴图窗、快捷键与托盘/菜单接线。
  */
 import Screenshots from 'electron-screenshots'
-import { app, BrowserWindow, clipboard, nativeImage, shell, systemPreferences } from 'electron'
+import { app, BrowserWindow, clipboard, ClipboardItem, shell, systemPreferences } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { preferencesStore, photoStore } from '../stores'
@@ -155,7 +155,11 @@ class ScreenshotService {
       const filePath = uniqueFilePath(dir, screenshotFileName(), '.png')
       writeFileSync(filePath, buffer)
 
-      clipboard.writeImage(nativeImage.createFromBuffer(buffer))
+      await clipboard.write([
+        new ClipboardItem({
+          'image/png': new Blob([new Uint8Array(buffer)], { type: 'image/png' })
+        })
+      ])
 
       const photo = photoStore.addPhoto(filePath)
       getAssetProcessingRef()?.enqueue(photo.id)
@@ -217,7 +221,11 @@ class ScreenshotService {
       writeFileSync(filePath, decoded.buffer)
     }
     if (req.actions.clipboard) {
-      clipboard.writeImage(nativeImage.createFromBuffer(decoded.buffer))
+      await clipboard.write([
+        new ClipboardItem({
+          'image/png': new Blob([new Uint8Array(decoded.buffer)], { type: 'image/png' })
+        })
+      ])
     }
 
     let photoId: string | undefined

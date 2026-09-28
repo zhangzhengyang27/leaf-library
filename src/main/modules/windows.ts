@@ -1,6 +1,7 @@
 import { BrowserWindow, nativeTheme, shell } from 'electron'
 import { join } from 'path'
 import { pathToFileURL } from 'url'
+import { assetPath } from '../utils/assetPath'
 import icon from '../../../resources/icon.png?asset'
 import { is } from '@electron-toolkit/utils'
 import { preferencesStore } from '../stores'
@@ -54,7 +55,7 @@ export function createWindow(route?: string): BrowserWindow {
     // Edge 式自绘标题栏（DECISIONS.md D-008）：darwin 保留系统红绿灯、
     // 拖拽区交给渲染层 TitleBar（-webkit-app-region）；其他平台维持系统标题栏
     ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset' as const } : {}),
-    ...(process.platform === 'linux' ? { icon } : {}),
+    ...(process.platform === 'linux' ? { icon: assetPath(icon, __dirname) } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       // 代码审查 P0-6：开沙箱——preload 仅用 ipcRenderer（无 Node 依赖），
