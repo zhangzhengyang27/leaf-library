@@ -1,6 +1,6 @@
 {
   "name": "leaf-library",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Leaf 素材库 · 把散落的叶子收成一册 —— 本地优先的多类型素材管理（图片/视频/音频/字体/文件/书签）",
   "main": "./out/main/index.js",
   "author": "Leaf",
@@ -19,7 +19,7 @@
     "typecheck": "pnpm run typecheck:node && pnpm run typecheck:web",
     "typecheck:full": "pnpm run typecheck:node && pnpm run typecheck:web",
     "start": "electron-vite preview",
-    "dev": "electron-vite dev",
+    "dev": "node scripts/patch-dev-electron.mjs && electron-vite dev",
     "build": "pnpm run typecheck && electron-vite build",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -30,7 +30,8 @@
     "build:unpack": "pnpm run build && electron-builder --dir",
     "build:win": "pnpm run build && electron-builder --win",
     "build:mac": "pnpm run build && electron-builder --mac",
-    "build:linux": "pnpm run build && electron-builder --linux"
+    "build:linux": "pnpm run build && electron-builder --linux",
+    "postinstall": "node scripts/patch-dev-electron.mjs"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",

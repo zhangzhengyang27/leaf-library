@@ -26,9 +26,12 @@ type Listener = (e: UpdateEvent) => void
 const listeners = new Set<Listener>()
 let currentStatus: UpdateStatus = 'idle'
 let cachedInfo: UpdateInfo | null = null
+let lastError: string | null = null
 
 function broadcast(e: UpdateEvent): void {
   currentStatus = e.status
+  if (e.status === 'error') lastError = e.error ?? null
+  if (e.status === 'checking') lastError = null
   log.info(
     'autoUpdate',
     `${e.status}${e.version ? ` v${e.version}` : ''}${e.error ? ` err=${e.error}` : ''}`
@@ -120,6 +123,11 @@ export const AutoUpdateService = {
 
   getStatus(): UpdateStatus {
     return currentStatus
+  },
+
+  /** 最近一次 error 事件的文案（菜单/原生反馈用；新一次检查开始时清空） */
+  getLastError(): string | null {
+    return lastError
   },
 
   getCachedInfo(): UpdateInfo | null {

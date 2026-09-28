@@ -10,12 +10,17 @@
 import {
   app,
   BrowserWindow,
+  dialog,
   Menu,
+  shell,
   type MenuItemConstructorOptions,
   type WebContents
 } from 'electron'
 import { getActiveLibrary, listLibraries, setActiveLibrary } from './libraryRegistry'
 import { screenshotService } from '../services/ScreenshotService'
+import { AutoUpdateService } from '../services/AutoUpdateService'
+
+const REPO_URL = 'https://github.com/zhangzhengyang27/leaf-library'
 
 function sendToAll(channel: string, payload?: unknown): void {
   for (const win of BrowserWindow.getAllWindows()) {
@@ -25,6 +30,102 @@ function sendToAll(channel: string, payload?: unknown): void {
 
 function sendMenuAction(action: string): void {
   sendToAll('app:menu-action', { action })
+}
+
+/**
+ * 菜单触发的检查更新全流程（不依赖设置页在场，反馈走原生对话框）：
+ * dev → 说明；not-available → 已最新；available → 下载/去设置/稍后；
+ * 下载完成 → 退出并安装；downloading/downloaded 时点入给对应状态。
+ */
+async function runUpdateFlowFromMenu(): Promise<void> {
+  // dev：electron-updater 官方跳过未打包应用（dev-app-update.yml 还是占位源），直说别哑火
+  if (!app.isPackaged) {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: '检查更新',
+      message: '开发模式不检查更新',
+      detail:
+        'electron-updater 仅在打包安装后工作（发布源：GitHub Releases）。正式版里本菜单项即真实检查入口。'
+    })
+    return
+  }
+  const status = AutoUpdateService.getStatus()
+  if (status === 'downloaded') {
+    await offerInstall()
+    return
+  }
+  if (status === 'downloading') {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: '检查更新',
+      message: '新版本正在下载中',
+      detail: '到 设置 → 关于 可看进度；下载完成后会再次询问是否安装。'
+    })
+    return
+  }
+  const result = await AutoUpdateService.checkForUpdates()
+  if (result === 'available') {
+    const info = AutoUpdateService.getCachedInfo()
+    const notes = typeof info?.releaseNotes === 'string' ? info.releaseNotes.slice(0, 400) : ''
+    const { response } = await dialog.showMessageBox({
+      type: 'info',
+      title: '检查更新',
+      message: `发现新版本 v${info?.version ?? '?'}（当前 v${AutoUpdateService.getCurrentVersion()}）`,
+      detail: notes || '到设置页可查看详情。',
+      buttons: ['立即下载', '打开设置页', '稍后'],
+      defaultId: 0,
+      cancelId: 2
+    })
+    if (response === 0) {
+      armInstallPrompt()
+      void AutoUpdateService.downloadUpdate()
+    } else if (response === 1) {
+      sendToAll('app:openSettings')
+    }
+    return
+  }
+  if (result === 'not-available') {
+    await dialog.showMessageBox({
+      type: 'info',
+      title: '检查更新',
+      message: `Leaf 已是最新版本（v${AutoUpdateService.getCurrentVersion()}）`
+    })
+    return
+  }
+  if (result === 'error') {
+    await dialog.showMessageBox({
+      type: 'warning',
+      title: '检查更新',
+      message: '检查更新失败',
+      detail: AutoUpdateService.getLastError() ?? '未知错误'
+    })
+  }
+}
+
+/** 下载完成后弹「退出并安装」；出错即撤侦听（错误自有 error 事件兜底） */
+function armInstallPrompt(): void {
+  const off = AutoUpdateService.onEvent(async (e) => {
+    if (e.status === 'downloaded') {
+      off()
+      await offerInstall()
+    } else if (e.status === 'error') {
+      off()
+    }
+  })
+}
+
+async function offerInstall(): Promise<void> {
+  const info = AutoUpdateService.getCachedInfo()
+  const { response } = await dialog.showMessageBox({
+    type: 'info',
+    title: '安装更新',
+    message: `v${info?.version ?? '新版本'} 下载完成`,
+    detail: '退出 Leaf 并安装新版本？',
+    buttons: ['退出并安装', '稍后'],
+    defaultId: 0,
+    cancelId: 1
+  })
+  if (response === 0) AutoUpdateService.quitAndInstall()
 }
 
 function focusedWebContents(): WebContents | null {
@@ -84,6 +185,14 @@ const editSubmenu: MenuItemConstructorOptions[] = [
 export function installAppMenu(): void {
   const isMac = process.platform === 'darwin'
 
+  if (isMac) {
+    // dev 下 app.name 是 "leaf-library"/"Electron"，关于面板统一钉成产品名
+    app.setAboutPanelOptions({
+      applicationName: 'Leaf 素材库',
+      applicationVersion: app.getVersion()
+    })
+  }
+
   const libraryItems: MenuItemConstructorOptions[] = listLibraries().map((l) => ({
     label: l.id === getActiveLibrary().id ? `✓ ${l.name}` : l.name,
     click: () => {
@@ -98,15 +207,24 @@ export function installAppMenu(): void {
     ...(isMac
       ? ([
           {
-            label: app.name,
+            // 显式产品名：dev 下 app.name 是包名 "leaf-library"，不钉会露出来
+            label: 'Leaf 素材库',
             submenu: [
               { role: 'about', label: '关于 Leaf' },
+              {
+                label: '检查更新…',
+                click: () => {
+                  void runUpdateFlowFromMenu()
+                }
+              },
               { type: 'separator' },
               {
                 label: '设置…',
                 accelerator: 'CmdOrCtrl+,',
                 click: () => sendToAll('app:openSettings')
               },
+              { type: 'separator' },
+              { role: 'services', label: '服务' },
               { type: 'separator' },
               { role: 'hide', label: '隐藏 Leaf' },
               { role: 'hideOthers', label: '隐藏其他' },
@@ -316,15 +434,34 @@ export function installAppMenu(): void {
     },
     { role: 'windowMenu' },
     {
+      // 不用 role:'help'——mac 上它会混入系统搜索框，与自建项叠加行为含混
       label: '帮助',
-      role: 'help',
       submenu: [
+        {
+          label: '前往 GitHub 仓库',
+          click: () => {
+            void shell.openExternal(REPO_URL)
+          }
+        },
+        {
+          label: '反馈问题…',
+          click: () => {
+            void shell.openExternal(`${REPO_URL}/issues`)
+          }
+        },
         ...(isMac
           ? []
           : ([
+              { type: 'separator' } as const,
               {
                 label: '关于 Leaf',
                 click: () => sendToAll('app:openAbout')
+              },
+              {
+                label: '检查更新…',
+                click: () => {
+                  void runUpdateFlowFromMenu()
+                }
               }
             ] as MenuItemConstructorOptions[]))
       ]
