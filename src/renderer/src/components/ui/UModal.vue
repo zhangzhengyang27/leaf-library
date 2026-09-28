@@ -17,13 +17,21 @@ interface Props {
   closeOnOverlay?: boolean
   /** ESC 是否关闭 */
   closeOnEsc?: boolean
+  /**
+   * 遮罩 z-index。层级约定：功能弹窗一律 1000（插件中心/图片预览/标签管理…），
+   * 全局确认/输入框（App.vue 的 requestConfirm/requestPrompt 渲染件）必须浮在
+   * 功能弹窗之上 → 传 1050；再往上是 toast 1100、命令面板 1200、右键菜单 1300。
+   * 同层叠放时上下由 DOM 插入顺序碰运气——插件中心点「安装」确认框被盖住即此坑。
+   */
+  overlayZ?: number
 }
 
 const props = withDefaults(defineProps<Props>(), {
   title: '',
   size: 'md',
   closeOnOverlay: true,
-  closeOnEsc: true
+  closeOnEsc: true,
+  overlayZ: 1000
 })
 
 const emit = defineEmits<{ 'update:modelValue': [value: boolean] }>()
@@ -117,6 +125,7 @@ const sizeCls: Record<string, string> = {
       <div
         v-if="modelValue"
         class="fixed inset-0 z-[1000] flex items-center justify-center p-6"
+        :style="{ zIndex: props.overlayZ }"
         @click.self="onOverlayClick"
       >
         <div class="absolute inset-0 bg-overlay backdrop-blur-[2px]" aria-hidden="true" />

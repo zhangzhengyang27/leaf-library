@@ -48,7 +48,7 @@ void requestPrompt
 </script>
 
 <template>
-  <UModal :model-value="pendingPrompt !== null" size="sm" @update:model-value="cancel">
+  <UModal :model-value="pendingPrompt !== null" size="sm" :overlay-z="1050" @update:model-value="cancel">
     <template #title>
       <h3 class="text-sm font-semibold text-fg-primary">{{ pendingPrompt?.title }}</h3>
     </template>

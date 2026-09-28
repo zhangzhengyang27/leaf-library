@@ -56,6 +56,7 @@ const entries = [
 for (const [path, url, kind] of entries) register(path, url, kind as IconEntry['kind'])
 
 // 多色图标：色相是语义的一部分（标签颜色点），不能被 currentColor 染色
+// ic-hover-zoom 是黑底+白放大镜两色角标，走 mask 会被染成单色、镜身与底同色隐形
 const MULTI_COLOR = new Set([
   'ic-tag-aqua',
   'ic-tag-blue',
@@ -65,7 +66,8 @@ const MULTI_COLOR = new Set([
   'ic-tag-purple',
   'ic-tag-red',
   'ic-tag-yellow',
-  'ic-eagle-logo'
+  'ic-eagle-logo',
+  'ic-hover-zoom'
 ])
 
 const MASK_BOX = 20

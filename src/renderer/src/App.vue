@@ -374,9 +374,11 @@ const loadingDelay = computed(() => {
   </AppShell>
 
   <!-- 全局危险操作二次确认（所有路由共享，替代原生 confirm） -->
+  <!-- overlay-z 1050：必须浮在功能弹窗（插件中心/图片预览等 z-1000）之上，否则确认框被盖住 -->
   <UModal
     :model-value="pendingConfirm !== null"
     size="sm"
+    :overlay-z="1050"
     @update:model-value="pendingConfirm = null"
   >
     <template #title>
