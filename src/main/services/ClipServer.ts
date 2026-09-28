@@ -22,7 +22,6 @@ import { app, safeStorage } from 'electron'
 import { getAssetProcessingRef } from './assetProcessingRef'
 import { photoRepository } from '../db/repos/PhotoRepository'
 import { photoFolderRepository } from '../db/repos/PhotoFolderRepository'
-import { albumRepository } from '../db/repos/AlbumRepository'
 import { addBookmark as addBookmarkService } from './BookmarkService'
 import { handleMcpJsonRpc, type McpContext } from './McpHandler'
 import { getThumbnailService } from './ThumbnailService'
@@ -343,7 +342,6 @@ export class ClipServer {
         const rpc = JSON.parse(await this.readBody(req)) as Record<string, unknown>
         const mcpCtx: McpContext = {
           photos: photoRepository,
-          albums: albumRepository,
           addBookmark: addBookmarkService,
           enqueue: (id) => getAssetProcessingRef()?.enqueue(id),
           // get_image（AI 看图工作流 M1）：照 thumb:// 协议同语义解析图片路径——

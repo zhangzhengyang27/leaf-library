@@ -58,12 +58,6 @@ const commands = computed<Cmd[]>(() => {
       }
     },
     {
-      id: 'new-album',
-      title: '新建：相册',
-      hint: '弹窗',
-      run: () => runInLib(() => actions.openAlbumModal())
-    },
-    {
       id: 'new-folder',
       title: '新建：文件夹',
       hint: '弹窗',

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>构图网格</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.gbtn{border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#4b5563;font-size:11px;height:22px;padding:0 8px;cursor:pointer}
+.gbtn:hover{background:#f3f4f6}
+.gbtn.on{background:#2563eb;border-color:#2563eb;color:#fff}
+.gbtn.on:hover{background:#1d4ed8}
+.stage{position:relative;border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;background:#fafafa}
+.stage img{display:block;width:100%;height:auto}
+.stage canvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.meta{margin-top:6px;color:#9ca3af;font-size:11px}
+</style></head>
+<body>
+<div id="app" class="empty">等待素材数据…</div>
+<div id="tools" class="btns" style="display:none"></div>
+<div id="stage" class="stage" style="display:none">
+  <img id="pic" alt="" />
+  <canvas id="ov"></canvas>
+</div>
+<div id="meta" class="meta" style="display:none"></div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+// 参考线集合：多选叠加。golden 取 0.382 / 0.618（黄金分割互余点）
+var GRIDS=[
+  {id:'thirds',label:'三分线'},
+  {id:'golden',label:'黄金分割'},
+  {id:'center',label:'中心框'},
+  {id:'diag',label:'对角线'}
+];
+var active={thirds:true}; // 默认开三分线
+/** 双描边画线：先粗暗后细白，图上亮部暗部都可见 */
+function strokeTwice(ctx,x1,y1,x2,y2){
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.strokeStyle='rgba(0,0,0,.5)';ctx.lineWidth=3;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x2,y2);
+  ctx.strokeStyle='rgba(255,255,255,.85)';ctx.lineWidth=1;ctx.stroke();
+}
+function draw(){
+  var pic=document.getElementById('pic');
+  if(!pic.naturalWidth)return;
+  var cv=document.getElementById('ov');
+  cv.width=pic.naturalWidth;cv.height=pic.naturalHeight;
+  var ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
+  ctx.clearRect(0,0,w,h);
+  if(active.thirds){
+    strokeTwice(ctx,w/3,0,w/3,h);strokeTwice(ctx,w*2/3,0,w*2/3,h);
+    strokeTwice(ctx,0,h/3,w,h/3);strokeTwice(ctx,0,h*2/3,w,h*2/3);
+  }
+  if(active.golden){
+    strokeTwice(ctx,w*0.382,0,w*0.382,h);strokeTwice(ctx,w*0.618,0,w*0.618,h);
+    strokeTwice(ctx,0,h*0.382,w,h*0.382);strokeTwice(ctx,0,h*0.618,w,h*0.618);
+  }
+  if(active.center){
+    // 中心框：四边各内缩 10% 的居中矩形 + 中心小十字
+    strokeTwice(ctx,w*0.1,h*0.1,w*0.9,h*0.1);strokeTwice(ctx,w*0.9,h*0.1,w*0.9,h*0.9);
+    strokeTwice(ctx,w*0.9,h*0.9,w*0.1,h*0.9);strokeTwice(ctx,w*0.1,h*0.9,w*0.1,h*0.1);
+    var cx=w/2,cy=h/2,r=Math.min(w,h)*0.03;
+    strokeTwice(ctx,cx-r,cy,cx+r,cy);strokeTwice(ctx,cx,cy-r,cx,cy+r);
+  }
+  if(active.diag){
+    strokeTwice(ctx,0,0,w,h);strokeTwice(ctx,w,0,0,h);
+  }
+}
+// 按钮组：构建一次，点击切换选中态并重绘（onclick 赋值而非 addEventListener：避免重复推送叠加监听）
+var tools=document.getElementById('tools');
+tools.innerHTML=GRIDS.map(function(g){
+  return '<button type="button" class="gbtn'+(active[g.id]?' on':'')+'" data-id="'+g.id+'">'+g.label+'</button>'}).join('');
+tools.onclick=function(ev){
+  var btn=ev.target.closest('.gbtn');if(!btn)return;
+  var id=btn.dataset.id;
+  active[id]=!active[id];
+  btn.classList.toggle('on',active[id]);
+  draw();
+};
+function show(msg){
+  var app=document.getElementById('app');
+  app.style.display='';app.textContent=msg;
+  document.getElementById('tools').style.display='none';
+  document.getElementById('stage').style.display='none';
+  document.getElementById('meta').style.display='none';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){show('未选中素材');return}
+ if(p.kind!=='image'){show('仅图片素材支持构图参考线');return}
+ var pic=document.getElementById('pic');
+ pic.onload=function(){
+   document.getElementById('app').style.display='none';
+   document.getElementById('tools').style.display='flex';
+   document.getElementById('stage').style.display='';
+   var meta=document.getElementById('meta');meta.style.display='';
+   meta.textContent=(pic.naturalWidth||'?')+' × '+(pic.naturalHeight||'?')+' px · 参考线可多选叠加，双描边保证深浅底图都可见';
+   draw();
+ };
+ pic.onerror=function(){show('缩略图加载失败')};
+ pic.src=p.bigThumbUrl||p.thumbUrl;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script>
+</body>
+</html>

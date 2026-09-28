@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>字幕预览</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.stats{color:#9ca3af;font-size:11px;margin-bottom:6px}
+.warn{color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:3px 8px;font-size:11px;margin-bottom:6px}
+.list{overflow:auto;max-height:430px;border:1px solid #e5e7eb;border-radius:6px}
+.cue{padding:5px 8px;border-bottom:1px dashed #e5e7eb}
+.cue:last-child{border-bottom:none}
+.cue:hover{background:#f9fafb}
+.cue.no{background:#fafafa}
+.time{font:10px/1.4 ui-monospace,Menlo,monospace;color:#2563eb;user-select:text}
+.txt{color:#111827;white-space:pre-wrap;word-break:break-word;user-select:text}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;margin-bottom:6px}
+.raw{margin:0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;
+  overflow:auto;max-height:320px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#374151;
+  white-space:pre-wrap;word-break:break-all;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var MAX_CUES=800; // 展示上限，超出仍统计
+/** 时间轴 → 毫秒：支持 [HH:]MM:SS[.,]mmm（逗号= SRT，点= VTT，宽松兼容） */
+function toMs(t){
+  var m=/^(?:(\d{1,3}):)?(\d{1,2}):(\d{2})[.,](\d{1,3})$/.exec(t);
+  if(!m)return null;
+  return ((Number(m[1]||0)*3600+Number(m[2])*60+Number(m[3]))*1000)+Number((m[4]+'00').slice(0,3));
+}
+/** 时间轴行：00:00:01,000 --> 00:00:03,500（允许尾部位置坐标） */
+var RE_TIME=/^(\d{1,3}:)?\d{1,2}:\d{2}[.,]\d{1,3}\s*-->\s*(\d{1,3}:)?\d{1,2}:\d{2}[.,]\d{1,3}/;
+function fmt(ms){
+  var t=Math.max(0,Math.round(ms)),h=Math.floor(t/3600000),m=Math.floor(t/60000)%60,s=Math.floor(t/1000)%60,mm=t%1000;
+  function p(n,w){n=String(n);while(n.length<w)n='0'+n;return n}
+  return p(h,2)+':'+p(m,2)+':'+p(s,2)+','+p(mm,3);
+}
+/**
+ * 宽松逐行扫描：
+ *  - 命中时间轴行 → 开新条目（条目序号行与 WEBVTT 头/NOTE/STYLE 块在无开条目时静默跳过）
+ *  - 开条目中：空行收条目；紧随时间轴的纯数字行按 SRT 序号忽略；其余进文本
+ *  - 无法归类的非空行计入 skipped（顶部提示跳过条数）
+ */
+function parseCues(content){
+  var lines=content.split(/\r\n|\n|\r/);
+  var cues=[],cur=null,skipped=0,inBlock=false;
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i];
+    var t=RE_TIME.test(line.trim());
+    if(t){
+      var parts=line.trim().split('-->');
+      var start=toMs(parts[0].trim()),end=parts[1]?toMs(parts[1].trim()):null;
+      if(start===null){skipped++;if(cur){cur=null}continue}
+      cur={start:start,end:end,text:[]};
+      cues.push(cur);
+      inBlock=false;
+      continue;
+    }
+    if(cur){
+      if(line.trim()===''){cur=null;inBlock=false;continue}
+      if(/^\d+$/.test(line.trim())&&cur.text.length===0)continue; // SRT 序号行
+      cur.text.push(line);
+    }else{
+      if(line.trim()===''){inBlock=false;continue}
+      if(inBlock)continue; // NOTE / STYLE / REGION 块体
+      if(/^WEBVTT/.test(line.trim()))continue;
+      if(/^(NOTE|STYLE|REGION)/.test(line.trim())){inBlock=true;continue}
+      if(/^\d+$/.test(line.trim()))continue; // 游离的序号行
+      skipped++;
+    }
+  }
+  return {cues:cues,skipped:skipped};
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+ var content=p.content.replace(/^\uFEFF/,''); // 去 BOM
+ if(!content.trim()){app.textContent='文件内容为空';return}
+ var r=parseCues(content);
+ if(!r.cues.length){
+   // 兜底：一个条目都解析不出来 → 错误提示 + 原文展示，不白屏
+   app.className='';
+   app.innerHTML='<div class="err">解析失败：没有找到任何有效的字幕条目'+(r.skipped?'（跳过 '+r.skipped+' 行）':'')+
+     '。请确认是 SRT / VTT 格式。</div><pre class="raw">'+escapeHtml(content)+'</pre>';
+   return;
+ }
+ // 统计：条目数 / 总时长（末条结束-首条开始）/ 字符数 / 平均每条字数
+ var chars=0;
+ for(var i=0;i<r.cues.length;i++)chars+=r.cues[i].text.join('').replace(/\s/g,'').length;
+ var first=r.cues[0].start,last=r.cues[r.cues.length-1];
+ var total=last.end!=null?last.end-first:(last.start-first);
+ var avg=r.cues.length?Math.round(chars/r.cues.length):0;
+ var html='<div class="stats">'+escapeHtml(p.fileName||'')+' · 条目 '+r.cues.length+' · 总时长 '+fmt(total)+
+   ' · 字符数 '+chars+' · 平均每条 '+avg+' 字</div>';
+ if(r.skipped)html+='<div class="warn">已跳过 '+r.skipped+' 行无法解析的内容</div>';
+ if(r.cues.length>MAX_CUES)html+='<div class="warn">条目较多，仅显示前 '+MAX_CUES+' 条</div>';
+ html+='<div class="list">';
+ var shown=Math.min(r.cues.length,MAX_CUES);
+ for(i=0;i<shown;i++){
+   var c=r.cues[i];
+   var time=fmt(c.start)+' → '+(c.end!=null?fmt(c.end):'??:??');
+   html+='<div class="cue'+(i%2?' no':'')+'"><div class="time">'+escapeHtml(time)+'</div>'+
+     '<div class="txt">'+(c.text.length?escapeHtml(c.text.join('\n')):'<span style="color:#9ca3af">（空文本）</span>')+'</div></div>';
+ }
+ html+='</div>';
+ app.className='';
+ app.innerHTML=html;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Leaf · 数据库 Schema 设计文档
 
-> 版本：v16（migration 累计到 `026_smart_album_parent`；2026-09-26 与代码对齐）
+> 版本：v17（migration 累计到 `027_drop_manual_albums`；2026-09-27 与代码对齐）
 > 引擎：SQLite via `better-sqlite3`
 > 模式：WAL + `foreign_keys = ON` + `synchronous = NORMAL`
 > 路径：`<userData>/leaf.db`（多资源库后为 `<库路径>/library.db`）
@@ -87,14 +87,14 @@ PRAGMA temp_store = MEMORY;      -- 临时表/索引放内存
 
 ---
 
-## 4. 表清单（30 张业务表 + 1 张 FTS）
+## 4. 表清单（30 张业务表 + 1 张 FTS；027 起 `photo_albums`/`photo_album_items` 两张已 DROP）
 
 | #   | 表名                       | 行数预期               | 模块       | 引入版本                               |
 | --- | -------------------------- | ---------------------- | ---------- | -------------------------------------- |
 | 1   | `meta`                     | 1 行/版本              | 系统       | 001                                    |
 | 2   | `photo_photos`             | 万级                   | Photos     | 001 → 014 加处理列                     |
-| 3   | `photo_albums`             | 数十                   | Photos     | 001                                    |
-| 4   | `photo_album_items`        | 数千                   | Photos     | 001                                    |
+| 3   | ~~`photo_albums`~~         | —（027 出库）          | Photos     | 001 → 027 DROP（D-027）                |
+| 4   | ~~`photo_album_items`~~    | —（027 出库）          | Photos     | 001 → 027 DROP（D-027）                |
 | 5   | `photo_tags`               | 数千                   | Photos     | 001 → 014 绑定字典                     |
 | 30  | `photo_smart_albums`       | 数十                   | Photos     | 014 → 026 父级嵌套                     |
 | 6   | `rec_recordings`           | 数百                   | Recording  | 001                                    |
@@ -107,7 +107,7 @@ PRAGMA temp_store = MEMORY;      -- 临时表/索引放内存
 | 13  | `snip_tags`                | 数千                   | Snippet    | 001                                    |
 | 14  | `snip_snippets`            | 数千                   | Snippet    | 001                                    |
 | 15  | `snip_snippets_fts`        | 同上（FTS5）           | Snippet    | 001                                    |
-| 16  | `tag_tags`                 | 数百                   | Tag        | 001 → 002 加 `deleted_at`              |
+| 16  | `tag_tags`                 | 数百                   | Tag        | 001 → 002 加 `deleted_at` → 028 加 `starred`/`sort_order`/`is_group` |
 | 17  | `folder_folders`           | 数百                   | Folder     | 001                                    |
 | 18  | `wall_collections`         | 数十                   | Wallpaper  | 001                                    |
 | 19  | `wall_files`               | 数千                   | Wallpaper  | 001 → 003 加元数据列                   |
@@ -152,9 +152,9 @@ EXIF 列（`camera_model` / `lens_model` / `iso` / `aperture` / `shutter` / `foc
 - `(is_favorite)` — 收藏筛选
 - `(thumb_status)` — 处理管线补漏扫描
 
-#### `photo_albums` / `photo_album_items`
+#### ~~`photo_albums` / `photo_album_items`~~（027 已出库）
 
-相册是一对多容器。`cover_id` 指向 `photo_photos.id`（无外键，应用层保证）。
+手动相册随 D-027 撤销（组织维度对齐 Eagle：文件夹/智能夹/标签），迁移 027 DROP 两表。
 
 #### `photo_tags`
 
@@ -163,7 +163,7 @@ EXIF 列（`camera_model` / `lens_model` / `iso` / `aperture` / `shutter` / `foc
 
 #### `photo_folders`（016）
 
-素材库手动文件夹分组（Eagle 文件夹维度，与相册互补）。`parent_id` 预留层级；
+素材库手动文件夹分组（Eagle 文件夹维度）。`parent_id` 预留层级；
 删除文件夹按 Eagle `dialog.removeFolder` 口径：整棵子树连带删除，勾选「把文件夹内项目丢到回收站」
 （默认勾）时子树内素材软删（`deleted_at` 非空）且 `folder_id` 置 NULL，未勾选则只置 NULL 落未分类。
 
@@ -244,6 +244,11 @@ SmartAlbumRepository 写路径上拒绝。
 #### `tag_tags`
 
 全局标签字典。`name UNIQUE`（应用层生成小写 slug 也行）。`parent_id` 支持两层标签树。
+
+**028 起（标签管理 Eagle 复刻）**：`starred`（常用标签，用户手动设定）、`sort_order`
+（群组展示顺序，拖拽排序落库）、`is_group`（群组标记——群组是容器不是标签，有此标记的
+行按群组渲染、不进 chip 池；迁移时把历史父级标签回填为群组；收到子级时自动升位）。
+`description` 列即群组描述（Eagle group-description）。
 
 ### 5.7 Folder
 
@@ -365,6 +370,7 @@ migration 版本表。`version` 主键，`applied_at` 是落地时间。
 | 024  | `024_audio_facts.ts`              | 音频波形（400B 降采样包络）+ BPM 事实列                                                              |
 | 025  | `025_source_path_index.ts`        | `source_path` 索引（D-020 重复导入判定）                                                             |
 | 026  | `026_smart_album_parent.ts`       | 智能夹树形嵌套：`photo_smart_albums.parent_id` + 索引（D-022 M4）                                     |
+| 027  | `027_drop_manual_albums.ts`       | 撤销手动相册：DROP `photo_album_items`/`photo_albums`（D-027，维度对齐 Eagle）                        |
 
 > 字段细节以每个 migration 文件为准；本文档 §5 模块说明反映**最新累计**状态。
 > 2026-09-25 对齐前本文档停在 v11/017，且 014–017 三行还是母项目时代的旧条目——已按实际文件重写。

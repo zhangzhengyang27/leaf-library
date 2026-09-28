@@ -8,7 +8,7 @@
  * 持久化：localStorage（渲染端本地 UI 状态，不进 SQLite）。
  * 契约：view 字符串与 index.vue 的视图分支一致
  * （all/favorites/map/trash/duplicates/unsorted/recent/recents/
- *   similar:id/smart:id/album:id/folder:id）。
+ *   similar:id/smart:id/folder:id；album:id 已随 D-027 出库）。
  */
 import { defineStore } from 'pinia'
 import type { AssetKind } from '@shared/assetTypes'
@@ -556,7 +556,7 @@ export const useLibraryTabs = defineStore('libraryTabs', {
       }
     },
 
-    /** 数据驱动标题：相册/智能夹/文件夹更名后由视图层调用 */
+    /** 数据驱动标题：智能夹/文件夹更名后由视图层调用 */
     retitleByViewPrefix(prefix: string, id: string, title: string): void {
       if (this.tab.view === `${prefix}${id}`) {
         this.tab.title = title
@@ -564,7 +564,7 @@ export const useLibraryTabs = defineStore('libraryTabs', {
       this.persist()
     },
 
-    /** 视角失效（相册/智能夹/文件夹被删）：回退图库并截断历史 */
+    /** 视角失效（智能夹/文件夹被删）：回退图库并截断历史 */
     invalidateViews(check: (view: string) => boolean): void {
       if (check(this.tab.view)) {
         this.tab.view = 'all'
@@ -613,7 +613,6 @@ export function defaultTitleForView(view: string): string {
   if (view === 'recents') return '最近查看'
   if (view.startsWith('similar:')) return '相似图片'
   if (view.startsWith('smart:')) return '智能文件夹'
-  if (view.startsWith('album:')) return '相册'
   if (view.startsWith('folder:')) return '文件夹'
   if (view.startsWith('tag:')) return '标签'
   return '图库'

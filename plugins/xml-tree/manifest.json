@@ -1,0 +1,10 @@
+{
+  "id": "xml-tree",
+  "name": "标签树",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "把 HTML / XML / SVG 解析成可折叠的标签树，附元素数、最大深度与标签 Top5 统计",
+  "permissions": [],
+  "formats": ["html", "xml", "svg"]
+}

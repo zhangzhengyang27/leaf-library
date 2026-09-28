@@ -75,7 +75,11 @@ const api: API = {
     updateTag: (id, updates) => ipcRenderer.invoke('tag:updateTag', id, updates),
     deleteTag: (id) => ipcRenderer.invoke('tag:deleteTag', id),
     mergeTags: (ids, name) => ipcRenderer.invoke('tag:mergeTags', ids, name),
-    getTagsByIds: (ids) => ipcRenderer.invoke('tag:getTagsByIds', ids)
+    getTagsByIds: (ids) => ipcRenderer.invoke('tag:getTagsByIds', ids),
+    // 028（Eagle 标签管理复刻）：常用标签 / 群组排序 / 解散群组
+    setTagsStarred: (ids, starred) => ipcRenderer.invoke('tag:setTagsStarred', ids, starred),
+    setGroupsOrder: (orderedIds) => ipcRenderer.invoke('tag:setGroupsOrder', orderedIds),
+    dissolveGroup: (groupId) => ipcRenderer.invoke('tag:dissolveGroup', groupId)
   },
   // 偏好设置 API
   preferences: {
@@ -289,15 +293,6 @@ const api: API = {
       ipcRenderer.invoke('photos:lockSetPassword', password, oldPassword),
     lockVerify: (password) => ipcRenderer.invoke('photos:lockVerify', password),
     lockClear: (password) => ipcRenderer.invoke('photos:lockClear', password),
-    listAlbums: () => ipcRenderer.invoke('photos:listAlbums'),
-    createAlbum: (name) => ipcRenderer.invoke('photos:createAlbum', name),
-    renameAlbum: (id, name) => ipcRenderer.invoke('photos:renameAlbum', id, name),
-    deleteAlbum: (id) => ipcRenderer.invoke('photos:deleteAlbum', id),
-    addPhotosToAlbum: (albumId, photoIds) =>
-      ipcRenderer.invoke('photos:addPhotosToAlbum', albumId, photoIds),
-    removePhotosFromAlbum: (albumId, photoIds) =>
-      ipcRenderer.invoke('photos:removePhotosFromAlbum', albumId, photoIds),
-    getAlbumPhotos: (albumId) => ipcRenderer.invoke('photos:getAlbumPhotos', albumId),
     fontInfo: (filePath) => ipcRenderer.invoke('photos:fontInfo', filePath),
     fontGlyphs: (filePath, codePoints) =>
       ipcRenderer.invoke('photos:fontGlyphs', filePath, codePoints),

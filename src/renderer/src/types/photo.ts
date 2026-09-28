@@ -113,17 +113,6 @@ export interface PhotoFolder {
   icon?: string
 }
 
-/** 手动相册（photo_albums，四期） */
-export interface Album {
-  id: string
-  name: string
-  coverPhotoId: string | null
-  sortOrder: number
-  photoCount: number
-  createdAt: number
-  updatedAt: number
-}
-
 /** 全局标签字典行（tag_tags，见 window.api.tags） */
 export interface TagSummary {
   id: string
@@ -131,6 +120,14 @@ export interface TagSummary {
   color?: string | null
   icon?: string | null
   parentId?: string | null
+  /** 028：群组描述（Eagle group-description，仅群组用） */
+  description?: string | null
+  /** 028：常用标签（Eagle starred，用户手动设定） */
+  starred?: boolean
+  /** 028：群组展示顺序 */
+  sortOrder?: number
+  /** 028：群组标记（Eagle 群组=容器；有此标记的标签按群组渲染，不进 chip 池） */
+  isGroup?: boolean
   usageCount?: number
 }
 

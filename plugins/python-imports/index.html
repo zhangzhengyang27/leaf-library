@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>Python 导入分析</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.chip{display:inline-block;padding:0 7px;margin:0 4px 4px 0;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;font-size:10px;color:#374151;line-height:1.8}
+.chip b{color:#111827;font-weight:600}
+.chip.warn{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.chip.warn b{color:#b91c1c}
+.sec{margin-top:8px}
+.sec .t{font-size:11px;color:#9ca3af;margin-bottom:3px}
+.list{overflow:auto;max-height:170px;border:1px solid #f3f4f6;border-radius:6px}
+.row{display:flex;gap:6px;align-items:baseline;padding:2px 6px;border-bottom:1px dashed #f3f4f6;font-size:11px}
+.row:last-child{border-bottom:none}
+.row .mod{flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.row .how{flex-shrink:0;font-size:9px;color:#6b7280;background:#f3f4f6;border-radius:4px;padding:0 5px;line-height:1.7}
+.row .how.f{background:#eff6ff;color:#1d4ed8}
+.row .n{color:#9ca3af;font-size:10px;flex-shrink:0}
+.main{margin-top:6px;padding:4px 8px;background:#ecfdf5;border:1px solid #a7f3d0;border-radius:6px;color:#047857;font-size:11px;user-select:text}
+.defs{margin-top:8px;color:#9ca3af;font-size:11px}
+.defs b{color:#4b5563;font-weight:600}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+pre{margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+/** 常见标准库模块名集合（~200 常见内置模块猜测口径：顶层名命中即算标准库） */
+var STDLIB_SET={};
+('__future__ abc argparse array ast asyncio atexit base64 binascii bisect builtins bz2 '+
+'calendar cmath cmd code codecs collections colorsys compileall concurrent configparser '+
+'contextlib contextvars copy copyreg cProfile csv ctypes curses dataclasses datetime dbm '+
+'decimal difflib dis doctest email enum errno faulthandler fcntl filecmp fileinput fnmatch '+
+'fractions ftplib functools gc getopt getpass gettext glob graphlib grp gzip hashlib heapq '+
+'hmac html http idlelib imaplib importlib inspect io ipaddress itertools json keyword '+
+'linecache locale logging lzma mailbox marshal math mimetypes mmap multiprocessing numbers '+
+'operator os pathlib pdb pickle pickletools pkgutil platform plistlib poplib pprint '+
+'profile pstats pty pwd py_compile pyclbr pydoc queue quopri random re readline reprlib '+
+'resource rlcompleter runpy sched secrets select selectors shelve shlex shutil signal site '+
+'smtplib socket socketserver sqlite3 ssl stat statistics string stringprep struct subprocess '+
+'sunau symtable sys sysconfig syslog tabnanny tarfile telnetlib tempfile termios textwrap '+
+'threading time timeit tkinter token tokenize tomllib trace traceback tracemalloc tty turtle '+
+'types typing unicodedata unittest urllib uuid venv warnings wave weakref webbrowser wsgiref '+
+'xml xmlrpc zipapp zipfile zipimport zlib zoneinfo').split(/\s+/).forEach(function(s){STDLIB_SET[s]=1})
+
+/** 行尾去 # 注释：感知单双引号字符串（宽松） */
+function stripComment(line){
+  var inS=null
+  for(var i=0;i<line.length;i++){
+    var ch=line[i]
+    if(inS){if(ch==='\\')i++;else if(ch===inS)inS=null;continue}
+    if(ch==='"'||ch==="'"){inS=ch;continue}
+    if(ch==='#')return line.slice(0,i)
+  }
+  return line
+}
+
+/** 三引号字符串内行掩码（docstring 里的 import 不算） */
+function docMask(lines){
+  var mask=[],open=null
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i],hit=!!open
+    for(var j=0;j<line.length;j++){
+      var three=line.substr(j,3)
+      if(three==="'''"||three==='"""'){
+        if(open===three){open=null;j+=2}
+        else if(!open){open=three;j+=2;hit=true}
+      }
+    }
+    mask.push(hit)
+  }
+  return mask
+}
+
+/** 分类：相对导入（. 开头）/ 标准库（内置名集合命中）/ 其余=第三方 */
+function classifyMod(mod){
+  if(/^\./.test(mod))return 'rel'
+  var top=mod.split('.').filter(Boolean)[0]||''
+  return STDLIB_SET[top]?'std':'third'
+}
+
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload
+ try{
+  var app=document.getElementById('app')
+  if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+  var lines=p.content.replace(/\r\n/g,'\n').split('\n')
+  var mask=docMask(lines)
+  // 汇总表：分类 → 模块名 → {how, count, line}（重复导入计数）
+  var groups={std:{},third:{},rel:{}},nImport=0,nFrom=0
+  var mainLine=0,nDef=0,nAsync=0,nClass=0,todo=0
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i]
+    if(/\b(TODO|FIXME)\b/.test(line))todo++
+    if(mask[i])continue
+    var code=stripComment(line).trim()
+    if(!code)continue
+    if(mainLine===0&&code.indexOf('__name__')>=0&&code.indexOf('__main__')>=0)mainLine=i+1
+    var dm=/^(async\s+)?def\s+(\w+)/.exec(code)
+    if(dm){nDef++;if(dm[1])nAsync++;continue}
+    var cm=/^class\s+(\w+)/.exec(code)
+    if(cm){nClass++;continue}
+    var im=/^import\s+(.+)$/.exec(code)
+    if(im){
+      // import a, b as c → 逗号拆分（宽松：不处理括号续行）
+      im[1].split(',').forEach(function(seg){
+        var mm=/^([\w.]+)\s*(?:as\s+\w+)?$/.exec(seg.trim())
+        if(!mm)return
+        nImport++
+        var cat=classifyMod(mm[1])
+        var g=groups[cat][mm[1]]
+        if(g)g.count++
+        else groups[cat][mm[1]]={how:'import',count:1,line:i+1}
+      })
+      continue
+    }
+    var fm=/^from\s+((?:\.*)(?:[\w.]*))\s+import\s+/.exec(code)
+    if(fm){
+      nFrom++
+      var cat2=classifyMod(fm[1])||'rel'
+      var key2=fm[1]===''?'（当前包）':fm[1]
+      var g2=groups[cat2][key2]
+      if(g2)g2.count++
+      else groups[cat2][key2]={how:'from',count:1,line:i+1}
+      continue
+    }
+  }
+  function renderGroup(title,arr){
+    var html='<div class="sec"><div class="t">'+title+'<span style="float:right">'+arr.length+' 个模块</span></div>'
+    if(!arr.length)return html+'<div style="color:#9ca3af;font-size:11px">无</div></div>'
+    html+='<div class="list">'
+    for(var i=0;i<arr.length;i++){
+      var it=arr[i]
+      html+='<div class="row"><span class="mod">'+escapeHtml(it.mod)+'</span>'+
+        '<span class="how'+(it.how==='from'?' f':'')+'">'+it.how+'</span>'+
+        '<span class="n">第 '+it.line+' 行'+(it.count>1?' · ×'+it.count:'')+'</span></div>'
+    }
+    return html+'</div></div>'
+  }
+  function toList(obj){
+    var arr=[]
+    for(var k in obj)arr.push({mod:k,how:obj[k].how,count:obj[k].count,line:obj[k].line})
+    arr.sort(function(a,b){return a.mod.localeCompare(b.mod)})
+    return arr
+  }
+  var stdArr=toList(groups.std),thirdArr=toList(groups.third),relArr=toList(groups.rel)
+  var nStd=0,nThird=0
+  stdArr.forEach(function(x){nStd+=x.count})
+  thirdArr.forEach(function(x){nThird+=x.count})
+  var html='<div class="meta">'+escapeHtml(p.fileName||'')+' · import '+nImport+' 条 · from '+nFrom+' 条 · 共 '+lines.length+' 行</div>'
+  html+='<span class="chip">标准库 <b>×'+nStd+'</b></span>'+
+    '<span class="chip">第三方 <b>×'+nThird+'</b></span>'+
+    '<span class="chip">相对导入 <b>×'+relArr.length+'</b></span>'+
+    '<span class="chip">def <b>×'+nDef+'</b></span>'+
+    '<span class="chip">class <b>×'+nClass+'</b></span>'+
+    '<span class="chip'+(todo?' warn':'')+'">TODO/FIXME <b>×'+todo+'</b></span>'
+  html+=renderGroup('标准库（内置模块猜测）',stdArr)
+  html+=renderGroup('第三方',thirdArr)
+  html+=renderGroup('相对导入',relArr)
+  html+=mainLine
+    ?'<div class="main">检测到 __main__ 守卫：if __name__ == "__main__"（第 '+mainLine+' 行）</div>'
+    :'<div class="main" style="background:#f9fafb;border-color:#e5e7eb;color:#9ca3af">未检测到 __main__ 守卫（if __name__ == "__main__"）</div>'
+  html+='<div class="defs">定义：<b>'+nDef+'</b> 个函数'+(nAsync?'（含 '+nAsync+' 个 async）':'')+' · <b>'+nClass+'</b> 个类</div>'
+  app.className=''
+  app.innerHTML=html
+ }catch(err){
+  // 兜底：原文展示 + 错误提示，不能白屏
+  var app2=document.getElementById('app');app2.className=''
+  app2.innerHTML='<div class="err">解析失败：'+escapeHtml(String((err&&err.message)||err))+'</div>'+
+   (p&&typeof p.content==='string'?'<pre>'+escapeHtml(p.content)+'</pre>':'')
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

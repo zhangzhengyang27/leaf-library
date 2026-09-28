@@ -1,0 +1,10 @@
+{
+  "id": "shell-outline",
+  "name": "Shell 脚本概览",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "概览 Shell 脚本：shebang 与函数清单、危险命令高亮（rm -rf/sudo/管道执行/chmod 777）与变量引用计数",
+  "permissions": [],
+  "formats": ["sh", "bash", "zsh"]
+}

@@ -76,6 +76,19 @@ function pick(item: MenuItem): void {
   onPick?.(item.key)
 }
 
+/** 鼠标点击行（028 审查）：子菜单父项 = 展开飞出（与 hover 同语义），
+ *  旧行为走 pick() 会「关菜单 + onPick(无分支 key)」= 点了没反应 */
+function onRowClick(item: MenuItem, e: MouseEvent): void {
+  if (item.divider || item.disabled) return
+  if (item.children) {
+    const anchor = e.currentTarget as HTMLElement | null
+    activeIndex.value = visibleItems().findIndex((p) => p.item.key === item.key)
+    if (anchor) openSubmenu(item, anchor)
+    return
+  }
+  pick(item)
+}
+
 /** 色点行（Eagle 文件夹菜单）：点某个圆点 → 以 `color:<key>` 回调 */
 function pickColor(item: MenuItem, dot: { key: string; hex: string }): void {
   const onPick = state.value?.onPick
@@ -305,7 +318,7 @@ onBeforeUnmount(() => {
             pair.item.danger ? 'text-danger' : 'text-fg-primary',
             activeIndex === pair.index ? 'is-active' : ''
           ]"
-          @click="pick(pair.item)"
+          @click="onRowClick(pair.item, $event)"
           @mouseenter="onRowEnter(pair.item, $event)"
         >
           <AppIcon

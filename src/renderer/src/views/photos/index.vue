@@ -195,14 +195,6 @@
       @saved="data.loadSmartAlbums"
     />
 
-    <!-- 相册（新建/加入） -->
-    <AlbumModal
-      v-if="albumModalOpen"
-      :photo-ids-to-add="selectedIds"
-      @close="albumModalOpen = false"
-      @changed="data.loadAlbums"
-    />
-
     <!-- 文件夹（新建/归组；G10 支持预选父级） -->
     <FolderModal
       v-if="folderModalOpen"
@@ -275,7 +267,6 @@ import BookmarkModal from '@views/photos/components/BookmarkModal.vue'
 import LockModal from '@views/photos/components/LockModal.vue'
 import DuplicateGroupsView from '@views/photos/components/DuplicateGroupsView.vue'
 import PhotoMapView from '@views/photos/components/PhotoMapView.vue'
-import AlbumModal from '@views/photos/components/AlbumModal.vue'
 import FolderModal from '@views/photos/components/FolderModal.vue'
 import BatchRenameModal from '@views/photos/components/BatchRenameModal.vue'
 import ConvertModal from '@views/photos/components/ConvertModal.vue'
@@ -333,7 +324,6 @@ const {
   locked,
   unlockPassword,
   smartAlbumModalOpen,
-  albumModalOpen,
   folderModalOpen,
   batchRenameOpen,
   bookmarkModalOpen,
@@ -597,7 +587,6 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
   // 十八轮 P3 全部补齐：在其它应用打开…、缩略图背景（平铺 4 项）、简报模式 F5、
   // 打开文件所在的位置（第三方文件管理器动态列出）、复制…（来源 URL/注释）；
   // …更多▸（置顶/封面/壁纸/收藏/评分/移出）收敛为平铺区（UContextMenu 无层级）；
-  // 加入相册… 为 Leaf 扩展保留（Eagle 无相册）。
   const isSingle = ids.length === 1
   // kind 感知菜单：图片专属项只在「所选全部是位图」时出现——Markdown/文本/视频
   // 等类型不需要看到反向图搜/设为壁纸/转换为/黑白预览这些图片动作（Eagle 同款按
@@ -649,7 +638,6 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
       label: ids.length > 1 ? `用所选项目新建文件夹（${ids.length} 项）` : '用所选项目新建文件夹',
       icon: 'context-menu/ic-folder-new-with-selection'
     },
-    { key: 'add-album', label: '加入相册…', icon: 'ic_box' },
     { key: 'move-lib', label: '添加至其它资源库…', icon: 'context-menu/ic-library-add-to' },
     { key: 'export', label: '导出…', icon: 'context-menu/ic-export' },
     { key: 'export-csv', label: '导出 CSV…', icon: 'context-menu/ic-export-csv' },
@@ -863,14 +851,7 @@ function openPhotoContextMenu({ photo, x, y }: { photo: Photo; x: number; y: num
     },
     { key: 'rate-0', label: '清除评分', disabled: byIds(ids).every((p) => p.rating === 0) }
   ]
-  // 相册/文件夹上下文：移出操作
-  if (filters.activeAlbum.value) {
-    items.push({
-      key: 'remove-from-album',
-      label: `移出「${filters.activeAlbum.value.name}」`,
-      icon: 'ic-modal-close'
-    })
-  }
+  // 文件夹上下文：移出操作
   if (filters.activeFolder.value) {
     items.push({
       key: 'remove-from-folder',
@@ -1119,8 +1100,6 @@ async function handleMenuAction(rawKey: string, ids: string[], photo: Photo): Pr
       // 父项走 auto（主进程按屏判定），子项强制某种策略
       const mode = key === 'set-wallpaper' ? 'auto' : key.slice('wallpaper-'.length)
       await wallpaper.set(photo, mode as WallpaperMode)
-    } else if (key === 'add-album') {
-      albumModalOpen.value = true
     } else if (key === 'add-folder') {
       actions.openFolderModal()
     } else if (key === 'export') {
@@ -1224,8 +1203,6 @@ async function handleMenuAction(rawKey: string, ids: string[], photo: Photo): Pr
         const ok = await window.api.system.revealInApp(photo.filePath, fm.appPath)
         if (!ok) useToast().error('打开失败', { description: `无法在 ${fmName} 中打开` })
       }
-    } else if (key === 'remove-from-album' && filters.activeAlbum.value) {
-      actions.removeSelectedFromAlbum(filters.activeAlbum.value.id, ids)
     } else if (key === 'remove-from-folder' && filters.activeFolder.value) {
       actions.removeSelectedFromFolder(filters.activeFolder.value.id, ids)
     } else if (key === 'delete') {
@@ -1388,7 +1365,6 @@ keyboard.bind({
 function anyModalOpen(): boolean {
   return (
     folderModalOpen.value ||
-    albumModalOpen.value ||
     batchRenameOpen.value ||
     smartAlbumModalOpen.value ||
     bookmarkModalOpen.value ||
@@ -1418,18 +1394,12 @@ watch(previewPhoto, (p) => {
 })
 
 // 视图引用失效时由 store.invalidateViews 兜底回图库；
-// 这里保证当前视图标题随数据（相册/文件夹/智能夹真名）同步
+// 这里保证当前视图标题随数据（文件夹/智能夹真名）同步
 watch(
-  () => [
-    filters.activeAlbum.value?.name,
-    filters.activeFolder.value?.name,
-    filters.activeSmartAlbum.value?.name
-  ],
+  () => [filters.activeFolder.value?.name, filters.activeSmartAlbum.value?.name],
   () => {
     const view = tabs.activeView
-    if (view.startsWith('album:') && filters.activeAlbum.value) {
-      tabs.syncTitle(filters.activeAlbum.value.name)
-    } else if (view.startsWith('folder:') && filters.activeFolder.value) {
+    if (view.startsWith('folder:') && filters.activeFolder.value) {
       tabs.syncTitle(filters.activeFolder.value.name)
     } else if (view.startsWith('smart:') && filters.activeSmartAlbum.value) {
       tabs.syncTitle(filters.activeSmartAlbum.value.name)
@@ -1452,7 +1422,6 @@ const loadAll = async (): Promise<void> => {
   await Promise.all([
     data.loadPhotos(),
     data.loadSmartAlbums(),
-    data.loadAlbums(),
     data.loadFolders(),
     data.loadRecycleBin()
   ])
@@ -1512,7 +1481,6 @@ onUnmounted(() => {
   for (const key of [
     'tagManagerOpen',
     'smartAlbumModalOpen',
-    'albumModalOpen',
     'folderModalOpen',
     'batchRenameOpen',
     'bookmarkModalOpen',

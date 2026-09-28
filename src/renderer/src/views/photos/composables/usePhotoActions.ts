@@ -19,7 +19,6 @@ const toast = useToast()
 // ── 弹窗开关（模板渲染用）──
 const tagManagerOpen = ref(false)
 const smartAlbumModalOpen = ref(false)
-const albumModalOpen = ref(false)
 const folderModalOpen = ref(false)
 const batchRenameOpen = ref(false)
 const bookmarkModalOpen = ref(false)
@@ -302,78 +301,6 @@ function build() {
         } finally {
           data.loading.value = false
         }
-      }
-    )
-  }
-
-  // ── 相册 ──
-
-  function openAlbumModal(): void {
-    albumModalOpen.value = true
-  }
-
-  /** 把素材加入既有相册（右键/拖拽落点；相册在 AlbumModal 中新建） */
-  function addToAlbum(albumId: string, photoIds: string[]): void {
-    if (photoIds.length === 0) return
-    void window.api.photos
-      .addPhotosToAlbum(albumId, photoIds)
-      .then(() => {
-        data.loadAlbums()
-        // 加入相册/文件夹后变为「已分类」，刷新固定入口的未分类池
-        data.loadUnsorted()
-        // 正在看这个相册时同步内容池，否则新加入的素材不出现
-        void data.refreshAlbumPhotos(albumId)
-      })
-      .catch((error: Error) => {
-        toast.error('加入相册失败', { description: error.message })
-      })
-  }
-
-  function renameAlbumById(albumId: string, currentName: string): void {
-    requestPrompt({
-      title: '重命名相册',
-      label: '新的相册名称',
-      initialValue: currentName,
-      onSubmit: async (name) => {
-        const trimmed = name.trim()
-        if (!trimmed || trimmed === currentName) return
-        await window.api.photos.renameAlbum(albumId, trimmed)
-        await data.loadAlbums()
-        tabs.retitleByViewPrefix('album:', albumId, trimmed)
-        toast.success('相册已重命名')
-      }
-    })
-  }
-
-  function deleteAlbumById(albumId: string, name: string): void {
-    requestConfirm(
-      '删除相册',
-      `确定删除「${name}」吗？\n\n只删除相册本身，不会删除其中的图片。`,
-      '删除',
-      async () => {
-        await window.api.photos.deleteAlbum(albumId)
-        tabs.invalidateViews((v) => v === `album:${albumId}`)
-        await data.loadAlbums()
-        toast.success('相册已删除')
-      }
-    )
-  }
-
-  function removeSelectedFromAlbum(albumId: string, ids: string[]): void {
-    if (ids.length === 0) return
-    const album = data.albums.value.find((a) => a.id === albumId)
-    requestConfirm(
-      '移出相册',
-      `把 ${ids.length} 张图片从「${album?.name ?? '相册'}」移出吗？\n\n图片保留在图库中，仅移出本相册。`,
-      '移出',
-      async () => {
-        await window.api.photos.removePhotosFromAlbum(albumId, ids)
-        await data.loadAlbums()
-        // 移出相册后变回「未分类」，刷新固定入口的未分类池
-        await data.loadUnsorted()
-        // 否则「已移出相册」提示出来了、卡片却还留在网格里
-        await data.refreshAlbumPhotos(albumId)
-        toast.success('已移出相册')
       }
     )
   }
@@ -785,7 +712,6 @@ function build() {
     // 弹窗开关
     tagManagerOpen,
     smartAlbumModalOpen,
-    albumModalOpen,
     folderModalOpen,
     folderModalParentId,
     folderSettingsId,
@@ -814,12 +740,6 @@ function build() {
     handleClearRecycleBin,
     handleRemoveAll,
     SIMILARITY_THRESHOLD,
-    // 相册
-    openAlbumModal,
-    addToAlbum,
-    renameAlbumById,
-    deleteAlbumById,
-    removeSelectedFromAlbum,
     // 文件夹
     openFolderModal,
     renamingFolderId,

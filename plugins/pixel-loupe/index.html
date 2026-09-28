@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>像素放大镜</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+#work{position:relative}
+#stage{overflow:auto;max-height:400px;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa}
+#view{display:block;width:100%;height:auto;cursor:crosshair}
+#loupe{position:absolute;top:0;left:0;width:144px;height:144px;border:1px solid #9ca3af;border-radius:6px;
+  pointer-events:none;display:none;box-shadow:0 2px 8px rgba(0,0,0,.25);image-rendering:pixelated}
+#map{position:absolute;top:4px;right:4px;border:1px solid #9ca3af;border-radius:4px;
+  pointer-events:none;opacity:.9;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.2)}
+#readout{margin-top:6px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;user-select:text;
+  background:#f9fafb;border:1px solid #e5e7eb;border-radius:5px;padding:3px 8px;min-height:16px}
+.hint{margin-top:4px;color:#9ca3af;font-size:11px}
+</style></head>
+<body>
+<div id="app" class="empty">等待素材数据…</div>
+<div id="work" style="display:none">
+  <div id="stage"><canvas id="view"></canvas></div>
+  <canvas id="loupe" width="144" height="144"></canvas>
+  <canvas id="map"></canvas>
+  <div id="readout">移动鼠标检视像素</div>
+  <div class="hint">放大块每源像素 8 × 8 格 · 右上角小地图红框为当前视区</div>
+</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var LOUPE_CELL=8;   // 放大块：每源像素 8×8 设备格
+var LOUPE_SRC=18;   // 放大块覆盖的源像素边长（18×8=144）
+var view=document.getElementById('view'),stage=document.getElementById('stage');
+var loupe=document.getElementById('loupe'),lctx=loupe.getContext('2d');
+var map=document.getElementById('map'),mctx=map.getContext('2d');
+var px=null; // 全图 ImageData（供 HEX/RGB 读数）；taint 时为 null
+function hex2(v){var s=v.toString(16);return s.length<2?'0'+s:s}
+/** 在放大块上叠十字准星（双描边：暗底白线） */
+function drawCrosshair(){
+  var c=LOUPE_SRC/2*LOUPE_CELL;
+  function line(x1,y1,x2,y2,color,lw){
+    lctx.beginPath();lctx.moveTo(x1,y1);lctx.lineTo(x2,y2);
+    lctx.strokeStyle=color;lctx.lineWidth=lw;lctx.stroke()}
+  line(0,c,144,c,'rgba(0,0,0,.45)',3);line(c,0,c,144,'rgba(0,0,0,.45)',3);
+  line(0,c,144,c,'rgba(255,255,255,.9)',1);line(c,0,c,144,'rgba(255,255,255,.9)',1);
+  // 中心像素框
+  lctx.strokeStyle='rgba(255,255,255,.95)';lctx.lineWidth=1;
+  lctx.strokeRect(c-LOUPE_CELL/2,c-LOUPE_CELL/2,LOUPE_CELL,LOUPE_CELL);
+  lctx.strokeStyle='rgba(0,0,0,.6)';
+  lctx.strokeRect(c-LOUPE_CELL/2-1,c-LOUPE_CELL/2-1,LOUPE_CELL+2,LOUPE_CELL+2);
+}
+function drawLoupe(sx,sy){
+  lctx.imageSmoothingEnabled=false;
+  lctx.fillStyle='#111827';lctx.fillRect(0,0,144,144);
+  lctx.drawImage(view,sx-LOUPE_SRC/2,sy-LOUPE_SRC/2,LOUPE_SRC,LOUPE_SRC,0,0,144,144);
+  // 淡格线：让 8×8 格子肉眼可辨
+  lctx.strokeStyle='rgba(255,255,255,.08)';lctx.lineWidth=1;
+  lctx.beginPath();
+  for(var i=0;i<=LOUPE_SRC;i++){
+    lctx.moveTo(i*LOUPE_CELL,0);lctx.lineTo(i*LOUPE_CELL,144);
+    lctx.moveTo(0,i*LOUPE_CELL);lctx.lineTo(144,i*LOUPE_CELL);
+  }
+  lctx.stroke();
+  drawCrosshair();
+}
+/** 右上角整图小地图：缩略图 + 当前视区红框 + 光标点 */
+function updateMap(sx,sy){
+  if(!view.width)return;
+  var mw=96,mh=Math.max(8,Math.round(mw*view.height/view.width));
+  map.width=mw;map.height=mh;
+  mctx.drawImage(view,0,0,mw,mh);
+  var rect=view.getBoundingClientRect();
+  if(rect.width>0){
+    var srcPerCss=view.width/rect.width;
+    var vx=stage.scrollLeft*srcPerCss,vy=stage.scrollTop*srcPerCss;
+    var vw=stage.clientWidth*srcPerCss,vh=stage.clientHeight*srcPerCss;
+    var k=mw/view.width;
+    mctx.strokeStyle='#ef4444';mctx.lineWidth=1;
+    mctx.strokeRect(vx*k-0.5,vy*k-0.5,vw*k,vh*k);
+  }
+  if(sx!=null){ // 光标点
+    mctx.fillStyle='#ef4444';
+    mctx.fillRect(sx/view.width*mw-1,sy/view.height*mh-1,2,2);
+  }
+}
+view.addEventListener('mousemove',function(e){
+  if(!view.width)return;
+  var rect=view.getBoundingClientRect();
+  var sx=Math.min(view.width-1,Math.max(0,Math.floor((e.clientX-rect.left)*view.width/rect.width)));
+  var sy=Math.min(view.height-1,Math.max(0,Math.floor((e.clientY-rect.top)*view.height/rect.height)));
+  drawLoupe(sx,sy);
+  // 放大块跟随光标（夹在面板内，不遮小地图）
+  var work=document.getElementById('work');
+  loupe.style.display='';
+  loupe.style.left=Math.min(e.clientX-rect.left+14,work.clientWidth-152)+'px';
+  loupe.style.top=Math.min(e.clientY-rect.top+14,work.clientHeight-152)+'px';
+  var ro=document.getElementById('readout');
+  if(px){
+    var i=(sy*view.width+sx)*4;
+    ro.textContent='HEX #'+hex2(px.data[i])+hex2(px.data[i+1])+hex2(px.data[i+2])+
+      ' · RGB '+px.data[i]+','+px.data[i+1]+','+px.data[i+2]+' · 坐标 '+sx+','+sy;
+  }else{
+    ro.textContent='像素读取受限（跨域限制），坐标 '+sx+','+sy;
+  }
+  updateMap(sx,sy);
+});
+view.addEventListener('mouseleave',function(){
+  loupe.style.display='none';
+  document.getElementById('readout').textContent='移动鼠标检视像素';
+  updateMap(null,null);
+});
+stage.addEventListener('scroll',function(){updateMap(null,null)});
+function show(msg){
+  var app=document.getElementById('app');
+  app.style.display='';app.textContent=msg;
+  document.getElementById('work').style.display='none';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){show('未选中素材');return}
+ if(p.kind!=='image'){show('仅图片素材支持像素检视');return}
+ var img=new Image();img.crossOrigin='anonymous';
+ img.onload=function(){
+   var w=img.naturalWidth,h=img.naturalHeight;
+   view.width=w;view.height=h;
+   var ctx=view.getContext('2d');
+   ctx.imageSmoothingEnabled=false;
+   ctx.drawImage(img,0,0,w,h);
+   try{px=ctx.getImageData(0,0,w,h)}catch(err){px=null} // taint 兜底：读数降级，放大块仍可用
+   document.getElementById('app').style.display='none';
+   document.getElementById('work').style.display='';
+   loupe.style.display='none';
+   updateMap(null,null);
+ };
+ img.onerror=function(){show('缩略图加载失败')};
+ img.src=p.bigThumbUrl||p.thumbUrl;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script>
+</body>
+</html>

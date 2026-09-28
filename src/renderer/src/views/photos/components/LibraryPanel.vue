@@ -7,7 +7,6 @@
  * → 固定项：全部 / 未分类 / 未标签 / 随机模式 / 标签管理 / 回收站（资源社区为有意差异不做）
  * → 智能文件夹组（组头无计数；预置行=收藏/最近添加/最近查看；＋常驻）
  * → 文件夹组（组头带总数+折叠；树行带 ▸ 逐行折叠、计数右对齐）
- * → 相册组（Leaf 扩展组，Eagle 无手动相册——功能依赖侧栏入口，样式与其余组一致）
  * → 底部筛选框。
  * Eagle 侧栏无标签组（标签归「标签管理」页），三轮已移除。
  */
@@ -99,7 +98,7 @@ onMounted(() => {
   void data.loadRecent()
 })
 
-// ── 小节：智能文件夹（预置行 + 用户智能夹）/ 文件夹 / 相册 ──
+// ── 小节：智能文件夹（预置行 + 用户智能夹）/ 文件夹 ──
 
 // ── M4 嵌套智能夹（D-022）：照文件夹树范式（G7 逐行折叠 + 展开态持久化）──
 // 计数口径沿用智能夹计数通道：父级行不显示计数徽标（现有智能夹行本就无计数），
@@ -177,16 +176,6 @@ const flatSmartItems = computed<FlatSmart[]>(() => {
   }
   return out
 })
-
-const albumItems = computed<TreeItem[]>(() =>
-  data.albums.value.map((a) => ({
-    key: `album:${a.id}`,
-    view: `album:${a.id}`,
-    title: a.name,
-    icon: 'ic_box',
-    count: a.photoCount
-  }))
-)
 
 /** 二十四轮：Eagle 文件夹图标为统一灰蓝色（不再按名称派生彩虹色）；
  *  用户在右键菜单设置的颜色（f.color）优先 */
@@ -403,24 +392,6 @@ function openItem(item: TreeItem): void {
 /** 点击库名回「全部」已并入「全部」固定项（Eagle：库名行=切换菜单） */
 
 // ── 右键菜单 ──
-
-function openAlbumMenu(item: TreeItem, e: MouseEvent): void {
-  menu.open(
-    e.clientX,
-    e.clientY,
-    [
-      { key: 'open', label: '打开', icon: 'ic-arrow-right' },
-      { key: 'd1', divider: true },
-      { key: 'rename', label: '重命名', icon: 'context-menu/ic-rename' },
-      { key: 'delete', label: '删除相册', icon: 'context-menu/ic-file-move-trash', danger: true }
-    ],
-    (key) => {
-      if (key === 'open') openItem(item)
-      else if (key === 'rename') actions.renameAlbumById(item.key.slice(6), item.title)
-      else if (key === 'delete') actions.deleteAlbumById(item.key.slice(6), item.title)
-    }
-  )
-}
 
 /** G10：文件夹右键对齐 Eagle（打开/在新窗口中打开/重命名/改变颜色/新建/删除；
  *  「在访达中显示」不实现——Leaf 文件夹为虚拟分组，无磁盘位置） */
@@ -1125,8 +1096,6 @@ function loadSidebarVis(): Record<string, boolean> {
   }
 }
 function vis(key: string): boolean {
-  // 相册组为 Leaf 扩展（Eagle 无），默认隐藏
-  if (key === 'albumGroup') return sidebarVis.value['albumGroup'] === true
   return sidebarVis.value[key] !== false
 }
 // 具名处理函数：匿名函数无法 removeEventListener（路由无 keep-alive，
@@ -1299,7 +1268,7 @@ function openTrashMenu(e: MouseEvent): void {
   )
 }
 
-// ── 拖拽落点（相册/文件夹）──
+// ── 拖拽落点（文件夹）──
 
 const dragOverKey = ref<string | null>(null)
 
@@ -1327,9 +1296,7 @@ function onDrop(item: TreeItem, e: DragEvent): void {
     return
   }
   if (ids.length === 0) return
-  if (item.view.startsWith('album:')) {
-    actions.addToAlbum(item.key.slice(6), ids)
-  } else if (item.view.startsWith('folder:')) {
+  if (item.view.startsWith('folder:')) {
     actions.addToFolder(item.key.slice(7), ids)
   }
 }
@@ -1509,53 +1476,6 @@ function onDrop(item: TreeItem, e: DragEvent): void {
         </template>
       </div>
 
-      <!-- 相册（Leaf 扩展组：Eagle 无手动相册，功能依赖侧栏入口） -->
-      <div v-if="vis('albumGroup')" class="mb-1">
-        <div class="group flex items-center pl-2 pr-1 pb-1">
-          <span class="select-none text-xs font-medium text-fg-muted"
-            >相册 ({{ albumItems.length }})</span
-          >
-          <button
-            type="button"
-            class="flex size-4 items-center justify-center rounded-sm text-fg-muted opacity-0 transition-all duration-fast group-hover:opacity-100 hover:text-fg-primary"
-            :aria-expanded="!collapsedGroups.has('album')"
-            :aria-label="collapsedGroups.has('album') ? '展开相册' : '折叠相册'"
-            @click="toggleGroup('album')"
-          >
-            <AppIcon
-              icon="ic-arrow-right"
-              :size="12"
-              :class="collapsedGroups.has('album') ? '' : 'rotate-90'"
-            />
-          </button>
-          <div class="min-w-2 flex-1" />
-          <UTooltip content="新建相册" position="right">
-            <button
-              type="button"
-              class="flex size-5 items-center justify-center rounded-sm text-fg-muted opacity-0 transition-all duration-fast group-hover:opacity-100 hover:bg-surface-hover hover:text-fg-primary"
-              aria-label="新建相册"
-              @click="actions.openAlbumModal()"
-            >
-              <AppIcon icon="ic-sidebar-add" :size="13" />
-            </button>
-          </UTooltip>
-        </div>
-        <template v-if="!collapsedGroups.has('album')">
-          <PanelRow
-            v-for="item in albumItems.filter((i) => matchesFilter(i.title))"
-            :key="item.key"
-            :item="item"
-            :active="isActive(item.view)"
-            :drop-target="true"
-            :drag-over="dragOverKey === item.key"
-            @open="openItem(item)"
-            @contextmenu="openAlbumMenu(item, $event)"
-            @drag-over="dragOverKey = item.key"
-            @drag-leave="dragOverKey === item.key && (dragOverKey = null)"
-            @drop="onDrop(item, $event)"
-          />
-        </template>
-      </div>
     </div>
 
     <!-- D-013 底部筛选框（对齐 Eagle 侧栏筛选） -->

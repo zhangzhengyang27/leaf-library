@@ -19,7 +19,14 @@ export interface TagRow {
   color: string | null
   icon: string | null
   parent_id: string | null
+  description: string | null
   usage_count: number
+  /** 028：常用标签（Eagle starred，用户手动设定） */
+  starred: number
+  /** 028：群组展示顺序（Eagle 群组行拖拽排序落库） */
+  sort_order: number
+  /** 028：群组标记（Eagle 群组=容器，is_group 行不进 chip 池） */
+  is_group: number
   created_at: number
   updated_at: number
   deleted_at: number | null
@@ -43,8 +50,7 @@ export class TagRepository {
   getById(id: string): TagRow | null {
     return (
       (this.db.prepare('SELECT * FROM tag_tags WHERE id = ? AND deleted_at IS NULL').get(id) as
-        | TagRow
-        | undefined) ?? null
+        TagRow | undefined) ?? null
     )
   }
 
@@ -76,7 +82,10 @@ export class TagRepository {
    * 新建标签。同名（不区分大小写）已存在则返回已有行。
    * name 必填，自动 trim。
    */
-  create(name: string, opts?: { color?: string; icon?: string; parentId?: string }): TagRow {
+  create(
+    name: string,
+    opts?: { color?: string; icon?: string; parentId?: string; isGroup?: boolean }
+  ): TagRow {
     const trimmed = name.trim()
     if (!trimmed) throw new Error('[TagRepository] name is required')
     // 审查补齐：与 update 对齐，父不存在直接报错，不写悬挂引用
@@ -88,12 +97,20 @@ export class TagRepository {
     if (existing) return existing
 
     const ts = now()
+    // 028：群组行拖拽排序的落点——新群组排到末尾
+    const maxOrder = this.db
+      .prepare('SELECT COALESCE(MAX(sort_order), -1) AS m FROM tag_tags WHERE deleted_at IS NULL')
+      .get() as { m: number }
     const row: TagRow = {
       id: uuidv4(),
       name: trimmed,
       color: opts?.color ?? null,
       icon: opts?.icon ?? null,
       parent_id: opts?.parentId ?? null,
+      description: null,
+      starred: 0,
+      sort_order: maxOrder.m + 1,
+      is_group: opts?.isGroup ? 1 : 0,
       usage_count: 0,
       created_at: ts,
       updated_at: ts,
@@ -101,14 +118,30 @@ export class TagRepository {
     }
     this.db
       .prepare(
-        `INSERT INTO tag_tags (id, name, color, icon, parent_id, created_at, updated_at, deleted_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`
+        `INSERT INTO tag_tags (id, name, color, icon, parent_id, description, starred, sort_order, is_group, created_at, updated_at, deleted_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`
       )
-      .run(row.id, row.name, row.color, row.icon, row.parent_id, row.created_at, row.updated_at)
+      .run(
+        row.id,
+        row.name,
+        row.color,
+        row.icon,
+        row.parent_id,
+        row.description,
+        row.starred,
+        row.sort_order,
+        row.is_group,
+        row.created_at,
+        row.updated_at
+      )
     return row
   }
 
-  /** 更新（name 重复返回 null；color/icon 传 null 表示不变更；parentId 传 null 表示不变更、传空串表示清除） */
+  /**
+   * 更新（name 重复返回 null；color/icon 传 null 表示不变更；parentId 传 null 表示不变更、传空串表示清除；
+   * 028：description 传 undefined 不变更、传 '' / null 清除；starred/sortOrder/isGroup 传 undefined 不变更；
+   * 挂父级成功时父级自动升位为群组——「有成员即群组」的容器语义兜底）
+   */
   update(
     id: string,
     updates: {
@@ -116,6 +149,10 @@ export class TagRepository {
       color?: string | null
       icon?: string | null
       parentId?: string | null
+      description?: string | null
+      starred?: boolean
+      sortOrder?: number
+      isGroup?: boolean
     }
   ): TagRow | null {
     const existing = this.getById(id)
@@ -150,38 +187,57 @@ export class TagRepository {
       }
     }
 
-    const ts = now()
-    if (parentTouched) {
-      this.db
-        .prepare(
-          `UPDATE tag_tags
-           SET name = COALESCE(?, name),
-               color = COALESCE(?, color),
-               icon = COALESCE(?, icon),
-               parent_id = ?,
-               updated_at = ?
-           WHERE id = ? AND deleted_at IS NULL`
-        )
-        .run(
-          updates.name ?? null,
-          updates.color ?? null,
-          updates.icon ?? null,
-          nextParentId,
-          ts,
-          id
-        )
-    } else {
-      this.db
-        .prepare(
-          `UPDATE tag_tags
-           SET name = COALESCE(?, name),
-               color = COALESCE(?, color),
-               icon = COALESCE(?, icon),
-               updated_at = ?
-           WHERE id = ? AND deleted_at IS NULL`
-        )
-        .run(updates.name ?? null, updates.color ?? null, updates.icon ?? null, ts, id)
+    // 028（Eagle 标签管理复刻）：按提供的字段拼 SET——color/icon 保持旧契约
+    // （null = 不变更），description/starred/sortOrder 以 undefined 区分不变更
+    const sets: string[] = []
+    const params: Array<string | number | null> = []
+    if (updates.name !== undefined) {
+      sets.push('name = ?')
+      params.push(updates.name)
     }
+    if (updates.color) {
+      sets.push('color = ?')
+      params.push(updates.color)
+    }
+    if (updates.icon) {
+      sets.push('icon = ?')
+      params.push(updates.icon)
+    }
+    if (updates.description !== undefined) {
+      sets.push('description = ?')
+      const d = typeof updates.description === 'string' ? updates.description.trim() : null
+      params.push(d || null)
+    }
+    if (updates.starred !== undefined) {
+      sets.push('starred = ?')
+      params.push(updates.starred ? 1 : 0)
+    }
+    if (updates.sortOrder !== undefined) {
+      sets.push('sort_order = ?')
+      params.push(updates.sortOrder)
+    }
+    if (updates.isGroup !== undefined) {
+      sets.push('is_group = ?')
+      params.push(updates.isGroup ? 1 : 0)
+    }
+    if (parentTouched) {
+      sets.push('parent_id = ?')
+      params.push(nextParentId)
+      // 收下成员的行自动升位为群组（Eagle：拖标签入组后该组即存在于侧栏）
+      if (nextParentId) {
+        this.db
+          .prepare(`UPDATE tag_tags SET is_group = 1 WHERE id = ? AND is_group = 0`)
+          .run(nextParentId)
+      }
+    }
+    if (sets.length === 0) return existing
+
+    const ts = now()
+    sets.push('updated_at = ?')
+    params.push(ts, id)
+    this.db
+      .prepare(`UPDATE tag_tags SET ${sets.join(', ')} WHERE id = ? AND deleted_at IS NULL`)
+      .run(...params)
     return this.getById(id)
   }
 
@@ -211,6 +267,57 @@ export class TagRepository {
     this.db
       .prepare(`UPDATE tag_tags SET usage_count = MAX(0, usage_count + ?) WHERE id = ?`)
       .run(delta, id)
+  }
+
+  /** 028：批量设常用（Eagle starred——拖拽入「常用标签」/右键菜单同源） */
+  setStarred(ids: string[], starred: boolean): void {
+    if (ids.length === 0) return
+    const ts = now()
+    const tx = this.db.transaction(() => {
+      for (const chunk of chunkIds(ids)) {
+        const placeholders = chunk.map(() => '?').join(',')
+        this.db
+          .prepare(
+            `UPDATE tag_tags SET starred = ?, updated_at = ? WHERE id IN (${placeholders}) AND deleted_at IS NULL`
+          )
+          .run(starred ? 1 : 0, ts, ...chunk)
+      }
+    })
+    tx()
+  }
+
+  /** 028：群组展示顺序整体落库（Eagle 群组行拖拽排序；数组序 = sort_order） */
+  setGroupsOrder(orderedIds: string[]): void {
+    if (orderedIds.length === 0) return
+    const ts = now()
+    const tx = this.db.transaction(() => {
+      for (const [i, id] of orderedIds.entries()) {
+        this.db
+          .prepare(`UPDATE tag_tags SET sort_order = ?, updated_at = ? WHERE id = ?`)
+          .run(i, ts, id)
+      }
+    })
+    tx()
+  }
+
+  /**
+   * 028：解散群组（Eagle context.tagGroup.remove 语义）——成员标签改挂顶层
+   * 保留全部素材关联；群组行降级为普通标签（is_group=0，自身素材关联不动）。
+   */
+  dissolveGroup(groupId: string): boolean {
+    const group = this.getById(groupId)
+    if (!group) return false
+    const ts = now()
+    const tx = this.db.transaction(() => {
+      this.db
+        .prepare(`UPDATE tag_tags SET parent_id = NULL, updated_at = ? WHERE parent_id = ?`)
+        .run(ts, groupId)
+      this.db
+        .prepare(`UPDATE tag_tags SET is_group = 0, updated_at = ? WHERE id = ?`)
+        .run(ts, groupId)
+    })
+    tx()
+    return true
   }
 
   /**

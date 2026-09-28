@@ -36,6 +36,8 @@ import { m023_photo_annotations } from './023_photo_annotations'
 import { m024_audio_facts } from './024_audio_facts'
 import { m025_source_path_index } from './025_source_path_index'
 import { m026_smart_album_parent } from './026_smart_album_parent'
+import { m027_drop_manual_albums } from './027_drop_manual_albums'
+import { m028_tag_starred_sort } from './028_tag_starred_sort'
 
 export const migrations: Migration[] = [
   m001_library_init,
@@ -62,5 +64,7 @@ export const migrations: Migration[] = [
   m023_photo_annotations,
   m024_audio_facts,
   m025_source_path_index,
-  m026_smart_album_parent
+  m026_smart_album_parent,
+  m027_drop_manual_albums,
+  m028_tag_starred_sort
 ]

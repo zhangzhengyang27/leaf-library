@@ -1,0 +1,10 @@
+{
+  "id": "composition-grid",
+  "name": "构图网格",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "description": "在选中图片上叠加可多选的构图参考线（三分线 / 黄金分割 / 中心框 / 对角线）",
+  "permissions": [],
+  "formats": []
+}

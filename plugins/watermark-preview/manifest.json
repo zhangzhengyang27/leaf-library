@@ -1,0 +1,10 @@
+{
+  "id": "watermark-preview",
+  "name": "水印预览",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "description": "在选中图片上实时合成文字水印预览：九宫格定位、三档字号、透明度与对角平铺",
+  "permissions": [],
+  "formats": []
+}

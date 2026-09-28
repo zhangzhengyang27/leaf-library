@@ -1,0 +1,10 @@
+{
+  "id": "code-stats",
+  "name": "代码统计",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "统计代码行/注释行/空行、函数与类计数、TODO 标记与超长行，按扩展名语言家族识别注释符",
+  "permissions": [],
+  "formats": ["js", "ts", "tsx", "jsx", "mjs", "cjs", "go", "rs", "rb", "php", "c", "cpp", "h", "cs", "swift", "kt", "vue"]
+}

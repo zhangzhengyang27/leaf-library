@@ -1,7 +1,7 @@
 /**
  * Leaf · PhotoRepository
  *
- * Schema: photo_photos / photo_albums / photo_album_items / photo_tags
+ * Schema: photo_photos / photo_tags（027 起手动相册表已出库，D-027）
  * 014 起标签绑定全局字典 tag_tags（photo_tags.tag_id 存 tag_tags.id），
  * Photo.tags 对外仍暴露「名称数组」（读时 JOIN 解析，兼容旧渲染端契约）。
  *
@@ -861,7 +861,7 @@ export class PhotoRepository {
   }
 
   /**
-   * 清空回收站：硬删除行 + 孤儿标签关联 + 孤儿语义向量 + 相册/自由网格摆放孤儿行，
+   * 清空回收站：硬删除行 + 孤儿标签关联 + 孤儿语义向量 + 自由网格摆放孤儿行，
    * 并回退标签 usage_count，返回被清理的 photo id
    * （调用方负责清理缩略图目录）
    */
@@ -881,10 +881,7 @@ export class PhotoRepository {
           )
           .all(...chunk) as Array<{ tag_id: string; n: number }>
         this.db.prepare(`DELETE FROM photo_tags WHERE photo_id IN (${placeholders})`).run(...chunk)
-        // 旧实现漏了这两张关联表 → 相册条目/自由网格坐标永久残留
-        this.db
-          .prepare(`DELETE FROM photo_album_items WHERE photo_id IN (${placeholders})`)
-          .run(...chunk)
+        // 旧实现漏了自由网格坐标这张关联表 → 坐标永久残留
         this.db
           .prepare(`DELETE FROM photo_freeform_pos WHERE photo_id IN (${placeholders})`)
           .run(...chunk)
@@ -946,14 +943,13 @@ export class PhotoRepository {
   // —— 搜索 / 筛选 ——
 
   /**
-   * 未分类：既不在任何文件夹、也不在任何手动相册里的素材（§3 L4 / §2.B 固定入口）。
-   * 反连接下推 SQL（审查 P3-4）：旧实现全表 SELECT + JS 过滤相册集合
+   * 未分类：不在任何文件夹里的素材（§3 L4 / §2.B 固定入口；D-027 起与 Eagle 同语义，
+   * 不再排除手动相册——相册已撤销）。
    */
   getUnsortedPhotos(): Photo[] {
     const rows = this.db
       .prepare(
         `${PHOTO_SELECT} WHERE deleted_at IS NULL AND folder_id IS NULL
-         AND NOT EXISTS (SELECT 1 FROM photo_album_items pai WHERE pai.photo_id = photo_photos.id)
          ORDER BY imported_at DESC`
       )
       .all() as PhotoRow[]

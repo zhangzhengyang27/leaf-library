@@ -598,17 +598,6 @@ export function registerPhotoIpcHandlers(
     },
     runDocText: () => ({ queued: docTextService.runPending() }),
 
-    // —— 手动相册（四期） ——
-    listAlbums: () => photoStore.listAlbums(),
-    createAlbum: (name: string) => photoStore.createAlbum(name),
-    renameAlbum: (id: string, name: string) => photoStore.renameAlbum(id, name),
-    deleteAlbum: (id: string) => photoStore.deleteAlbum(id),
-    addPhotosToAlbum: (albumId: string, photoIds: string[]) =>
-      photoStore.addPhotosToAlbum(albumId, photoIds),
-    removePhotosFromAlbum: (albumId: string, photoIds: string[]) =>
-      photoStore.removePhotosFromAlbum(albumId, photoIds),
-    getAlbumPhotos: (albumId: string) => photoStore.getAlbumPhotos(albumId),
-
     // —— 手动文件夹分组（五期） ——
     listPhotoFolders: () => photoStore.listFoldersSafe(),
     setFolderDescription: (folderId: string, description: string): void => {

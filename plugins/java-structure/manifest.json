@@ -1,0 +1,10 @@
+{
+  "id": "java-structure",
+  "name": "Java 结构查看器",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "解析 Java 文件结构：package 与导入分组、类型声明与继承链、方法签名清单与注解 TopN",
+  "permissions": [],
+  "formats": ["java"]
+}

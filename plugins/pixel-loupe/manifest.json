@@ -1,0 +1,10 @@
+{
+  "id": "pixel-loupe",
+  "name": "像素放大镜",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "description": "放大检视图片局部像素：8 倍放大块、十字准星、光标处 HEX/RGB 读数与视区小地图",
+  "permissions": [],
+  "formats": []
+}

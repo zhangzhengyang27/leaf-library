@@ -131,8 +131,6 @@ const breadcrumb = computed<Crumb[]>(() => {
   const view = tabs.activeView
   if (view.startsWith('folder:') && filters.activeFolder.value) {
     segs.push({ label: filters.activeFolder.value.name })
-  } else if (view.startsWith('album:') && filters.activeAlbum.value) {
-    segs.push({ label: filters.activeAlbum.value.name })
   } else if (view.startsWith('smart:') && filters.activeSmartAlbum.value) {
     segs.push({ label: filters.activeSmartAlbum.value.name })
   } else {

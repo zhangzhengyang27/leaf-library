@@ -64,8 +64,7 @@ const semanticEnabled = semantic.enabled
 const pool = filters.currentPool
 const showKindChips = computed(() => filters.showFilters.value && tab.value.view !== 'map')
 
-/** 相册/文件夹/智能夹上下文操作（原筛选条内联按钮） */
-const showAlbumActions = computed(() => !!filters.activeAlbum.value)
+/** 文件夹/智能夹上下文操作（原筛选条内联按钮） */
 const showFolderActions = computed(() => !!filters.activeFolder.value)
 const showSmartActions = computed(() => !!filters.activeSmartAlbum.value)
 
@@ -75,16 +74,6 @@ function editActiveSmart(): void {
 
 function deleteActiveSmart(): void {
   if (filters.activeSmartAlbum.value) actions.deleteSmartAlbumById(filters.activeSmartAlbum.value)
-}
-
-function renameActiveAlbum(): void {
-  const album = filters.activeAlbum.value
-  if (album) actions.renameAlbumById(album.id, album.name)
-}
-
-function deleteActiveAlbum(): void {
-  const album = filters.activeAlbum.value
-  if (album) actions.deleteAlbumById(album.id, album.name)
 }
 
 function deleteActiveFolder(): void {
@@ -852,11 +841,6 @@ watch(
       }}</span>
       <button class="bar-action" @click="editActiveSmart">编辑规则</button>
       <button class="bar-action text-danger" @click="deleteActiveSmart">删除收藏夹</button>
-    </template>
-    <template v-else-if="showAlbumActions">
-      <span class="text-sm font-medium text-fg-primary">{{ filters.activeAlbum.value?.name }}</span>
-      <button class="bar-action" @click="renameActiveAlbum">重命名</button>
-      <button class="bar-action text-danger" @click="deleteActiveAlbum">删除相册</button>
     </template>
     <template v-else-if="showFolderActions">
       <!-- 二十四轮（用户反馈）：移除目录名与重命名入口（名称在面包屑/检查器，重命名走右键菜单） -->

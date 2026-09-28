@@ -1,0 +1,10 @@
+{
+  "id": "css-inventory",
+  "name": "CSS 概览",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "盘点样式文件：选择器分类计数、颜色去重 Top12、字号分布、变量引用与 !important 清单",
+  "permissions": [],
+  "formats": ["css", "less", "scss"]
+}

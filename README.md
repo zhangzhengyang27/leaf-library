@@ -8,7 +8,7 @@
 ## 为什么叫 Leaf Library
 
 - **叶是你** —— 以收藏者命名的私人藏馆：我的图书馆。leaf 是罕见的能同时担起「人名 / 书页 / 自然」三重词义的词。
-- **leaf 本义是「页」** —— a leaf of a book = 一页纸（活页 loose-leaf 即由此来）。每份素材是一页活页，库是一部越写越厚的书；随取、随插、随重排，正如相册、标签与智能夹对素材的重组。
+- **leaf 本义是「页」** —— a leaf of a book = 一页纸（活页 loose-leaf 即由此来）。每份素材是一页活页，库是一部越写越厚的书；随取、随插、随重排，正如文件夹、标签与智能夹对素材的重组。
 - **《万叶集》** —— Man'yōshū 直译即 *Collection of Ten Thousand Leaves*。Leaf Library 就是一部自己的《万叶集》：把散落万处的叶子收拢、编目、成册。
 - **叶落归根 = local-first** —— 数据不假手云端，最终落回本地自己的根上。
 - **一叶知秋** —— 快速预览、语义搜图，从一片叶读到整个秋天；反过来，五万片叶里也能一眼认出那一叶（pHash 查重 / 以图搜图）。
@@ -18,10 +18,10 @@
 ## 功能
 
 - **多类型入库**：位图/SVG/HEIC、视频（ffmpeg 抽帧 + 时长）、音频（时长探测）、字体（fontkit 真实名 + 样张）、任意文件兜底卡片、**书签**（og:title 抓取 + offscreen 截图存档）、**PDF/AI**（pdfjs 首页渲染）
-- **组织**：日期分组、收藏、评分、全局标签（颜色 + 分组树）、手动相册、智能收藏夹（含类型条件）、文件夹分组、回收站 + 撤销；`docs/DECISIONS.md` D-008
+- **组织**：日期分组、收藏、评分、全局标签（颜色 + 分组树）、智能收藏夹（含类型条件）、文件夹分组、回收站 + 撤销；`docs/DECISIONS.md` D-008
 - **检索**：关键词、AI 语义搜索（Chinese-CLIP 中文文搜图 + 以图搜图，模型就绪前优雅降级，D-021）、pHash 以图搜图、相似查重（MIH 多索引哈希，5 万+ 库秒级）、9 色相桶、格式/分辨率/时间快筛、类型 chips
-- **体验**：Eagle 式布局（D-011：单行工具栏 + 树形侧栏 + 卡片常驻元信息），瀑布流/方格/列表三布局 + 排序，右键菜单、键盘导航（方向键/⌘A/⌘F）、拖拽入相册/文件夹/标签、⌘/Shift 连选、空格快速预览、视频悬停即播 + 逐帧步进/倍速、EXIF 地图（城市反解）、密码锁（safeStorage）
-- **收集**：浏览器剪藏插件（MV3，`extension/`）+ 本地 MCP 接入（`/mcp`，JSON-RPC：只读 `leaf_photos_search` / `leaf_photo_detail` / `leaf_library_stats` / `leaf_get_image`（返回图片内容，外部 AI 客户端可看图打标）+ 可写 `leaf_create_album` / `leaf_add_tags` / `leaf_import_paths` / `leaf_add_bookmark`）
+- **体验**：Eagle 式布局（D-011：单行工具栏 + 树形侧栏 + 卡片常驻元信息），瀑布流/方格/列表三布局 + 排序，右键菜单、键盘导航（方向键/⌘A/⌘F）、拖拽入文件夹/标签、⌘/Shift 连选、空格快速预览、视频悬停即播 + 逐帧步进/倍速、EXIF 地图（城市反解）、密码锁（safeStorage）
+- **收集**：浏览器剪藏插件（MV3，`extension/`）+ 本地 MCP 接入（`/mcp`，JSON-RPC：只读 `leaf_photos_search` / `leaf_photo_detail` / `leaf_library_stats` / `leaf_get_image`（返回图片内容，外部 AI 客户端可看图打标）+ 可写 `leaf_add_tags` / `leaf_import_paths` / `leaf_add_bookmark`）
 
 ## 开发
 

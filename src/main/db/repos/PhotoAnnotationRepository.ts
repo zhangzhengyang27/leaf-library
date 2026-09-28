@@ -5,9 +5,9 @@
  * 表上有 CHECK（坐标全有或全无），直接 prepare 一条半坐标的行会抛 SQLITE_CONSTRAINT，
  * 用户看到的就是一句没有上下文的失败；在门口按字段报错才说得出"哪一条不对"。
  *
- * 关联表不加外键（与 photo_tags / photo_album_items 同一套），
+ * 关联表不加外键（与 photo_tags 同一套），
  * 素材被永久删除时的清理由 PhotoRepository.clearRecycleBin 那段负责——
- * 那处的注释就写着"旧实现漏了两张关联表"，别再漏第三次。
+ * 那处的注释就写着"旧实现漏了关联表"，别再漏第二次。
  */
 import { v4 as uuidv4 } from 'uuid'
 import type Database from 'better-sqlite3'

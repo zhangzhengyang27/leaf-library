@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>SQL 概览</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.chip{display:inline-block;padding:0 7px;margin:0 4px 4px 0;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;font-size:10px;color:#374151;line-height:1.8}
+.chip b{color:#111827;font-weight:600}
+.sec{margin-top:8px}
+.sec .t{font-size:11px;color:#9ca3af;margin-bottom:3px}
+.list{overflow:auto;max-height:150px;border:1px solid #f3f4f6;border-radius:6px}
+.row{display:flex;gap:6px;align-items:baseline;padding:2px 6px;border-bottom:1px dashed #f3f4f6;font-size:11px}
+.row:last-child{border-bottom:none}
+.row .name{flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.row .n{color:#9ca3af;font-size:10px;flex-shrink:0}
+pre{margin:6px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:300px;font:11px/1.6 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+.tok-kw{color:#7c3aed;font-weight:600}.tok-str{color:#16a34a}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+pre.raw{max-height:220px}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+/**
+ * 单遍扫描：去掉 -- 与块注释（替换为空格保行列），字符串字面量换成 \x01N\x01 占位符
+ * （既避免字符串里的 from/; 干扰统计，也便于美化视图恢复着色）。
+ */
+function scan(src){
+  var clean='',strings=[],flags=[],hasCode=false,sawComment=false
+  var i=0,n=src.length,state='n'
+  while(i<n){
+    var ch=src[i]
+    if(ch==='\n'){
+      flags.push({code:hasCode,comment:sawComment&&!hasCode})
+      hasCode=false;sawComment=false;clean+='\n';i++
+      if(state==='l')state='n' // 行注释到行尾即止；块注释状态跨行延续
+      continue
+    }
+    if(state==='l'){sawComment=true;clean+=' ';i++;continue}
+    if(state==='b'){
+      sawComment=true
+      if(ch==='*'&&src[i+1]==='/'){state='n';clean+='  ';i+=2}
+      else{clean+=ch==='\t'?' ':' ';i++}
+      continue
+    }
+    if(state==='s'){/* 不会到这——字符串在分支内整体消费 */}
+    var two=src.substr(i,2)
+    if(two==='--'){state='l';sawComment=true;i+=2;continue}
+    if(two==='/*'){state='b';sawComment=true;i+=2;continue}
+    if(ch==="'"||ch==='"'||ch==='`'){
+      var q=ch,buf=''
+      i++
+      while(i<n&&src[i]!==q){
+        if(q==="'"&&src[i]==="'"&&src[i+1]==="'"){buf+="'";i+=2;continue} // SQL '' 转义
+        buf+=src[i];i++
+      }
+      if(i<n)i++ // 闭合引号
+      strings.push(buf)
+      clean+='\x01'+(strings.length-1)+'\x01'
+      hasCode=true
+      continue
+    }
+    if(ch!==' '&&ch!=='\t'&&ch!=='\r')hasCode=true
+    clean+=ch;i++
+  }
+  flags.push({code:hasCode||state==='s',comment:sawComment&&!hasCode})
+  return {clean:clean,strings:strings,flags:flags}
+}
+
+/** 主子句换行缩进的核心词（美化用；JOIN 系缩进 2、ON 缩进 4） */
+var KW_NEWLINE=/^(?:SELECT|FROM|WHERE|GROUP BY|HAVING|ORDER BY|LIMIT|OFFSET|UNION ALL|UNION|INSERT INTO|VALUES|UPDATE|SET|DELETE FROM)$/
+var KW_UP=/\b(group\s+by|order\s+by|delete\s+from|insert\s+into|union\s+all|left\s+outer\s+join|right\s+outer\s+join|full\s+outer\s+join|left\s+join|right\s+join|full\s+join|inner\s+join|cross\s+join|outer\s+join|select|from|where|having|limit|offset|union|values|update|set|join|on|and|or|not|in|exists|distinct|as|between|like|is|null|case|when|then|else|end|asc|desc|by)\b/gi
+var KW_SPAN=/\b(SELECT|FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|UNION ALL|UNION|INSERT INTO|VALUES|UPDATE|SET|DELETE FROM|LEFT|RIGHT|FULL|INNER|CROSS|OUTER|JOIN|ON|AND|OR|NOT|IN|EXISTS|DISTINCT|AS|BETWEEN|LIKE|IS|NULL|CASE|WHEN|THEN|ELSE|END|ASC|DESC|BY)\b/g
+
+function beautify(clean,strings){
+  var up=clean.replace(KW_UP,function(m){
+    var u=m.toUpperCase().replace(/\s+/g,' ')
+    if(KW_NEWLINE.test(u))return '\n'+u
+    if(/JOIN$/.test(u))return '\n  '+u
+    if(u==='ON')return '\n    ON'
+    return u
+  })
+  // 恢复字符串占位符并着色
+  var parts=up.split(/(\x01\d+\x01)/),out=''
+  for(var i=0;i<parts.length;i++){
+    var seg=parts[i]
+    var pm=/^\x01(\d+)\x01$/.exec(seg)
+    if(pm){out+='<span class="tok-str">\''+escapeHtml(strings[Number(pm[1])])+'\'</span>';continue}
+    out+=escapeHtml(seg).replace(KW_SPAN,'<span class="tok-kw">$1</span>')
+  }
+  return out.replace(/^\n+/,'')
+}
+
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload
+ try{
+  var app=document.getElementById('app')
+  if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+  var src=p.content.replace(/\r\n/g,'\n')
+  var sc=scan(src)
+  var lines=src.split('\n')
+  // 语句计数（去注释后按分号分割）
+  var stmts=sc.clean.split(';').map(function(s){return s.trim()}).filter(function(s){return s})
+  var typeTally={}
+  stmts.forEach(function(s){
+    var first=(s.replace(/^\s*\x01\d+\x01\s*/,'').split(/\s+/)[0]||'').toUpperCase()
+    var key=/^[A-Z]+$/.test(first)?first:'其他'
+    if(!/^(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|WITH|TRUNCATE|REPLACE|MERGE)$/.test(key))key='其他'
+    typeTally[key]=(typeTally[key]||0)+1
+  })
+  // 表名提取：FROM/JOIN/INTO/UPDATE 后的标识符去重（宽松，字符串已占位）
+  var tables={},tm
+  var tRe=/\b(?:from|join|into|update)\s+([`"\[]?)([A-Za-z_][\w$]*(?:\.[\w$]*)*)\1/gi
+  while((tm=tRe.exec(sc.clean))!==null){
+    var key=tm[2].toLowerCase()
+    if(!tables[key])tables[key]={name:tm[2],count:0}
+    tables[key].count++
+  }
+  var tableList=Object.keys(tables).map(function(k){return tables[k]})
+    .sort(function(a,b){return b.count-a.count||a.name.localeCompare(b.name)})
+  // 注释行统计
+  var commentLines=0
+  for(var i=0;i<sc.flags.length;i++)if(sc.flags[i].comment)commentLines++
+  var html='<div class="meta">'+escapeHtml(p.fileName||'')+' · 语句 '+stmts.length+' · 表 '+tableList.length+
+    ' · 注释行 '+commentLines+' / 总行 '+lines.length+'</div>'
+  html+='<span class="chip">语句总数 <b>'+stmts.length+'</b></span>'
+  var typeKeys=Object.keys(typeTally).sort(function(a,b){return typeTally[b]-typeTally[a]})
+  for(i=0;i<typeKeys.length;i++)html+='<span class="chip">'+escapeHtml(typeKeys[i])+' <b>×'+typeTally[typeKeys[i]]+'</b></span>'
+  html+='<div class="sec"><div class="t">表名（FROM / JOIN / INTO / UPDATE 之后，去重）</div>'
+  if(tableList.length){
+    html+='<div class="list">'
+    for(i=0;i<tableList.length;i++)html+='<div class="row"><span class="name">'+escapeHtml(tableList[i].name)+'</span><span class="n">×'+tableList[i].count+'</span></div>'
+    html+='</div>'
+  }else html+='<div style="color:#9ca3af;font-size:11px">未提取到表名</div>'
+  html+='</div>'
+  html+='<div class="sec"><div class="t">关键字大写美化（只读预览，不改原文）</div><pre>'+beautify(sc.clean,sc.strings)+'</pre></div>'
+  app.className=''
+  app.innerHTML=html
+ }catch(err){
+  // 兜底：原文展示 + 错误提示，不能白屏
+  var app2=document.getElementById('app');app2.className=''
+  app2.innerHTML='<div class="err">解析失败：'+escapeHtml(String((err&&err.message)||err))+'</div>'+
+   (p&&typeof p.content==='string'?'<pre class="raw">'+escapeHtml(p.content)+'</pre>':'')
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

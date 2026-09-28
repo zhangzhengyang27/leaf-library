@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>CSS 概览</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.head{display:flex;align-items:center;gap:8px;margin-bottom:6px;flex-wrap:wrap}
+.stats{color:#9ca3af;font-size:11px;flex:1;min-width:0}
+.btn{border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#4b5563;font-size:11px;height:22px;padding:0 8px;cursor:pointer;flex-shrink:0}
+.btn:hover{background:#f3f4f6}
+.btn.on{background:#e5e7eb;border-color:#d1d5db;color:#111827;font-weight:600}
+.list{overflow:auto;max-height:180px;border:1px solid #f3f4f6;border-radius:6px}
+.row{display:flex;gap:6px;align-items:baseline;padding:2px 6px;border-bottom:1px dashed #f3f4f6;font-size:11px}
+.row:last-child{border-bottom:none}
+.row .name{flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.row .n{color:#9ca3af;font-size:10px;flex-shrink:0}
+.swrow{display:flex;align-items:center;gap:6px;padding:3px 6px;border-bottom:1px dashed #f3f4f6;font-size:11px}
+.swrow:last-child{border-bottom:none}
+.sw{width:16px;height:16px;border-radius:4px;border:1px solid rgba(0,0,0,.12);flex-shrink:0}
+.swrow .val{flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.swrow .n{color:#9ca3af;font-size:10px;flex-shrink:0}
+.imp{margin-top:6px;padding:4px 8px;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;color:#b91c1c;font-size:11px;user-select:text}
+.subt{font-size:11px;color:#9ca3af;margin:8px 0 3px}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+pre{margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+/** 去块注释：注释字符替换成空格（保留换行与行列号，!important 等行号才准） */
+function stripComments(src){
+  var out='',i=0
+  while(i<src.length){
+    if(src[i]==='/'&&src[i+1]==='*'){
+      out+='  ';i+=2
+      while(i<src.length&&!(src[i]==='*'&&src[i+1]==='/')){out+=src[i]==='\n'?'\n':' ';i++}
+      if(i<src.length){out+='  ';i+=2}
+    }else{out+=src[i];i++}
+  }
+  return out
+}
+
+/** 计数工具：键去重 + 出现次数 */
+function tally(arr){
+  var map={}
+  arr.forEach(function(k){map[k]=(map[k]||0)+1})
+  return Object.keys(map).map(function(k){return {key:k,count:map[k]}})
+    .sort(function(a,b){return b.count-a.count||a.key.localeCompare(b.key)})
+}
+
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload
+ try{
+  var app=document.getElementById('app')
+  if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+  var ext=(p.ext||'css').toLowerCase()
+  var txt=stripComments(p.content.replace(/\r\n/g,'\n'))
+  var lines=txt.split('\n')
+
+  // —— 选择器：每个 '{' 前的片段即选择器（嵌套取 } / ; 之后的部分），逗号拆分 ——
+  var selParts=txt.split('{')
+  var cats={cls:{},id:{},elem:{},at:{},other:{}}
+  for(var i=0;i<selParts.length-1;i++){
+    var chunk=selParts[i].split('}').pop().split(';').pop().trim()
+    if(!chunk)continue
+    chunk.split(',').forEach(function(s){
+      s=s.trim()
+      if(!s)return
+      var cat,key
+      if(s.charAt(0)==='@'){cat='at';key='@'+(s.split(/[\s({]/)[0]||'').toLowerCase()}
+      else if(s.charAt(0)==='.'){cat='cls';key=s}
+      else if(s.charAt(0)==='#'){cat='id';key=s}
+      else if(/^[a-zA-Z][\w-]*$/.test(s)){cat='elem';key=s.toLowerCase()}
+      else{cat='other';key=s}
+      cats[cat][key]=(cats[cat][key]||0)+1
+    })
+  }
+  function mapToList(o){
+    return Object.keys(o).map(function(k){return {key:k,count:o[k]}})
+      .sort(function(a,b){return b.count-a.count||a.key.localeCompare(b.key)})
+  }
+  var selCount=Object.keys(cats.cls).length+Object.keys(cats.id).length+
+    Object.keys(cats.elem).length+Object.keys(cats.at).length+Object.keys(cats.other).length
+
+  // —— 颜色：hex / rgb() / hsl() 去重计数（键统一小写+压空白） ——
+  var colors=[]
+  var hexRe=/#[0-9a-fA-F]{8}\b|#[0-9a-fA-F]{6}\b|#[0-9a-fA-F]{4}\b|#[0-9a-fA-F]{3}\b/g
+  var m2
+  while((m2=hexRe.exec(txt))!==null)colors.push(m2[0].toLowerCase())
+  var fnRe=/((?:rgba?|hsla?)\(\s*[^)]*\))/gi
+  while((m2=fnRe.exec(txt))!==null)colors.push(m2[1].replace(/\s+/g,' ').toLowerCase())
+  var colorTop=tally(colors).slice(0,12)
+
+  // —— !important：计数 + 所在行 ——
+  var impTotal=0,impLines=[]
+  for(i=0;i<lines.length;i++){
+    var c=(lines[i].match(/!important/g)||[]).length
+    if(c){impTotal+=c;impLines.push(i+1)}
+  }
+
+  // —— 字号分布 ——
+  var sizes=[]
+  var fsRe=/font-size\s*:\s*([^;}]+)/gi
+  while((m2=fsRe.exec(txt))!==null){
+    var v=m2[1].trim().replace(/\s+/g,' ')
+    if(v)sizes.push(v)
+  }
+  var sizeTop=tally(sizes).slice(0,10)
+
+  // —— 变量：var(--x) 引用计数；scss $x（含声明处，宽松口径） ——
+  var vars=[]
+  var varRe=/var\(\s*(--[\w-]+)/g
+  while((m2=varRe.exec(txt))!==null)vars.push(m2[1])
+  var varTop=tally(vars).slice(0,10)
+  var scssTop=[]
+  if(ext==='scss'||ext==='less'){
+    var dv=[]
+    var dRe=/\$([\w-]+)/g
+    while((m2=dRe.exec(txt))!==null)dv.push('$'+m2[1])
+    scssTop=tally(dv).slice(0,10)
+  }
+
+  // —— 渲染：按钮组切换分区（选中态照 json-formatter 基调） ——
+  var TABS=[['sel','选择器'],['color','颜色'],['size','字号'],['var','变量'],['imp','!important']]
+  var cur='sel'
+  function renderSel(){
+    var html='<div class="subt">类选择器 '+Object.keys(cats.cls).length+' · id '+Object.keys(cats.id).length+
+      ' · 元素 '+Object.keys(cats.elem).length+' · @规则 '+Object.keys(cats.at).length+' · 其他 '+Object.keys(cats.other).length+'</div>'
+    function block(title,obj){
+      var list=mapToList(obj)
+      if(!list.length)return ''
+      var html='<div class="subt">'+title+'</div><div class="list">'
+      for(var i=0;i<list.length;i++)html+='<div class="row"><span class="name">'+escapeHtml(list[i].key)+'</span><span class="n">×'+list[i].count+'</span></div>'
+      return html+'</div>'
+    }
+    return html+block('类选择器（.x）',cats.cls)+block('id（#x）',cats.id)+block('元素',cats.elem)+
+      block('@规则（@media 等）',cats.at)+block('其他（属性/伪类/嵌套 & 等）',cats.other)
+  }
+  var app=document.getElementById('app')
+  function render(){
+    var body=''
+    if(cur==='sel')body=renderSel()
+    else if(cur==='color'){
+      body='<div class="subt">去重 '+tally(colors).length+' 种，按出现次数 Top '+colorTop.length+'</div>'
+      if(!colorTop.length)body+='<div style="color:#9ca3af;font-size:11px">未发现颜色值</div>'
+      for(var i=0;i<colorTop.length;i++){
+        var col=colorTop[i].key
+        body+='<div class="swrow"><span class="sw" style="background:'+escapeHtml(col)+'"></span>'+
+          '<span class="val">'+escapeHtml(col)+'</span><span class="n">×'+colorTop[i].count+'</span></div>'
+      }
+    }else if(cur==='size'){
+      body='<div class="subt">font-size 声明 '+sizes.length+' 处，值分布 Top '+sizeTop.length+'</div><div class="list">'
+      for(var i=0;i<sizeTop.length;i++)body+='<div class="row"><span class="name">'+escapeHtml(sizeTop[i].key)+'</span><span class="n">×'+sizeTop[i].count+'</span></div>'
+      if(!sizeTop.length)body='<div class="subt">未发现 font-size 声明</div>'
+      else body+='</div>'
+    }else if(cur==='var'){
+      body='<div class="subt">CSS 自定义属性 var(--x) 引用 '+vars.length+' 处，去重 Top '+varTop.length+'</div><div class="list">'
+      for(var i=0;i<varTop.length;i++)body+='<div class="row"><span class="name">'+escapeHtml(varTop[i].key)+'</span><span class="n">×'+varTop[i].count+'</span></div>'
+      body+='</div>'
+      if(scssTop.length){
+        body+='<div class="subt">预处理变量 $x（'+escapeHtml(ext)+'，含声明处）Top '+scssTop.length+'</div><div class="list">'
+        for(i=0;i<scssTop.length;i++)body+='<div class="row"><span class="name">'+escapeHtml(scssTop[i].key)+'</span><span class="n">×'+scssTop[i].count+'</span></div>'
+        body+='</div>'
+      }
+      if(!varTop.length&&!scssTop.length)body='<div class="subt">未发现变量引用</div>'
+    }else{
+      body='<div class="imp">!important 共 '+impTotal+' 处'+(impLines.length?'（第 '+impLines.slice(0,10).join('、')+' 行'+(impLines.length>10?' 等 '+impLines.length+' 行':'')+'）':'')+'</div>'
+      if(!impTotal)body='<div class="imp" style="background:#f9fafb;border-color:#e5e7eb;color:#9ca3af">未使用 !important</div>'
+    }
+    var tabs=''
+    for(var i=0;i<TABS.length;i++)tabs+='<button type="button" class="btn'+(cur===TABS[i][0]?' on':'')+'" data-tab="'+TABS[i][0]+'">'+TABS[i][1]+'</button>'
+    app.className=''
+    app.innerHTML='<div class="head"><span class="stats">'+escapeHtml(p.fileName||'')+' · 选择器 '+selCount+
+      ' · 颜色 '+tally(colors).length+' · font-size '+sizes.length+' · !important '+impTotal+'</span>'+tabs+'</div>'+body
+    var btns=app.querySelectorAll('.btn[data-tab]')
+    for(i=0;i<btns.length;i++)btns[i].addEventListener('click',function(){cur=this.getAttribute('data-tab');render()})
+  }
+  render()
+ }catch(err){
+  // 兜底：原文展示 + 错误提示，不能白屏
+  var app2=document.getElementById('app');app2.className=''
+  app2.innerHTML='<div class="err">解析失败：'+escapeHtml(String((err&&err.message)||err))+'</div>'+
+   (p&&typeof p.content==='string'?'<pre>'+escapeHtml(p.content)+'</pre>':'')
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

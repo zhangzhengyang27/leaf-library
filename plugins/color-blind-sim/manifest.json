@@ -1,0 +1,10 @@
+{
+  "id": "color-blind-sim",
+  "name": "色盲模拟",
+  "version": "1.0.0",
+  "category": "inspector",
+  "entry": "index.html",
+  "description": "用 3×3 色彩矩阵模拟绿色盲 / 红色盲 / 蓝黄色盲下的图片观感，附原图对照",
+  "permissions": [],
+  "formats": []
+}

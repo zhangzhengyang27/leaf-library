@@ -1,0 +1,10 @@
+{
+  "id": "srt-preview",
+  "name": "字幕预览",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "解析 SRT / VTT 字幕：时间轴 + 文本的条目列表，附条目数、总时长与字数统计",
+  "permissions": [],
+  "formats": ["srt", "vtt"]
+}

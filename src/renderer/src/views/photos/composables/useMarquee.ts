@@ -9,7 +9,7 @@
  * - 语义：无修饰键 = 替换选中；⌘/Ctrl = 起拖时选中集 ⊕ 命中集；
  *   拖拽中实时回调 onSelect；位移 < 3px 视为空白点击 = 清空选中
  */
-import { onBeforeUnmount, ref } from 'vue'
+import { onBeforeUnmount, ref, type Ref } from 'vue'
 
 export interface MarqueeModifiers {
   metaKey: boolean
@@ -21,6 +21,8 @@ interface MarqueeOptions {
   getContainer: () => HTMLElement | null
   /** 条目元素选择器 */
   itemSelector: string
+  /** 条目 id 的 data-* 属性名（默认 photoId；028 标签管理复用处传 chipId） */
+  idAttribute?: string
   /** 是否允许框选（trash 等视图返回 false） */
   enabled: () => boolean
   /** ⌘ 叠加语义的起拖基础选中集 */
@@ -37,7 +39,11 @@ interface CachedRect {
   right: number
 }
 
-export function useMarquee(options: MarqueeOptions) {
+export function useMarquee(options: MarqueeOptions): {
+  marqueeActive: Ref<boolean>
+  marqueeRect: Ref<{ x: number; y: number; w: number; h: number }>
+  onPointerDown: (e: PointerEvent) => void
+} {
   const marqueeActive = ref(false)
   /** 视口坐标系选框（position:fixed 渲染，自动滚动时不随内容漂移） */
   const marqueeRect = ref({ x: 0, y: 0, w: 0, h: 0 })
@@ -53,23 +59,14 @@ export function useMarquee(options: MarqueeOptions) {
   let rafId = 0
   let scrollDir = 0
 
-  function scrollParentOf(el: HTMLElement): HTMLElement | null {
-    let node: HTMLElement | null = el.parentElement
-    while (node) {
-      const overflowY = getComputedStyle(node).overflowY
-      if (overflowY === 'auto' || overflowY === 'scroll') return node
-      node = node.parentElement
-    }
-    return null
-  }
-
   function cacheRects(): void {
     const container = containerEl
     if (!container) return
     const items = container.querySelectorAll<HTMLElement>(options.itemSelector)
+    const idAttr = options.idAttribute ?? 'photoId'
     cache = Array.from(items).map((el) => {
       const r = el.getBoundingClientRect()
-      const id = el.dataset.photoId ?? ''
+      const id = el.dataset[idAttr] ?? ''
       return { id, top: r.top, bottom: r.bottom, left: r.left, right: r.right }
     })
   }

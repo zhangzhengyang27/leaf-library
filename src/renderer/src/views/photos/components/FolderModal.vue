@@ -141,6 +141,10 @@ function payloadToOverrides(f: PhotoFolder): FolderViewOverrides {
 
 const selectedCount = props.photoIdsToAdd?.length ?? 0
 
+/** prop 是父层 selectedIds 直传的 reactive Proxy，IPC 结构化克隆不收 Proxy
+ *  （原样 invoke 会抛「An object could not be cloned」）——落 IPC 前摊平 */
+const idsToAdd = (): string[] => [...(props.photoIdsToAdd ?? [])]
+
 /** 父级下拉（带缩进） */
 const folderOptions = computed<Array<{ id: string | null; name: string; depth: number }>>(() => {
   const byParent = new Map<string | null, PhotoFolder[]>()
@@ -184,7 +188,7 @@ async function handleAssign(folderId: string): Promise<void> {
     return
   }
   try {
-    const n = await window.api.photos.assignPhotosToFolder(folderId, props.photoIdsToAdd!)
+    const n = await window.api.photos.assignPhotosToFolder(folderId, idsToAdd())
     // 十五轮 D17/Eagle：「添加至上次使用的文件夹…」记住本次选择
     try {
       localStorage.setItem('leaf.last-used-folder', folderId)
@@ -221,7 +225,7 @@ async function handleCreate(): Promise<void> {
     const folder = await window.api.photos.createPhotoFolder(trimmed, parentId.value)
     await window.api.photos.setFolderViewSettings(folder.id, overridesToPayload())
     if (selectedCount > 0) {
-      await window.api.photos.assignPhotosToFolder(folder.id, props.photoIdsToAdd!)
+      await window.api.photos.assignPhotosToFolder(folder.id, idsToAdd())
       // 十五轮：记住上次使用的文件夹
       try {
         localStorage.setItem('leaf.last-used-folder', folder.id)

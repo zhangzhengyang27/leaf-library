@@ -1,0 +1,10 @@
+{
+  "id": "dockerfile-outline",
+  "name": "Dockerfile 指令清单",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "按指令分组清点 Dockerfile：FROM 基础镜像与 tag 固定情况、每条指令参数摘要与轻量最佳实践提示",
+  "permissions": [],
+  "formats": ["dockerfile"]
+}

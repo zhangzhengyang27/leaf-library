@@ -5,12 +5,12 @@ import { join } from 'node:path'
 import type Database from 'better-sqlite3'
 import { createTestDb, closeTestDb } from './testDb'
 import { PhotoRepository } from '../repos/PhotoRepository'
-import { AlbumRepository } from '../repos/AlbumRepository'
 import { handleMcpJsonRpc, type McpContext } from '../../services/McpHandler'
 
 /**
  * MCP 接入点单测（纯 JSON-RPC 分发，不依赖 HTTP/Electron）。
- * 阶段 5.2 起含可写工具：create_album / add_tags / import_paths / add_bookmark。
+ * 阶段 5.2 起含可写工具：add_tags / import_paths / add_bookmark（create_album 已随
+ * D-027 撤销手动相册移除）。
  */
 
 function rpc(id: number | string, method: string, params?: Record<string, unknown>) {
@@ -20,7 +20,6 @@ function rpc(id: number | string, method: string, params?: Record<string, unknow
 describe('McpHandler', () => {
   let db: Database.Database
   let repo: PhotoRepository
-  let albums: AlbumRepository
   let ctx: McpContext
   let resolveImage: Mock<[photoId: string, size: 'thumb' | 'original'], Promise<string | null>>
   const enqueued: string[] = []
@@ -29,7 +28,6 @@ describe('McpHandler', () => {
   beforeEach(() => {
     db = createTestDb()
     repo = new PhotoRepository(db)
-    albums = new AlbumRepository(db)
     enqueued.length = 0
     addBookmark.mockReset()
     addBookmark.mockImplementation(async (url: string, _title?: string) =>
@@ -42,7 +40,7 @@ describe('McpHandler', () => {
     resolveImage = vi.fn(
       async (_photoId: string, _size: 'thumb' | 'original'): Promise<string | null> => null
     )
-    ctx = { photos: repo, albums, addBookmark, enqueue: (id) => enqueued.push(id), resolveImage }
+    ctx = { photos: repo, addBookmark, enqueue: (id) => enqueued.push(id), resolveImage }
   })
 
   afterEach(() => {
@@ -77,7 +75,6 @@ describe('McpHandler', () => {
       'leaf_photo_detail',
       'leaf_library_stats',
       'leaf_get_image',
-      'leaf_create_album',
       'leaf_add_tags',
       'leaf_import_paths',
       'leaf_add_bookmark'
@@ -211,17 +208,6 @@ describe('McpHandler', () => {
     const result = notImage.body!.result as { isError: boolean; content: Array<{ text: string }> }
     expect(result.isError).toBe(true)
     expect(result.content[0].text).toContain('not an image asset')
-  })
-
-  it('可写 create_album：新建相册并返回 id', async () => {
-    const res = await handleMcpJsonRpc(
-      rpc(7, 'tools/call', { name: 'leaf_create_album', arguments: { name: '项目截图' } }),
-      ctx
-    )
-    const result = res.body!.result as { content: Array<{ text: string }> }
-    const data = JSON.parse(result.content[0].text) as { id: string; name: string }
-    expect(data.name).toBe('项目截图')
-    expect(albums.list().some((a) => a.id === data.id)).toBe(true)
   })
 
   it('可写 add_tags：批量加标签（同名去重由仓储保证）', async () => {

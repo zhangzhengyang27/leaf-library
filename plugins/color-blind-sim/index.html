@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>色盲模拟</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.mbtn{border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#4b5563;font-size:11px;height:22px;padding:0 8px;cursor:pointer}
+.mbtn:hover{background:#f3f4f6}
+.mbtn.on{background:#2563eb;border-color:#2563eb;color:#fff}
+.mbtn.on:hover{background:#1d4ed8}
+.blk{margin-bottom:8px}
+.cap{font-size:10px;color:#9ca3af;margin-bottom:2px}
+canvas{width:100%;display:block;border:1px solid #e5e7eb;border-radius:6px;background:#fafafa}
+</style></head>
+<body>
+<div id="app" class="empty">等待素材数据…</div>
+<div id="tools" class="btns" style="display:none"></div>
+<div id="work" style="display:none">
+  <div class="blk"><div class="cap">原图对照</div><canvas id="orig"></canvas></div>
+  <div class="blk"><div class="cap" id="simcap">模拟</div><canvas id="sim"></canvas></div>
+</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+/**
+ * 色盲模拟矩阵：Brettel / Viénot 研究的常用 3×3 简化近似（RGB[0-1] 线性空间口径，
+ * 在 sRGB 上直接套用属工程近似，观感足够预览用途）。
+ *  deuteranopia 绿色盲 / protanopia 红色盲 / tritanopia 蓝黄色盲
+ */
+var MODES=[
+  {id:'deuteranopia',label:'绿色盲',m:[0.625,0.375,0, 0.7,0.3,0, 0,0.3,0.7]},
+  {id:'protanopia',label:'红色盲',m:[0.567,0.433,0, 0.558,0.442,0, 0,0.242,0.758]},
+  {id:'tritanopia',label:'蓝黄色盲',m:[0.95,0.05,0, 0,0.433,0.567, 0,0.475,0.525]},
+  {id:'original',label:'原图',m:null}
+];
+var mode='deuteranopia';
+var simData=null; // 原图 ImageData（工作分辨率），切模式时只做矩阵变换不再读图
+var MAT=null; // 当前模式的矩阵
+// 模式按钮组：单选
+var tools=document.getElementById('tools');
+tools.innerHTML=MODES.map(function(mo){
+  return '<button type="button" class="mbtn'+(mo.id===mode?' on':'')+'" data-id="'+mo.id+'">'+mo.label+'</button>'}).join('');
+tools.onclick=function(ev){
+  var btn=ev.target.closest('.mbtn');if(!btn)return;
+  mode=btn.dataset.id;
+  for(var i=0;i<tools.children.length;i++)tools.children[i].classList.toggle('on',tools.children[i].dataset.id===mode);
+  render();
+};
+function clamp8(v){return v<0?0:v>255?255:Math.round(v)}
+function render(){
+  if(!simData)return;
+  var mo=MODES.filter(function(x){return x.id===mode})[0]||MODES[0];
+  MAT=mo.m;
+  var out=document.getElementById('sim');
+  var octx=out.getContext('2d');
+  var img=new ImageData(new Uint8ClampedArray(simData.data),simData.width,simData.height);
+  if(MAT){
+    var d=img.data;
+    for(var i=0;i<d.length;i+=4){
+      var r=d[i],g=d[i+1],b=d[i+2];
+      d[i]  =clamp8(MAT[0]*r+MAT[1]*g+MAT[2]*b);
+      d[i+1]=clamp8(MAT[3]*r+MAT[4]*g+MAT[5]*b);
+      d[i+2]=clamp8(MAT[6]*r+MAT[7]*g+MAT[8]*b);
+    }
+  }
+  out.width=simData.width;out.height=simData.height;
+  octx.putImageData(img,0,0);
+  document.getElementById('simcap').textContent='模拟 · '+mo.label+(MAT?'（3×3 矩阵变换）':'');
+}
+function show(msg){
+  var app=document.getElementById('app');
+  app.style.display='';app.textContent=msg;
+  document.getElementById('tools').style.display='none';
+  document.getElementById('work').style.display='none';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){show('未选中素材');return}
+ if(p.kind!=='image'){show('仅图片素材支持色盲模拟');return}
+ var img=new Image();img.crossOrigin='anonymous';
+ img.onload=function(){
+   // 工作分辨率：最长边压到 512，像素矩阵变换开销可控
+   var maxSide=512,w=img.naturalWidth,h=img.naturalHeight;
+   var scale=Math.min(1,maxSide/Math.max(w,h));
+   var cw=Math.max(1,Math.round(w*scale)),ch=Math.max(1,Math.round(h*scale));
+   var off=document.createElement('canvas');off.width=cw;off.height=ch;
+   var octx=off.getContext('2d');octx.drawImage(img,0,0,cw,ch);
+   try{simData=octx.getImageData(0,0,cw,ch)}catch(err){
+     show('无法读取像素（跨域限制），色盲模拟不可用');return}
+   // 原图对照画布
+   var orig=document.getElementById('orig');
+   orig.width=cw;orig.height=ch;
+   orig.getContext('2d').putImageData(simData,0,0);
+   document.getElementById('app').style.display='none';
+   document.getElementById('tools').style.display='flex';
+   document.getElementById('work').style.display='';
+   render();
+ };
+ img.onerror=function(){show('缩略图加载失败')};
+ img.src=p.bigThumbUrl||p.thumbUrl;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script>
+</body>
+</html>

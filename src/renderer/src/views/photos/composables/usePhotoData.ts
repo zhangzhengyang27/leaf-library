@@ -2,12 +2,11 @@
  * Leaf 素材库 · 图库数据层（D-008 重构）
  *
  * 模块级单例：photo 视图、LibraryPanel、右键菜单等共享同一份数据。
- * 原 index.vue 的加载/刷新逻辑整体迁入；视图特定的池子（相册/文件夹/
+ * 原 index.vue 的加载/刷新逻辑整体迁入；视图特定的池子（文件夹/
  * 智能夹内容）随 activeView 切换按需刷新。
  */
 import { computed, ref, watch } from 'vue'
 import type {
-  Album,
   Photo,
   PhotoFolder,
   PhotoSection,
@@ -24,7 +23,6 @@ const loading = ref(false)
 const sections = ref<PhotoSection[]>([])
 const allPhotos = ref<Photo[]>([])
 const smartAlbums = ref<SmartAlbum[]>([])
-const albums = ref<Album[]>([])
 const folders = ref<PhotoFolder[]>([])
 const dictionaryTags = ref<TagSummary[]>([])
 const recycleBinPhotos = ref<Photo[]>([])
@@ -57,10 +55,9 @@ function byIds(ids: string[]): Photo[] {
   return out
 }
 
-/** 视图特定内容池 */
-const albumPhotos = ref<Photo[]>([])
 import type { SmartAlbumRules } from '@shared/smartAlbumRules'
 
+/** 视图特定内容池（相册池已随 D-027 出库） */
 const folderPhotos = ref<Photo[]>([])
 /** 分页化阶段 2：收藏视图窗口池（use-paged-favorites 门控） */
 const favoritesPhotos = ref<Photo[]>([])
@@ -211,14 +208,6 @@ const loadPhotos = async (): Promise<void> => {
     toast.error('加载图片失败', { description: (error as Error).message })
   } finally {
     loading.value = false
-  }
-}
-
-const loadAlbums = async (): Promise<void> => {
-  try {
-    albums.value = await window.api.photos.listAlbums()
-  } catch (error) {
-    console.error('加载相册失败:', error)
   }
 }
 
@@ -535,17 +524,6 @@ const loadRecycleBin = async (): Promise<void> => {
   }
 }
 
-const refreshAlbumPhotos = async (albumId: string | null): Promise<void> => {
-  if (!albumId) return
-  try {
-    albumPhotos.value = await window.api.photos.getAlbumPhotos(albumId)
-    // M3：相册池落地即刷新标注数
-    void refreshAnnotationCounts(albumPhotos.value.map((p) => p.id))
-  } catch (error) {
-    console.error('加载相册内容失败:', error)
-  }
-}
-
 const refreshFolderPhotos = async (folderId: string | null): Promise<void> => {
   if (!folderId) return
   pagedFolderId = folderId
@@ -639,7 +617,6 @@ function replacePhotoLocal(updated: Photo): void {
     if (i >= 0) list.splice(i, 1, updated)
   }
   replaceIn(allPhotos.value)
-  replaceIn(albumPhotos.value)
   replaceIn(folderPhotos.value)
   replaceIn(smartAlbumPhotos.value)
   replaceIn(recycleBinPhotos.value)
@@ -718,14 +695,12 @@ export function usePhotoData(): {
   sections: typeof sections
   allPhotos: typeof allPhotos
   smartAlbums: typeof smartAlbums
-  albums: typeof albums
   folders: typeof folders
   childFolders: typeof childFolders
   dictionaryTags: typeof dictionaryTags
   recycleBinPhotos: typeof recycleBinPhotos
   recycleCount: typeof recycleCount
   processing: typeof processing
-  albumPhotos: typeof albumPhotos
   folderPhotos: typeof folderPhotos
   smartAlbumPhotos: typeof smartAlbumPhotos
   unsortedPhotos: typeof unsortedPhotos
@@ -735,7 +710,6 @@ export function usePhotoData(): {
   annotationCounts: typeof annotationCounts
   refreshAnnotationCounts: typeof refreshAnnotationCounts
   loadPhotos: typeof loadPhotos
-  loadAlbums: typeof loadAlbums
   loadFolders: typeof loadFolders
   loadSmartAlbums: typeof loadSmartAlbums
   loadDictionaryTags: typeof loadDictionaryTags
@@ -763,7 +737,6 @@ export function usePhotoData(): {
   setPagedFilters: typeof setPagedFilters
   setFolderPageScope: typeof setFolderPageScope
   mainPagedActive: typeof mainPagedActive
-  refreshAlbumPhotos: typeof refreshAlbumPhotos
   refreshFolderPhotos: typeof refreshFolderPhotos
   refreshSmartAlbumPhotos: typeof refreshSmartAlbumPhotos
   loadUnsorted: typeof loadUnsorted
@@ -779,14 +752,12 @@ export function usePhotoData(): {
     sections,
     allPhotos,
     smartAlbums,
-    albums,
     folders,
     childFolders,
     dictionaryTags,
     recycleBinPhotos,
     recycleCount,
     processing,
-    albumPhotos,
     folderPhotos,
     smartAlbumPhotos,
     unsortedPhotos,
@@ -796,7 +767,6 @@ export function usePhotoData(): {
     annotationCounts,
     refreshAnnotationCounts,
     loadPhotos,
-    loadAlbums,
     loadFolders,
     loadSmartAlbums,
     loadDictionaryTags,
@@ -824,7 +794,6 @@ export function usePhotoData(): {
     setPagedFilters,
     setFolderPageScope,
     mainPagedActive,
-    refreshAlbumPhotos,
     refreshFolderPhotos,
     refreshSmartAlbumPhotos,
     loadUnsorted,
@@ -881,8 +850,6 @@ export function bindViewWatcher(): () => void {
         if (usePagedFavorites()) void loadFavoritesPage(true)
       } else if (view.startsWith('smart:')) {
         void refreshSmartAlbumPhotos(view.slice(6))
-      } else if (view.startsWith('album:')) {
-        void refreshAlbumPhotos(view.slice(6))
       } else if (view.startsWith('folder:')) {
         void refreshFolderPhotos(view.slice(7))
       } else if (view === 'unsorted') {

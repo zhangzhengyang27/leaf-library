@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>代码统计</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}
+.cell{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:5px 8px}
+.cell .n{font-size:15px;font-weight:700;color:#111827;line-height:1.4}
+.cell .l{font-size:10px;color:#9ca3af}
+.cell.warn .n{color:#b91c1c}
+.sec{margin-top:8px}
+.sec .t{font-size:11px;color:#9ca3af;margin-bottom:4px}
+.chip{display:inline-block;padding:0 7px;margin:0 4px 4px 0;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;font-size:10px;color:#374151;line-height:1.8}
+.chip b{color:#111827;font-weight:600}
+.chip.warn{background:#fef2f2;border-color:#fecaca;color:#b91c1c}
+.chip.warn b{color:#b91c1c}
+.kv{display:flex;justify-content:space-between;gap:8px;padding:2px 0;border-bottom:1px dashed #f3f4f6}
+.kv:last-child{border-bottom:none}
+.kv .k{color:#9ca3af;flex-shrink:0}
+.kv .v{color:#111827;text-align:right;user-select:text}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+pre{margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+/**
+ * 语言家族：注释符（lc 行注释 / bs-be 块注释，tpl=反引号模板串）+ 函数/类宽松正则。
+ * js 系与 java 系走 // 与块注释；rb 走 #；php 两者兼有；vue 混合按 // 与 <!-- -->。
+ */
+var FAMS={
+  js:{lc:['//'],bs:'/*',be:'*/',tpl:true,func:[/\bfunction\b/g,/=>/g],cls:[/\bclass\b/g]},
+  go:{lc:['//'],bs:'/*',be:'*/',func:[/\bfunc\b/g],cls:[/\btype\s+\w+\s+(?:struct|interface)\b/g]},
+  rs:{lc:['//'],bs:'/*',be:'*/',func:[/\bfn\b/g],cls:[/\b(?:struct|trait|enum)\s+\w+/g]},
+  rb:{lc:['#'],func:[/\bdef\b/g],cls:[/\b(?:class|module)\s+\w+/g]},
+  php:{lc:['//','#'],bs:'/*',be:'*/',func:[/\bfunction\b/g],cls:[/\bclass\s+\w+/g]},
+  cs:{lc:['//'],bs:'/*',be:'*/',func:'cline',cls:[/\b(?:class|interface|struct|enum)\s+\w+/g]},
+  swift:{lc:['//'],bs:'/*',be:'*/',func:[/\bfunc\b/g],cls:[/\b(?:class|struct|enum|protocol)\s+\w+/g]},
+  kt:{lc:['//'],bs:'/*',be:'*/',func:[/\bfun\b/g],cls:[/\b(?:class|object|interface)\s+\w+/g]},
+  vue:{lc:['//'],bs:'<!--',be:'-->',tpl:true,func:[/\bfunction\b/g,/=>/g],cls:[/\bclass\b/g]}
+}
+var EXT2FAM={js:'js',ts:'js',tsx:'js',jsx:'js',mjs:'js',cjs:'js',go:'go',rs:'rs',rb:'rb',php:'php',c:'c',cpp:'c',h:'c',cs:'cs',swift:'swift',kt:'kt',vue:'vue'}
+// c/cpp/h 家族：无函数关键字，走「返回类型 名(参数) {」整行宽松匹配；排除控制语句
+var C_LINE=/^[A-Za-z_][\w \t\*]*\([^;{}]*\)\s*\{?\s*$/
+var C_STOP=/^(?:if|for|while|switch|return|else|do|sizeof|catch|elif|case|default)\b/
+var C_CLS={c:[/\b(?:struct|enum)\s+\w+/g],cpp:[/\b(?:class|struct)\s+\w+/g]}
+
+/** 逐行分类：code / comment / blank。块注释跨行延续；字符串按行重置（宽松口径） */
+function classify(lines,fam){
+  var out=[],state='n',q=''
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i],hasCode=false,j=0
+    while(j<line.length){
+      var ch=line[j]
+      if(state==='b'){
+        if(fam.be&&line.substr(j,fam.be.length)===fam.be){state='n';j+=fam.be.length}
+        else j++
+        continue
+      }
+      if(state==='s'){
+        hasCode=true
+        if(ch==='\\'){j+=2;continue}
+        if(ch===q)state='n'
+        j++
+        continue
+      }
+      if(ch===' '||ch==='\t'||ch==='\r'){j++;continue}
+      var two=line.substr(j,2)
+      if(fam.lc.indexOf(two)>=0)break                    // 行注释吞掉行尾
+      if(fam.bs&&two===fam.bs){state='b';j+=2;continue}  // 块注释开始
+      if(ch==='"'||ch==="'"||(fam.tpl&&ch==='`')){state='s';q=ch;hasCode=true;j++;continue}
+      hasCode=true;j++
+    }
+    if(state==='s')state='n'
+    out.push(hasCode?'code':(/\S/.test(line)?'comment':'blank'))
+  }
+  return out
+}
+
+/** 函数/类计数：正则族逐个 match 计数；cline 走整行宽松匹配 */
+function countDefs(content,lines,famKey){
+  var fam=famsResolve(famKey),func=0,cls=0,m
+  if(fam.func==='cline'){
+    for(var i=0;i<lines.length;i++){
+      var t=lines[i].trim()
+      if(C_LINE.test(t)&&!C_STOP.test(t))func++
+    }
+  }else{
+    for(i=0;i<fam.func.length;i++){
+      m=content.match(fam.func[i]);func+=m?m.length:0
+    }
+  }
+  var clsRes=famKey==='cpp'?C_CLS.cpp:famKey==='c'?C_CLS.c:fam.cls
+  for(i=0;i<clsRes.length;i++){m=content.match(clsRes[i]);cls+=m?m.length:0}
+  return {func:func,cls:cls}
+}
+function famsResolve(key){
+  var f=FAMS[key]
+  if(!f)return {lc:[],func:[],cls:[]}
+  if(key==='c')return {lc:f.lc,bs:f.bs,be:f.be,tpl:f.tpl,func:'cline',cls:[]}
+  return f
+}
+
+var TODO_RE=/\b(TODO|FIXME|HACK|XXX)\b/g
+
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload
+ try{
+  var app=document.getElementById('app')
+  if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+  var content=p.content.replace(/\r\n/g,'\n')
+  var lines=content.split('\n')
+  var ext=(p.ext||'').toLowerCase()
+  var famKey=EXT2FAM[ext]||'js'
+  var fam=FAMS[famKey]||FAMS.js
+  var cls=classify(lines,famsResolve(famKey))
+  var nCode=0,nCom=0,nBlank=0
+  for(var i=0;i<cls.length;i++){if(cls[i]==='code')nCode++;else if(cls[i]==='comment')nCom++;else nBlank++}
+  // TODO/FIXME/HACK/XXX：按标记计数 + 计数行（一行多个标记各计一次）
+  var todo={TODO:0,FIXME:0,HACK:0,XXX:0},todoLines=0
+  var maxW=0,maxLine=0,over120=0
+  for(i=0;i<lines.length;i++){
+    var line=lines[i]
+    if(line.length>maxW){maxW=line.length;maxLine=i+1}
+    if(line.length>120)over120++
+    if(TODO_RE.test(line)){todoLines++;TODO_RE.lastIndex=0;var tm
+      while((tm=TODO_RE.exec(line))!==null){todo[tm[1]]++;TODO_RE.lastIndex=tm.index+tm[0].length}}
+    TODO_RE.lastIndex=0
+  }
+  var defs=countDefs(content,lines,famKey)
+  var famDesc=famKey==='rb'?'# 行注释':famKey==='vue'?'// 与 <!-- --> 混合':'// 与块注释'
+  app.className=''
+  app.innerHTML=
+   '<div class="meta">'+escapeHtml(p.fileName||'')+' · .'+escapeHtml(ext)+' 家族（'+famDesc+'）· 共 '+lines.length+' 行</div>'+
+   '<div class="grid">'+
+    '<div class="cell"><div class="n">'+lines.length+'</div><div class="l">总行</div></div>'+
+    '<div class="cell"><div class="n">'+nCode+'</div><div class="l">代码行</div></div>'+
+    '<div class="cell"><div class="n">'+nCom+'</div><div class="l">注释行</div></div>'+
+    '<div class="cell"><div class="n">'+nBlank+'</div><div class="l">空行</div></div>'+
+   '</div>'+
+   '<div class="grid">'+
+    '<div class="cell"><div class="n">'+defs.func+'</div><div class="l">函数（宽松）</div></div>'+
+    '<div class="cell"><div class="n">'+defs.cls+'</div><div class="l">类/结构</div></div>'+
+    '<div class="cell'+(todoLines?' warn':'')+'"><div class="n">'+todoLines+'</div><div class="l">TODO 标记行</div></div>'+
+    '<div class="cell'+(over120?' warn':'')+'"><div class="n">'+over120+'</div><div class="l">超 120 字符行</div></div>'+
+   '</div>'+
+   '<div class="sec"><div class="t">TODO / FIXME / HACK / XXX 明细</div>'+
+    '<span class="chip'+(todo.TODO?' warn':'')+'">TODO <b>×'+todo.TODO+'</b></span>'+
+    '<span class="chip'+(todo.FIXME?' warn':'')+'">FIXME <b>×'+todo.FIXME+'</b></span>'+
+    '<span class="chip'+(todo.HACK?' warn':'')+'">HACK <b>×'+todo.HACK+'</b></span>'+
+    '<span class="chip'+(todo.XXX?' warn':'')+'">XXX <b>×'+todo.XXX+'</b></span>'+
+   '</div>'+
+   '<div class="sec"><div class="kv"><span class="k">最大行宽</span><span class="v">'+maxW+' 字符（第 '+maxLine+' 行）</span></div>'+
+    '<div class="kv"><span class="k">代码占比</span><span class="v">'+(lines.length?Math.round(nCode*100/lines.length):0)+'%</span></div></div>'
+ }catch(err){
+  // 兜底：原文展示 + 错误提示，不能白屏
+  var app2=document.getElementById('app');app2.className=''
+  app2.innerHTML='<div class="err">解析失败：'+escapeHtml(String((err&&err.message)||err))+'</div>'+
+   (p&&typeof p.content==='string'?'<pre>'+escapeHtml(p.content)+'</pre>':'')
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

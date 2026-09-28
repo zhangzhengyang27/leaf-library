@@ -1,0 +1,10 @@
+{
+  "id": "python-imports",
+  "name": "Python 导入分析",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "分析 Python 导入：import/from 分组、标准库与第三方猜测、__main__ 守卫检测与定义计数",
+  "permissions": [],
+  "formats": ["py"]
+}

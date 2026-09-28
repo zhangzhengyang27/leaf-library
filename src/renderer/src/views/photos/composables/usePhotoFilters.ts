@@ -249,12 +249,6 @@ function build() {
   const isMapView = computed(() => tab.value.view === 'map')
   const isDuplicateView = computed(() => tab.value.view === 'duplicates')
   const isSimilarView = computed(() => tab.value.view.startsWith('similar:'))
-  const activeAlbumId = computed(() =>
-    tab.value.view.startsWith('album:') ? tab.value.view.slice(6) : null
-  )
-  const activeAlbum = computed(
-    () => data.albums.value.find((a) => a.id === activeAlbumId.value) ?? null
-  )
   const activeFolderId = computed(() =>
     tab.value.view.startsWith('folder:') ? tab.value.view.slice(7) : null
   )
@@ -671,7 +665,6 @@ function build() {
     }
     if (isSimilarView.value) return similarMatches.value
     if (activeFolderId.value) return data.folderPhotos.value
-    if (activeAlbumId.value) return data.albumPhotos.value
     if (activeSmartAlbumId.value) return data.smartAlbumPhotos.value
     if (tab.value.view === 'unsorted') return data.unsortedPhotos.value
     if (tab.value.view === 'recent') return data.recentPhotos.value
@@ -809,13 +802,6 @@ function build() {
       )
     }
 
-    if (activeAlbumId.value) {
-      return groupByDate(data.albumPhotos.value.filter(matchAll)).map((s) => ({
-        ...s,
-        photos: sortForView(s.photos)
-      }))
-    }
-
     if (activeFolderId.value) {
       // 分页态（直属与「显示子文件夹内容」拍平同池）：维度与 folderIds 均已下推 SQL，
       // 窗口内不再二次 matchAll（loadFolderPage 的两种取数形状见 usePhotoData）
@@ -889,8 +875,6 @@ function build() {
     isMapView,
     isDuplicateView,
     isSimilarView,
-    activeAlbumId,
-    activeAlbum,
     activeFolderId,
     activeFolder,
     activeSmartAlbumId,

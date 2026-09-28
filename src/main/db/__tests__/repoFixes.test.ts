@@ -1,7 +1,7 @@
 /**
  * 修复回归测试（代码审查修复批次）：
  * - 文件夹删除：整棵子树连带删除（Eagle 口径），素材按勾选进回收站或落未分类
- * - 清空回收站：相册条目/自由网格坐标孤儿清理 + 标签 usage_count 回退
+ * - 清空回收站：自由网格坐标孤儿清理 + 标签 usage_count 回退
  * - updatePhoto 标签整组替换：usage_count 差集维护
  * - IN 参数分块：>900 id 的批量路径不再超 SQLite 参数上限
  * - 侧栏徽章计数：全部/未标签/最近查看按 SQL 聚合，与 untaggedOnly 同口径
@@ -12,7 +12,6 @@ import { createTestDb, closeTestDb } from './testDb'
 import { PhotoRepository } from '../repos/PhotoRepository'
 import { PhotoFolderRepository } from '../repos/PhotoFolderRepository'
 import { TagRepository } from '../repos/TagRepository'
-import { AlbumRepository } from '../repos/AlbumRepository'
 
 describe('PhotoFolderRepository · remove 子树连带删除（Eagle dialog.removeFolder 口径）', () => {
   let db: Database.Database
@@ -115,19 +114,17 @@ describe('PhotoRepository · clearRecycleBin 孤儿清理 + 计数回退', () =>
   let db: Database.Database
   let photos: PhotoRepository
   let tags: TagRepository
-  let albums: AlbumRepository
   let folders: PhotoFolderRepository
 
   beforeEach(() => {
     db = createTestDb()
     photos = new PhotoRepository(db)
     tags = new TagRepository(db)
-    albums = new AlbumRepository(db)
     folders = new PhotoFolderRepository(db)
   })
   afterEach(() => closeTestDb(db))
 
-  it('清空回收站删除相册条目/自由网格坐标，回退标签计数', () => {
+  it('清空回收站删除自由网格坐标，回退标签计数', () => {
     const p1 = photos.addPhoto('/p1.jpg')
     const p2 = photos.addPhoto('/p2.jpg')
 
@@ -136,8 +133,6 @@ describe('PhotoRepository · clearRecycleBin 孤儿清理 + 计数回退', () =>
     const tag = tags.getByName('风景')
     expect(tag?.usage_count).toBe(2)
 
-    const album = albums.create('旅行')
-    albums.addPhotos(album.id, [p1.id, p2.id])
     // 自由网格坐标行（photo_freeform_pos，folder_id 非空）
     const canvas = folders.create('画布')
     db.prepare(
@@ -148,8 +143,6 @@ describe('PhotoRepository · clearRecycleBin 孤儿清理 + 计数回退', () =>
     const purged = photos.clearRecycleBin()
     expect(purged).toContain(p1.id)
 
-    // 相册条目已清理
-    expect(albums.getAlbumPhotos(album.id)).toEqual([p2.id])
     // 自由网格坐标已清理
     const ff = db
       .prepare(`SELECT COUNT(*) AS n FROM photo_freeform_pos WHERE photo_id = ?`)

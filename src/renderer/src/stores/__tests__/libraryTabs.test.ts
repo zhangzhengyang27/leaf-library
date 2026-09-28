@@ -28,9 +28,9 @@ describe('useLibraryTabs · setView 与历史栈', () => {
   it('setView 压栈，back/forward 沿栈移动', () => {
     const tabs = useLibraryTabs()
     tabs.setView('favorites', '收藏')
-    tabs.setView('album:a1', '相册A')
-    expect(tabs.activeView).toBe('album:a1')
-    expect(tabs.history).toEqual(['all', 'favorites', 'album:a1'])
+    tabs.setView('folder:f1', '文件夹A')
+    expect(tabs.activeView).toBe('folder:f1')
+    expect(tabs.history).toEqual(['all', 'favorites', 'folder:f1'])
 
     tabs.back()
     expect(tabs.activeView).toBe('favorites')
@@ -42,7 +42,7 @@ describe('useLibraryTabs · setView 与历史栈', () => {
     expect(tabs.activeView).toBe('all')
     tabs.forward()
     tabs.forward()
-    expect(tabs.activeView).toBe('album:a1')
+    expect(tabs.activeView).toBe('folder:f1')
     expect(tabs.canForward).toBe(false)
   })
 
@@ -59,10 +59,10 @@ describe('useLibraryTabs · setView 与历史栈', () => {
 
   it('同视图连续 setView 不重复入栈（但筛选更新生效）', () => {
     const tabs = useLibraryTabs()
-    tabs.setView('album:a1', '相册A')
+    tabs.setView('folder:f1', '文件夹A')
     tabs.active.kindFilter = 'image'
-    tabs.setView('album:a1', '相册A')
-    expect(tabs.history).toEqual(['all', 'album:a1'])
+    tabs.setView('folder:f1', '文件夹A')
+    expect(tabs.history).toEqual(['all', 'folder:f1'])
     expect(tabs.active.kindFilter).toBe('image')
   })
 
@@ -77,31 +77,31 @@ describe('useLibraryTabs · setView 与历史栈', () => {
 describe('useLibraryTabs · 标题与失效', () => {
   it('syncTitle 修正当前视图标题', () => {
     const tabs = useLibraryTabs()
-    tabs.setView('album:a1', '相册')
+    tabs.setView('folder:f1', '文件夹')
     tabs.syncTitle('真名')
     expect(tabs.active.title).toBe('真名')
   })
 
   it('retitleByViewPrefix 只改匹配视图', () => {
     const tabs = useLibraryTabs()
-    tabs.setView('album:a1', '旧名')
-    tabs.retitleByViewPrefix('album:', 'a1', '改名了')
+    tabs.setView('folder:f1', '旧名')
+    tabs.retitleByViewPrefix('folder:', 'f1', '改名了')
     expect(tabs.active.title).toBe('改名了')
     tabs.setView('all', '全部')
-    tabs.retitleByViewPrefix('album:', 'a1', '再改')
+    tabs.retitleByViewPrefix('folder:', 'f1', '再改')
     expect(tabs.active.title).toBe('全部')
   })
 
   it('invalidateViews 当前视图回退图库，历史剔除失效视图', () => {
     const tabs = useLibraryTabs()
-    tabs.setView('album:gone', '失效')
-    tabs.setView('album:ok', '保留')
-    tabs.back() // 回到 album:gone
-    expect(tabs.activeView).toBe('album:gone')
-    tabs.invalidateViews((v) => v === 'album:gone')
+    tabs.setView('folder:gone', '失效')
+    tabs.setView('folder:ok', '保留')
+    tabs.back() // 回到 folder:gone
+    expect(tabs.activeView).toBe('folder:gone')
+    tabs.invalidateViews((v) => v === 'folder:gone')
     expect(tabs.active.view).toBe('all')
-    expect(tabs.history).not.toContain('album:gone')
-    expect(tabs.history).toContain('album:ok')
+    expect(tabs.history).not.toContain('folder:gone')
+    expect(tabs.history).toContain('folder:ok')
     // 栈指针落在合法位置
     expect(tabs.history[tabs.histIdx]).toBe(tabs.activeView)
   })
@@ -121,14 +121,14 @@ describe('useLibraryTabs · 标题与失效', () => {
 describe('useLibraryTabs · 持久化', () => {
   it('状态写入新 key 且新 store 恢复（含历史栈）', () => {
     const tabs = useLibraryTabs()
-    tabs.setView('album:keep', '我的相册')
+    tabs.setView('folder:keep', '我的文件夹')
     expect(localStorage.getItem('library.tab.v2')).toBeTruthy()
 
     setActivePinia(createPinia())
     const restored = useLibraryTabs()
-    expect(restored.activeView).toBe('album:keep')
-    expect(restored.active.title).toBe('我的相册')
-    expect(restored.history).toEqual(['all', 'album:keep'])
+    expect(restored.activeView).toBe('folder:keep')
+    expect(restored.active.title).toBe('我的文件夹')
+    expect(restored.history).toEqual(['all', 'folder:keep'])
     expect(restored.canBack).toBe(true)
   })
 

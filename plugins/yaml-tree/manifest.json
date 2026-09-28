@@ -1,0 +1,10 @@
+{
+  "id": "yaml-tree",
+  "name": "YAML 树",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "按缩进层级把 YAML 解析成键树展示，附总键数、最大深度与叶子数统计（宽松解析）",
+  "permissions": [],
+  "formats": ["yaml", "yml"]
+}

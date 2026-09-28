@@ -116,8 +116,7 @@ const sidebarRows = [
 ] as const
 const sidebarRows2 = [
   { key: 'smartGroup', label: '智能文件夹组' },
-  { key: 'folderGroup', label: '文件夹组' },
-  { key: 'albumGroup', label: '相册组' }
+  { key: 'folderGroup', label: '文件夹组' }
 ] as const
 type SidebarVisKey = (typeof sidebarRows)[number]['key'] | (typeof sidebarRows2)[number]['key']
 const sidebarVisibility = ref<Record<string, boolean>>(loadSidebarVisibility())
@@ -128,11 +127,9 @@ function loadSidebarVisibility(): Record<string, boolean> {
     return {}
   }
 }
-/** 与 LibraryPanel.vis() 对齐：albumGroup 是 Leaf 扩展默认隐藏（=== true 才显示），其余未设置即显示 */
+/** 与 LibraryPanel.vis() 对齐：未设置即显示 */
 function isSidebarVisible(key: SidebarVisKey): boolean {
-  return key === 'albumGroup'
-    ? sidebarVisibility.value[key] === true
-    : sidebarVisibility.value[key] !== false
+  return sidebarVisibility.value[key] !== false
 }
 function setSidebarVisible(key: SidebarVisKey, v: boolean): void {
   sidebarVisibility.value = { ...sidebarVisibility.value, [key]: v }

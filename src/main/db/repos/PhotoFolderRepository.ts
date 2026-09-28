@@ -2,7 +2,7 @@
  * Leaf · PhotoFolderRepository
  *
  * Schema: photo_folders（016，层级预留 parent_id）
- * 素材库手动文件夹分组（Eagle 文件夹维度）；与手动相册互补：文件夹做归类，相册做有序集合。
+ * 素材库手动文件夹分组（Eagle 文件夹维度，D-027 起是唯一归属分组维度）。
  */
 
 import { v4 as uuidv4 } from 'uuid'

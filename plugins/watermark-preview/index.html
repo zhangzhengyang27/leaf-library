@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>水印预览</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.row{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+.lbl{color:#9ca3af;font-size:11px;flex-shrink:0}
+input[type=text]{flex:1;min-width:0;border:1px solid #e5e7eb;border-radius:5px;height:22px;padding:0 6px;font:11px/22px -apple-system,'PingFang SC',sans-serif;color:#111827}
+input[type=text]:focus{outline:none;border-color:#93c5fd}
+.btns{display:flex;gap:4px}
+.sbtn{border:1px solid #e5e7eb;border-radius:5px;background:#fff;color:#4b5563;font-size:11px;height:20px;padding:0 7px;cursor:pointer}
+.sbtn:hover{background:#f3f4f6}
+.sbtn.on{background:#2563eb;border-color:#2563eb;color:#fff}
+.sbtn.on:hover{background:#1d4ed8}
+/* 位置九宫格：3×3 小方块，选中格高亮 */
+.nine{display:grid;grid-template-columns:repeat(3,14px);grid-template-rows:repeat(3,14px);gap:2px}
+.nine button{width:14px;height:14px;padding:0;border:1px solid #d1d5db;border-radius:3px;background:#fff;cursor:pointer}
+.nine button:hover{background:#f3f4f6}
+.nine button.on{background:#2563eb;border-color:#2563eb}
+input[type=range]{flex:1;min-width:60px;accent-color:#2563eb}
+input[type=checkbox]{accent-color:#2563eb;margin:0}
+canvas{width:100%;display:block;border:1px solid #e5e7eb;border-radius:6px;background:
+  repeating-conic-gradient(#f3f4f6 0 25%,#fff 0 50%) 0 0/16px 16px}
+.meta{margin-top:6px;color:#9ca3af;font-size:11px}
+</style></head>
+<body>
+<div id="app" class="empty">等待素材数据…</div>
+<div id="work" style="display:none">
+  <div class="row">
+    <span class="lbl">文本</span>
+    <input type="text" id="wtext" placeholder="水印文字" />
+  </div>
+  <div class="row">
+    <span class="lbl">位置</span>
+    <div class="nine" id="nine"></div>
+    <span class="lbl" style="margin-left:4px">字号</span>
+    <div class="btns" id="sizes">
+      <button type="button" class="sbtn" data-s="s">小</button>
+      <button type="button" class="sbtn" data-s="m">中</button>
+      <button type="button" class="sbtn" data-s="l">大</button>
+    </div>
+  </div>
+  <div class="row">
+    <span class="lbl">透明</span>
+    <input type="range" id="alpha" min="10" max="100" value="60" />
+    <span class="lbl" id="alphaval">60%</span>
+    <label class="lbl" style="flex-shrink:0;cursor:pointer"><input type="checkbox" id="tile" /> 对角平铺</label>
+  </div>
+  <canvas id="cv"></canvas>
+  <div class="meta" id="meta"></div>
+</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+/**
+ * 纯 canvas 合成预览：水印只画在本插件的画布上看效果，不写盘。
+ * 正式给图片加水印请走主程序既有的导出/编辑链，本插件不承担导出。
+ */
+var state={pos:8,size:'m',text:'',tile:false}; // pos = 九宫格序号 0-8，默认右下
+var lastAuto=''; // 上一次自动填入的默认文本（素材名），用于换素材时判断是否还跟着默认值
+var img=null;
+// 九宫格按钮
+var nine=document.getElementById('nine');
+nine.innerHTML=(function(){var s='';for(var i=0;i<9;i++)s+='<button type="button" data-i="'+i+'"'+(i===state.pos?' class="on"':'')+' title="位置 '+[
+  '左上','上中','右上','左中','正中','右中','左下','下中','右下'][i]+'"></button>';return s})();
+nine.onclick=function(ev){
+  var btn=ev.target.closest('button');if(!btn)return;
+  state.pos=Number(btn.dataset.i);
+  for(var i=0;i<nine.children.length;i++)nine.children[i].classList.toggle('on',i===state.pos);
+  draw();
+};
+// 字号三档（相对图宽 2% / 3.5% / 5.5%，最小 10px）
+var sizes=document.getElementById('sizes');
+sizes.onclick=function(ev){
+  var btn=ev.target.closest('.sbtn');if(!btn)return;
+  state.size=btn.dataset.s;
+  for(var i=0;i<sizes.children.length;i++)sizes.children[i].classList.toggle('on',sizes.children[i].dataset.s===state.size);
+  draw();
+};
+sizes.children[1].classList.add('on'); // 默认「中」
+document.getElementById('alpha').addEventListener('input',function(){
+  document.getElementById('alphaval').textContent=this.value+'%';draw()});
+document.getElementById('tile').addEventListener('change',function(){state.tile=this.checked;draw()});
+document.getElementById('wtext').addEventListener('input',function(){state.text=this.value;draw()});
+function draw(){
+  if(!img||!img.naturalWidth)return;
+  var cv=document.getElementById('cv');
+  cv.width=img.naturalWidth;cv.height=img.naturalHeight;
+  var ctx=cv.getContext('2d'),w=cv.width,h=cv.height;
+  ctx.drawImage(img,0,0,w,h);
+  var text=(state.text||'').trim();
+  if(!text){document.getElementById('meta').textContent='未填写水印文本，仅显示原图';return}
+  var fs=Math.max(10,w*{s:0.02,m:0.035,l:0.055}[state.size]);
+  ctx.save();
+  ctx.globalAlpha=Number(document.getElementById('alpha').value)/100;
+  ctx.font='600 '+fs+"px -apple-system,'PingFang SC',sans-serif";
+  // 白字 + 暗描影：任何底图上都可辨认
+  ctx.fillStyle='#fff';
+  ctx.shadowColor='rgba(0,0,0,.55)';ctx.shadowBlur=fs/4;ctx.shadowOffsetY=1;
+  var tw=ctx.measureText(text).width;
+  if(state.tile){
+    // 对角平铺：绕中心旋转 -30°，在旋转坐标系里按步距铺满外接矩形
+    ctx.translate(w/2,h/2);ctx.rotate(-Math.PI/6);
+    var stepX=tw+w*0.12,stepY=fs*4;
+    var reach=Math.sqrt(w*w+h*h)/2+Math.max(stepX,stepY);
+    for(var y=-reach;y<=reach;y+=stepY){
+      var off=(Math.round(y/stepY)%2)*stepX/2; // 奇偶行错半格
+      for(var x=-reach+off;x<=reach;x+=stepX)ctx.fillText(text,x,y);
+    }
+  }else{
+    var m=w*0.04; // 四边留白 4%
+    var xs=[m,(w-tw)/2,w-tw-m],ys=[m,(h-fs)/2,h-fs-m];
+    ctx.textBaseline='top';
+    ctx.fillText(text,xs[state.pos%3],ys[Math.floor(state.pos/3)]);
+  }
+  ctx.restore();
+  document.getElementById('meta').textContent='预览 '+w+' × '+h+' px · '+
+    (state.tile?'对角平铺':('位置 '+['左上','上中','右上','左中','正中','右中','左下','下中','右下'][state.pos]))+
+    ' · 字号 '+({s:'小',m:'中',l:'大'}[state.size])+' · 透明度 '+document.getElementById('alpha').value+'%';
+}
+function show(msg){
+  var app=document.getElementById('app');
+  app.style.display='';app.textContent=msg;
+  document.getElementById('work').style.display='none';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ if(!p){show('未选中素材');return}
+ if(p.kind!=='image'){show('仅图片素材支持水印预览');return}
+ // 默认文本 = 素材名；用户改过（不等于上一张的默认值）则保留用户输入
+ if(!state.text||state.text===lastAuto){
+   state.text=p.fileName||'';
+   lastAuto=state.text;
+   document.getElementById('wtext').value=state.text;
+ }
+ var im=new Image();im.crossOrigin='anonymous';
+ im.onload=function(){img=im;
+   document.getElementById('app').style.display='none';
+   document.getElementById('work').style.display='';
+   draw()};
+ im.onerror=function(){show('缩略图加载失败')};
+ im.src=p.bigThumbUrl||p.thumbUrl;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script>
+</body>
+</html>

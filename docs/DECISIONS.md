@@ -635,3 +635,30 @@ yauzl lazyEntries 必须显式首次 readEntry 起泵。
 **验证**：`pnpm lint/typecheck/test/build` 全绿后提交清理 commit，再执行 filter-repo
 （工作区文件不动，素材在盘上原位保留）；重写后 `git log --name-only` 全历史对
 eagle / build-snapshot / _compiled / _错位 / tsbuildinfo 路径零命中。
+
+## Decision-027 · 撤销手动相册：组织维度与 Eagle 对齐（文件夹/智能夹/标签）
+
+**日期**：2026-09-27
+
+**决策**：砍掉「手动相册」概念（`photo_albums`/`photo_album_items`、相册视图、右键
+「加入相册…」、MCP `leaf_create_album`），组织维度收敛为 Eagle 同款三件：
+**文件夹（唯一归属）+ 智能文件夹（规则）+ 标签（多对多）**。智能文件夹不受影响。
+
+**理由**：
+
+- Eagle 无手动相册（实包取证）；Leaf 相册是一期自扩展，与文件夹语义重叠——
+  「加入相册」不改文件夹归属，用户实际无法发现其存在（侧栏相册组默认隐藏，
+  建完无入口），实测成一个「点得着但看不见去处的」死胡同功能。
+- 右键菜单把「加入相册…」放在显眼位，与「默认隐藏的入口」自相矛盾；
+  修入口（默认显示）等于把 Eagle 没有的维度摆上台面，与复刻定位相悖。
+- 一张素材可进多个相册的「收集册」语义，标签已覆盖（多对多），无需两套。
+
+**数据处置**：migration 027 `DROP TABLE photo_album_items / photo_albums`。
+对账（2026-09-27 真库）：仅 1 相册「测试相册」、1 条素材引用，无实际数据损失；
+删除素材时的相册条目清理 SQL 随表移除。**未分类语义随之简化**：
+原「不在任何文件夹且不在任何手动相册」→ 现与 Eagle 一致的「不在任何文件夹」。
+
+**影响面**：DB（027 迁移 + DB_SCHEMA）、主进程（AlbumRepository/Store/IPC/preload/
+MCP 工具/ClipServer 注入）、渲染层（AlbumModal/右键菜单项/侧栏相册组/FilterBar 相册
+操作/TitleBar 面包屑/设置侧栏可见性行/命令面板/视图路由 `album:` 前缀/Album 类型）、
+相关单测。MCP 客户端引用 `leaf_create_album` 的编排需改用标签或文件夹维度。

@@ -211,7 +211,7 @@ describe('PhotoRepository · clearRecycleBin（不可逆点：硬删 + 关联表
   })
 
   // 本条立项时是**现状 bug**的占位（it.skip）：clearRecycleBin 的清理名单只有
-  // photo_tags / photo_album_items / photo_freeform_pos / photo_annotations，
+  // photo_tags / photo_freeform_pos / photo_annotations（photo_album_items 027 已随相册出库），
   // 没有 photo_vectors（021），而清理钩子 ClipEmbeddingService.removeVector 全库无调用方——
   // 孤儿向量会被 searchByVector（allByModel）当真命中，以图搜图返回已硬删素材的幽灵 id。
   // 2026-09-25 在事务里补上 DELETE FROM photo_vectors 并摘掉 skip（复盘教训：docstring

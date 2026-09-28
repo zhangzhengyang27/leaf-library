@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>Dockerfile 指令清单</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.chip{display:inline-block;padding:0 7px;margin:0 4px 4px 0;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;font-size:10px;color:#374151;line-height:1.8}
+.chip b{color:#111827;font-weight:600}
+.sec{margin-top:8px}
+.sec .t{font-size:11px;color:#9ca3af;margin-bottom:3px;display:flex;align-items:baseline;gap:6px}
+.sec .t .kw{font-family:ui-monospace,Menlo,monospace;color:#111827;font-weight:700}
+.list{overflow:auto;max-height:130px;border:1px solid #f3f4f6;border-radius:6px}
+.row{display:flex;gap:6px;align-items:baseline;padding:2px 6px;border-bottom:1px dashed #f3f4f6;font-size:11px}
+.row:last-child{border-bottom:none}
+.row .ln{color:#cbd5e1;font-size:10px;font-family:ui-monospace,Menlo,monospace;flex-shrink:0;width:26px;text-align:right}
+.row .body{flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;color:#374151;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.img{display:flex;gap:6px;align-items:center;padding:2px 6px;font-size:11px}
+.img .nm{font-family:ui-monospace,Menlo,monospace;color:#111827;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.badge{display:inline-block;padding:0 5px;border-radius:4px;font-size:9px;line-height:1.7;flex-shrink:0}
+.b-ok{background:#ecfdf5;color:#047857}
+.b-warn{background:#fef2f2;color:#b91c1c}
+.hint{margin-top:8px;padding:4px 8px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;color:#92400e;font-size:11px;line-height:1.7}
+.hint.ok{background:#f9fafb;border-color:#e5e7eb;color:#9ca3af}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+pre{margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+var KNOWN={FROM:1,RUN:1,CMD:1,LABEL:1,EXPOSE:1,ENV:1,ADD:1,COPY:1,ENTRYPOINT:1,VOLUME:1,USER:1,WORKDIR:1,ARG:1,ONBUILD:1,STOPSIGNAL:1,HEALTHCHECK:1,SHELL:1}
+
+/** 逻辑行解析：反斜杠续行合并（行号取首行），整行 # 注释单独归档 */
+function parseLogical(lines){
+  var out=[],i=0
+  while(i<lines.length){
+    var line=lines[i],start=i+1,text=line
+    if(/^\s*#/.test(text)){out.push({comment:true,line:start,text:text.trim()});i++;continue}
+    while(/\\\s*$/.test(text)&&i+1<lines.length){
+      i++
+      text=text.replace(/\\\s*$/,'')+' '+lines[i]
+    }
+    out.push({comment:false,line:start,text:text.replace(/\\\s*$/,'').trim()})
+    i++
+  }
+  return out
+}
+
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload
+ try{
+  var app=document.getElementById('app')
+  if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+  var lines=p.content.replace(/\r\n/g,'\n').split('\n')
+  var logical=parseLogical(lines)
+  var groups={},order=[],comments=0
+  for(var i=0;i<logical.length;i++){
+    var l=logical[i]
+    if(l.comment){comments++;continue}
+    if(!l.text)continue
+    var m2=/^([A-Za-z][A-Za-z0-9_]*)\s+(.*)$/.exec(l.text)
+    if(!m2||!KNOWN[m2[1].toUpperCase()])continue
+    var kw=m2[1].toUpperCase()
+    if(!groups[kw]){groups[kw]=[];order.push(kw)}
+    groups[kw].push({args:m2[2],line:l.line})
+  }
+  // FROM 基础镜像清单 + tag 固定检测
+  var images=[]
+  if(groups.FROM){
+    for(i=0;i<groups.FROM.length;i++){
+      var toks=groups.FROM[i].args.split(/\s+/).filter(function(t){return t&&t.indexOf('--')!==0})
+      var img=toks[0]||''
+      var lastSeg=img.split('/').pop()
+      var colon=lastSeg.indexOf(':')
+      var tag=colon>=0?lastSeg.slice(colon+1):''
+      var digest=lastSeg.indexOf('@')>=0
+      images.push({img:img,tag:tag,digest:digest,line:groups.FROM[i].line,
+        fixed:digest||(colon>=0&&tag.toLowerCase()!=='latest')})
+    }
+  }
+  var html='<div class="meta">'+escapeHtml(p.fileName||'')+' · 指令 '+order.reduce(function(a,k){return a+groups[k].length},0)+
+    ' 条 · 注释 '+comments+' 行 · 总行 '+lines.length+'</div>'
+  // 指令计数 chips
+  for(i=0;i<order.length;i++)html+='<span class="chip">'+order[i]+' <b>×'+groups[order[i]].length+'</b></span>'
+  if(!order.length)html+='<span class="chip">未识别到 Dockerfile 指令</span>'
+  // FROM 镜像清单
+  html+='<div class="sec"><div class="t"><span class="kw">FROM</span><span>基础镜像</span></div>'
+  if(images.length){
+    for(i=0;i<images.length;i++){
+      var im=images[i]
+      html+='<div class="img"><span class="ln" style="color:#cbd5e1;font-size:10px;font-family:ui-monospace,Menlo,monospace">'+im.line+'</span>'+
+        '<span class="nm">'+escapeHtml(im.img)+'</span>'+
+        (im.fixed?'<span class="badge b-ok">tag 已固定</span>':'<span class="badge b-warn">'+(im.tag==='latest'?'latest':'未固定 tag')+'</span>')+'</div>'
+    }
+  }else html+='<div style="color:#9ca3af;font-size:11px">无 FROM 指令</div>'
+  html+='</div>'
+  // 每种指令的参数摘要
+  for(i=0;i<order.length;i++){
+    var k=order[i],items=groups[k]
+    html+='<div class="sec"><div class="t"><span class="kw">'+k+'</span><span>×'+items.length+'</span></div><div class="list">'
+    for(var j=0;j<items.length;j++){
+      var a=items[j].args
+      var summary=a.length>72?a.slice(0,72)+'…':a
+      html+='<div class="row"><span class="ln">'+items[j].line+'</span><span class="body">'+escapeHtml(summary)+'</span></div>'
+    }
+    html+='</div></div>'
+  }
+  // 最佳实践提示（仅提示，不说教）
+  var hints=[]
+  if(groups.ADD){
+    var addLines=groups.ADD.map(function(x){return x.line}).join('、')
+    hints.push('第 '+addLines+' 行使用 ADD：若不依赖自动解压 tar，COPY 语义更明确。')
+  }
+  var loose=images.filter(function(x){return !x.fixed})
+  if(loose.length)hints.push('有 '+loose.length+' 个 FROM 未固定版本 tag（默认 latest）：锁定具体版本可让构建更可复现。')
+  if(hints.length){
+    html+='<div class="hint">提示：'+hints.map(escapeHtml).join('<br>')+'</div>'
+  }else{
+    html+='<div class="hint ok">未发现 ADD→COPY、tag 未固定之类的常见提示点</div>'
+  }
+  app.className=''
+  app.innerHTML=html
+ }catch(err){
+  // 兜底：原文展示 + 错误提示，不能白屏
+  var app2=document.getElementById('app');app2.className=''
+  app2.innerHTML='<div class="err">解析失败：'+escapeHtml(String((err&&err.message)||err))+'</div>'+
+   (p&&typeof p.content==='string'?'<pre>'+escapeHtml(p.content)+'</pre>':'')
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

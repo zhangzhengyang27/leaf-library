@@ -1,0 +1,10 @@
+{
+  "id": "env-viewer",
+  "name": "环境变量查看器",
+  "version": "1.0.0",
+  "category": "format",
+  "entry": "index.html",
+  "description": "逐行解析 .env 的 KEY=VALUE：敏感值自动打码、重复 KEY 覆盖检测，注释行侧栏分组展示",
+  "permissions": [],
+  "formats": ["env"]
+}

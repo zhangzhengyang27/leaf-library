@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>YAML 树</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.warn{color:#b45309;background:#fffbeb;border:1px solid #fde68a;border-radius:5px;padding:3px 8px;font-size:11px;margin-bottom:6px}
+.stats{color:#9ca3af;font-size:11px;margin-bottom:6px}
+.tree{overflow:auto;max-height:420px;border:1px solid #e5e7eb;border-radius:6px;padding:4px 6px;background:#fff}
+.yn{white-space:pre-wrap;word-break:break-word;user-select:text;line-height:1.7}
+.k{color:#7c3aed;font-weight:600}
+.k.list{color:#2563eb;font-weight:400}
+.v{font-family:ui-monospace,Menlo,monospace;color:#111827}
+.v.cont{color:#9ca3af;font-style:italic}
+.yn:hover{background:#f9fafb;border-radius:3px}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;margin-bottom:6px}
+.raw{margin:0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;
+  overflow:auto;max-height:320px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#374151;
+  white-space:pre-wrap;word-break:break-all;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var MAX_ROWS=2000; // 渲染行上限
+/**
+ * 宽松缩进解析：只认「缩进层级 + key: value」骨架，值一律原样字符串。
+ * 不支持流式语法（{a: 1} / [1, 2]）、多行折叠（| >）、锚点引用等完整 YAML，
+ * 复杂文档可能结构不准——顶部已有提示。
+ */
+function parseYaml(content){
+  var root={key:'',value:null,children:[],depth:0};
+  var stack=[{indent:-1,node:root}]; // 祖先链（含缩进）
+  function makeNode(indent,key,value,isList){
+    while(stack.length>1){
+      var top=stack[stack.length-1];
+      if(top.indent<indent)break;
+      // YAML 惯例特例：序列项允许与父键同缩进（key: 下接同缩进 - item 归入该键）
+      if(top.indent===indent&&isList&&top.node.value===null&&top.node.key!==''&&top.node.key!=='-')break;
+      stack.pop();
+    }
+    var node={key:key,value:value,children:[],depth:stack.length};
+    stack[stack.length-1].node.children.push(node);
+    stack.push({indent:indent,node:node});
+  }
+  /** 一个物理/虚拟行：剥列表前缀 → 键值切分（首个「: 」或行尾「:」） */
+  function handleLine(indent,text){
+    if(text==='-'||text.indexOf('- ')===0){
+      var rest=text.replace(/^-\s*/,'');
+      if(rest&&!(rest==='-'||rest.indexOf('- ')===0)&&!/:(\s|$)/.test(rest)){
+        makeNode(indent,'-',rest,true); // 纯列表项：值直接挂在 '-' 上
+      }else{
+        makeNode(indent,'-',null,true);
+        if(rest)handleLine(indent+2,rest); // 列表项里还有键/嵌套列表 → 作为子行
+      }
+      return;
+    }
+    var m=/:(\s|$)/.exec(text);
+    if(m){
+      var key=text.slice(0,m.index).trim().replace(/^["']|["']$/g,'');
+      var val=text.slice(m.index+1).trim();
+      makeNode(indent,key||'…',val||null);
+    }else{
+      makeNode(indent,'',text); // 无键行：按延续文本挂当前层
+    }
+  }
+  var lines=content.split(/\r\n|\n|\r/);
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i].replace(/\t/g,'  '); // Tab 按 2 空格宽松处理
+    if(!line.trim())continue;
+    if(/^\s*#/.test(line))continue; // 整行注释跳过（值内的 # 原样保留）
+    var indent=line.length-line.replace(/^ +/,'').length;
+    handleLine(indent,line.trim());
+  }
+  return root;
+}
+/** 统计：总键数（有显式键的节点，不含列表标记与延续行）/ 最大深度 / 叶子数 */
+function stats(root){
+  var keys=0,maxDepth=0,leaves=0;
+  (function walk(n){
+    if(n!==root){
+      if(n.key!==''&&n.key!=='-')keys++;
+      if(n.depth>maxDepth)maxDepth=n.depth;
+      if(!n.children.length)leaves++;
+    }
+    for(var i=0;i<n.children.length;i++)walk(n.children[i]);
+  })(root);
+  return {keys:keys,depth:maxDepth,leaves:leaves};
+}
+function render(root){
+  var rows=[];
+  (function walk(n){
+    for(var i=0;i<n.children.length;i++){
+      var c=n.children[i];
+      if(rows.length<MAX_ROWS){
+        var pad='padding-left:'+(14*(c.depth-1)+2)+'px';
+        if(c.key==='-')rows.push('<div class="yn" style="'+pad+'"><span class="k list">•</span>'+
+          (c.value?' <span class="v">'+escapeHtml(c.value)+'</span>':'')+'</div>');
+        else if(c.key==='')rows.push('<div class="yn" style="'+pad+'"><span class="v cont">'+escapeHtml(c.value)+'</span></div>');
+        else rows.push('<div class="yn" style="'+pad+'"'+(c.value?' title="'+escapeHtml(c.value)+'"':'')+'>'+
+          '<span class="k">'+escapeHtml(c.key)+'</span>'+(c.value?' <span class="v">'+escapeHtml(c.value)+'</span>':'')+'</div>');
+      }
+      walk(c);
+    }
+  })(root);
+  return rows;
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+ var content=p.content.replace(/^\uFEFF/,''); // 去 BOM
+ if(!content.trim()){app.textContent='文件内容为空';return}
+ var root=parseYaml(content);
+ if(!root.children.length){
+   // 兜底：一行都没解析出来 → 提示 + 原文展示，不白屏
+   app.className='';
+   app.innerHTML='<div class="err">解析失败：没有找到任何键或列表项。宽松解析只支持常规缩进写法。</div>'+
+     '<pre class="raw">'+escapeHtml(content)+'</pre>';
+   return;
+ }
+ var s=stats(root);
+ var rows=render(root);
+ var html='<div class="warn">宽松解析：仅按缩进层级构建键树，复杂语法（流式 / 多行折叠 / 锚点）可能不准</div>'+
+   '<div class="stats">'+escapeHtml(p.fileName||'')+' · 总键数 '+s.keys+' · 最大深度 '+s.depth+' · 叶子数 '+s.leaves+'</div>'+
+   '<div class="tree">'+rows.join('')+'</div>';
+ if(rows.length>=MAX_ROWS)html+='<div class="stats" style="margin-top:6px">内容较多，仅显示前 '+MAX_ROWS+' 行</div>';
+ app.className='';
+ app.innerHTML=html;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script>
+</body>
+</html>

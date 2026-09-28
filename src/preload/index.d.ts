@@ -14,6 +14,14 @@ export interface Tag {
   color?: string | null
   /** 六期标签分组：父标签 id（null=顶层） */
   parentId?: string | null
+  /** 028：群组描述（Eagle group-description） */
+  description?: string | null
+  /** 028：常用标签（Eagle starred，用户手动设定） */
+  starred?: boolean
+  /** 028：群组展示顺序 */
+  sortOrder?: number
+  /** 028：群组标记（Eagle 群组=容器） */
+  isGroup?: boolean
   usageCount?: number
   createdAt: number
 }
@@ -104,9 +112,7 @@ export interface API {
     // 插件中心（D-025）：启停 / 卸载 / 导入 / 全量视图
     setEnabled: (id: string, enabled: boolean) => Promise<{ ok: boolean; error?: string }>
     uninstall: (id: string) => Promise<{ ok: boolean; error?: string }>
-    importPlugin: (
-      zipPath: string
-    ) => Promise<{ ok: boolean; id?: string; error?: string }>
+    importPlugin: (zipPath: string) => Promise<{ ok: boolean; id?: string; error?: string }>
     listAll: () => Promise<
       Array<{
         id: string
@@ -123,9 +129,7 @@ export interface API {
     /** 选 .leafplugin 文件（null = 用户取消；不落盘） */
     pickPluginZip: () => Promise<string | null>
     /** 两段式第一段：解析包元数据（含权限清单），不落盘 */
-    inspectPlugin: (
-      zipPath: string
-    ) => Promise<{
+    inspectPlugin: (zipPath: string) => Promise<{
       ok: boolean
       error?: string
       meta?: {
@@ -138,9 +142,7 @@ export interface API {
       }
     }>
     /** 两段式第二段：确认后落盘 */
-    importPlugin: (
-      zipPath: string
-    ) => Promise<{ ok: boolean; id?: string; error?: string }>
+    importPlugin: (zipPath: string) => Promise<{ ok: boolean; id?: string; error?: string }>
   }
   /** 阶段 4.4 监控文件夹自动导入 */
   watchedFolders: {
@@ -210,7 +212,7 @@ export interface API {
   tag: {
     getTags: () => Promise<Tag[]>
     getTagById: (id: string) => Promise<Tag | undefined>
-    addTag: (name: string, opts?: { parentId?: string }) => Promise<Tag>
+    addTag: (name: string, opts?: { parentId?: string; isGroup?: boolean }) => Promise<Tag>
     updateTag: (
       id: string,
       updates: Partial<Omit<Tag, 'id' | 'createdAt'>>
@@ -219,6 +221,10 @@ export interface API {
     /** F19：多标签合并为一个（批量重命名语义） */
     mergeTags: (ids: string[], name: string) => Promise<Tag>
     getTagsByIds: (ids: string[]) => Promise<Tag[]>
+    /** 028（Eagle 标签管理复刻）：批量设常用 / 群组排序 / 解散群组 */
+    setTagsStarred: (ids: string[], starred: boolean) => Promise<boolean>
+    setGroupsOrder: (orderedIds: string[]) => Promise<boolean>
+    dissolveGroup: (groupId: string) => Promise<boolean>
   }
   preferences: {
     getEditorSettings: () => Promise<EditorSettings>
@@ -503,13 +509,6 @@ export interface API {
     lockSetPassword: (password: string, oldPassword?: string) => Promise<void>
     lockVerify: (password: string) => Promise<boolean>
     lockClear: (password: string) => Promise<boolean>
-    listAlbums: () => Promise<Album[]>
-    createAlbum: (name: string) => Promise<Album>
-    renameAlbum: (id: string, name: string) => Promise<Album | undefined>
-    deleteAlbum: (id: string) => Promise<boolean>
-    addPhotosToAlbum: (albumId: string, photoIds: string[]) => Promise<number>
-    removePhotosFromAlbum: (albumId: string, photoIds: string[]) => Promise<number>
-    getAlbumPhotos: (albumId: string) => Promise<Photo[]>
     fontInfo: (
       filePath: string
     ) => Promise<{ familyName: string; subfamilyName: string; fullName: string } | null>
@@ -936,16 +935,6 @@ export interface SmartAlbum {
   /** M4（026）：父智能夹 id；null = 根级 */
   parentId: string | null
   sortOrder: number
-  createdAt: number
-  updatedAt: number
-}
-
-export interface Album {
-  id: string
-  name: string
-  coverPhotoId: string | null
-  sortOrder: number
-  photoCount: number
   createdAt: number
   updatedAt: number
 }

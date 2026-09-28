@@ -34,6 +34,9 @@
   插件中心空态插画与「已安装」状态点已换本仓原创 SVG。后续以原创/开源图标集（Lucide/Tabler
   或自绘）整体替换后恢复入库（D-026）。
 
+- [ ] **Dockerfile 无点文件名不命中格式预览**：`PhotoPreview.fileExt` 用 `lastIndexOf('.')` 推导，
+  无点文件名（Dockerfile）得空串——dockerfile-outline 插件已备但挂不上；需改 fileExt 推导
+ （按 basename 白名单：Dockerfile/.env/Makefile 等）。（2026-09-27 插件目录扩容时发现）
 - [ ] 子文件夹卡片 v1 边界收尾：框选/多选/连选不含卡片、卡片选中不参与检查器、
   卡片排序不联动侧栏「排列」、卡片侧密码解锁与侧栏不共享；卡片右键菜单缺快速访问/移动/密码/图标项。
 

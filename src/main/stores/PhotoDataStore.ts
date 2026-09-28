@@ -5,7 +5,6 @@ import {
   type PhotoRepository
 } from '../db/repos/PhotoRepository'
 import { smartAlbumRepository, type SmartAlbum } from '../db/repos/SmartAlbumRepository'
-import { albumRepository, type Album } from '../db/repos/AlbumRepository'
 import { photoFolderRepository, type PhotoFolder } from '../db/repos/PhotoFolderRepository'
 import {
   buildSmartAlbumWhere,
@@ -32,7 +31,7 @@ import { planLibraryMoveRepair } from '../utils/libraryMoveRepair'
 import { isBundlePath, isSensitiveImportPath } from '../utils/pathPolicy'
 import { applySemanticQuery, stripSemanticSnapshot } from '../services/semanticRules'
 
-export type { Photo, SmartAlbum, SmartAlbumRules, Album, PhotoFolder }
+export type { Photo, SmartAlbum, SmartAlbumRules, PhotoFolder }
 
 /** 导入时可随路径带的元数据（拷贝入库后按「目标路径」重键传给仓库层） */
 export interface ImportMeta {
@@ -649,39 +648,6 @@ export class PhotoDataStore {
     if (!album) return []
     const ancestorWheres = await this.ancestorWheresFor(album.parentId, album.id)
     return photoRepository.queryByRules(await applySemanticQuery(album.rules), ancestorWheres)
-  }
-
-  // —— 手动相册（四期） ——
-
-  listAlbums(): Album[] {
-    return albumRepository.list()
-  }
-
-  createAlbum(name: string): Album {
-    return albumRepository.create(name)
-  }
-
-  renameAlbum(id: string, name: string): Album | undefined {
-    return albumRepository.update(id, { name })
-  }
-
-  deleteAlbum(id: string): boolean {
-    return albumRepository.remove(id)
-  }
-
-  addPhotosToAlbum(albumId: string, photoIds: string[]): number {
-    return albumRepository.addPhotos(albumId, photoIds)
-  }
-
-  removePhotosFromAlbum(albumId: string, photoIds: string[]): number {
-    return albumRepository.removePhotos(albumId, photoIds)
-  }
-
-  getAlbumPhotos(albumId: string): Photo[] {
-    return albumRepository
-      .getAlbumPhotos(albumId)
-      .map((id) => photoRepository.getPhotoById(id))
-      .filter((p): p is Photo => p !== undefined)
   }
 
   // —— 文件夹分组（五期） ——

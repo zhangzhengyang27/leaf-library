@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>Shell 脚本概览</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.shebang{margin-bottom:6px;padding:3px 8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;font-family:ui-monospace,Menlo,monospace;font-size:11px;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}
+.cell{background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:5px 8px}
+.cell .n{font-size:15px;font-weight:700;color:#111827;line-height:1.4}
+.cell .l{font-size:10px;color:#9ca3af}
+.cell.warn .n{color:#b91c1c}
+.sec{margin-top:8px}
+.sec .t{font-size:11px;color:#9ca3af;margin-bottom:3px}
+.list{overflow:auto;max-height:150px;border:1px solid #f3f4f6;border-radius:6px}
+.row{display:flex;gap:6px;align-items:baseline;padding:2px 6px;border-bottom:1px dashed #f3f4f6;font-size:11px}
+.row:last-child{border-bottom:none}
+.row .ln{color:#cbd5e1;font-size:10px;font-family:ui-monospace,Menlo,monospace;flex-shrink:0;width:26px;text-align:right}
+.row .body{flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.row.danger{background:#fef2f2}
+.row.danger .body{color:#b91c1c}
+.badge{display:inline-block;padding:0 5px;border-radius:4px;font-size:9px;line-height:1.7;flex-shrink:0;background:#fef2f2;color:#b91c1c}
+.chip{display:inline-block;padding:0 7px;margin:0 4px 4px 0;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;font-size:10px;color:#374151;line-height:1.8}
+.chip b{color:#111827;font-weight:600}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+pre{margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+/** 函数定义：name() { 与 function name（两种形态，宽松） */
+var FN_A=/^\s*([A-Za-z_]\w*)\s*\(\)\s*(?:\{|$)/
+var FN_B=/^\s*function\s+([A-Za-z_]\w*)/
+var FN_STOP=/^(?:if|then|else|elif|fi|for|while|until|do|done|case|esac|time|select|in)$/
+
+/** 危险命令规则：命中即整行摘录高亮（宽松匹配，仅提示） */
+var DANGER=[
+  {label:'rm 递归删除',re:/\brm\s+[^#;&|]*?-{1,2}[a-zA-Z]*r/},
+  {label:'sudo 提权执行',re:/\bsudo\b/},
+  {label:'下载脚本直接执行',re:/\b(?:curl|wget)\b[^|;&]*\|\s*(?:sudo\s+)?(?:ba|z|da|k)?sh\b/},
+  {label:'chmod 777 全开放权限',re:/\bchmod\s+(?:-{1,2}[\w-]+\s+)*777\b/}
+]
+
+/** 变量引用：$VAR 与 ${VAR}（含 ${VAR:-默认} 形态），去重计数 */
+var VAR_RE=/\$(?:\{([A-Za-z_]\w*)[^}]*\}|([A-Za-z_]\w*))/g
+var SPECIAL_RE=/\$[0-9@#?*\-$!]/
+
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload
+ try{
+  var app=document.getElementById('app')
+  if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+  var lines=p.content.replace(/\r\n/g,'\n').split('\n')
+  // shebang
+  var shebang=''
+  if(lines.length&&lines[0].charAt(0)==='#'&&lines[0].charAt(1)==='!')shebang=lines[0].trim()
+  // 函数清单（两种定义形态合并，同名去重保留首现行号）
+  var fns={},fnOrder=[]
+  var comments=0
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i]
+    if(/^\s*#/.test(line)&&!(i===0&&shebang))comments++
+    var m2=FN_A.exec(line)
+    if(m2&&!FN_STOP.test(m2[1])){if(!fns[m2[1]]){fns[m2[1]]=i+1;fnOrder.push(m2[1])}continue}
+    m2=FN_B.exec(line)
+    if(m2&&!FN_STOP.test(m2[1])&&!fns[m2[1]]){fns[m2[1]]=i+1;fnOrder.push(m2[1])}
+  }
+  // 危险命令命中行
+  var dangers=[]
+  for(i=0;i<lines.length;i++){
+    var labels=[]
+    for(var j=0;j<DANGER.length;j++)if(DANGER[j].re.test(lines[i]))labels.push(DANGER[j].label)
+    if(labels.length){
+      var excerpt=lines[i].trim()
+      if(excerpt.length>90)excerpt=excerpt.slice(0,90)+'…'
+      dangers.push({line:i+1,labels:labels,text:excerpt})
+    }
+  }
+  // 变量引用计数
+  var varMap={},content=p.content.replace(/\r\n/g,'\n')
+  var vm
+  while((vm=VAR_RE.exec(content))!==null){
+    var name=vm[1]||vm[2]
+    varMap[name]=(varMap[name]||0)+1
+  }
+  var varList=Object.keys(varMap).map(function(k){return {name:k,count:varMap[k]}})
+    .sort(function(a,b){return b.count-a.count||a.name.localeCompare(b.name)})
+  var specials=(content.match(new RegExp(SPECIAL_RE.source,'g'))||[]).length
+  var nComment=0
+  for(i=0;i<lines.length;i++)if(/^\s*#/.test(lines[i]))nComment++
+  var html='<div class="meta">'+escapeHtml(p.fileName||'')+' · 共 '+lines.length+' 行 · 注释 '+nComment+' 行</div>'
+  if(shebang)html+='<div class="shebang">'+escapeHtml(shebang)+'</div>'
+  html+='<div class="grid">'+
+    '<div class="cell"><div class="n">'+fnOrder.length+'</div><div class="l">函数</div></div>'+
+    '<div class="cell'+(dangers.length?' warn':'')+'"><div class="n">'+dangers.length+'</div><div class="l">危险命中行</div></div>'+
+    '<div class="cell"><div class="n">'+varList.length+'</div><div class="l">变量（去重）</div></div>'+
+    '<div class="cell"><div class="n">'+nComment+'</div><div class="l">注释行</div></div>'+
+   '</div>'
+  html+='<div class="sec"><div class="t">函数清单</div>'
+  if(fnOrder.length){
+    html+='<div class="list">'
+    for(i=0;i<fnOrder.length;i++)html+='<div class="row"><span class="ln">'+fns[fnOrder[i]]+'</span><span class="body">'+escapeHtml(fnOrder[i])+'()</span></div>'
+    html+='</div>'
+  }else html+='<div style="color:#9ca3af;font-size:11px">未发现函数定义</div>'
+  html+='</div>'
+  html+='<div class="sec"><div class="t">危险命令命中（仅提示，未执行）</div>'
+  if(dangers.length){
+    html+='<div class="list">'
+    for(i=0;i<dangers.length;i++){
+      html+='<div class="row danger"><span class="ln">'+dangers[i].line+'</span>'+
+        '<span class="badge">'+escapeHtml(dangers[i].labels[0])+'</span>'+
+        '<span class="body">'+escapeHtml(dangers[i].text)+'</span></div>'
+    }
+    html+='</div>'
+  }else html+='<div style="color:#9ca3af;font-size:11px">未命中 rm -rf / sudo / 管道执行 / chmod 777</div>'
+  html+='</div>'
+  html+='<div class="sec"><div class="t">变量引用 Top '+Math.min(varList.length,24)+(specials?' · 特殊参数引用 ×'+specials:'')+'</div>'
+  if(varList.length){
+    html+='<div class="list">'
+    var top=Math.min(varList.length,24)
+    for(i=0;i<top;i++)html+='<div class="row"><span class="body">'+escapeHtml('$'+varList[i].name)+'</span><span class="ln" style="width:auto;color:#9ca3af">×'+varList[i].count+'</span></div>'
+    html+='</div>'
+    if(varList.length>top)html+='<div style="color:#9ca3af;font-size:10px;margin-top:2px">另有 '+(varList.length-top)+' 个变量未展示</div>'
+  }else html+='<div style="color:#9ca3af;font-size:11px">未发现 $VAR 引用</div>'
+  html+='</div>'
+  app.className=''
+  app.innerHTML=html
+ }catch(err){
+  // 兜底：原文展示 + 错误提示，不能白屏
+  var app2=document.getElementById('app');app2.className=''
+  app2.innerHTML='<div class="err">解析失败：'+escapeHtml(String((err&&err.message)||err))+'</div>'+
+   (p&&typeof p.content==='string'?'<pre>'+escapeHtml(p.content)+'</pre>':'')
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

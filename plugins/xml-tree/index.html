@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>标签树</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.stats{color:#9ca3af;font-size:11px;margin-bottom:6px}
+.stats b{color:#4b5563;font-weight:600}
+.tree{overflow:auto;max-height:420px;border:1px solid #e5e7eb;border-radius:6px;padding:4px 6px;background:#fff}
+details{margin:0}
+details>summary{cursor:pointer;list-style:none;white-space:nowrap;user-select:text}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:'▸';display:inline-block;width:12px;color:#9ca3af;font-size:10px}
+details[open]>summary::before{content:'▾'}
+details>summary:hover{background:#f9fafb;border-radius:4px}
+details[open]>summary{color:#111827}
+.tag{font-family:ui-monospace,Menlo,monospace;color:#7c3aed}
+.badge{color:#9ca3af;font-size:10px;margin-left:4px}
+.idcls{font-family:ui-monospace,Menlo,monospace;color:#16a34a;font-size:10px;margin-left:4px;word-break:break-all}
+.leaf{color:#6b7280;font-size:11px;white-space:pre-wrap;word-break:break-word;padding:0 0 0 18px;user-select:text}
+.kids{padding-left:14px;border-left:1px dotted #e5e7eb;margin-left:5px}
+.text{margin-left:18px;color:#6b7280;white-space:pre-wrap;word-break:break-word;font-size:11px;user-select:text}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;margin-bottom:6px}
+.raw{margin:0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;
+  overflow:auto;max-height:320px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#374151;
+  white-space:pre-wrap;word-break:break-all;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+var MAX_NODES=3000; // 渲染节点上限，防超大文档卡死
+var nodes=0,overflow=false;
+/** id/class 摘要：#id .a.b（截断到 40 字符） */
+function idcls(el){
+  var out='';
+  if(el.id)out+='#'+el.id;
+  var cls=(el.getAttribute&&el.getAttribute('class'))||'';
+  if(typeof cls==='string'&&cls.trim())out+=cls.trim().split(/\s+/).map(function(c){return '.'+c}).join('');
+  if(out.length>40)out=out.slice(0,40)+'…';
+  return out;
+}
+/** 递归渲染元素子树；返回 [html, maxDepth]（maxDepth 相对传入 depth） */
+function renderEl(el,depth){
+  if(nodes>=MAX_NODES){overflow=true;return ['',0]}
+  nodes++;
+  var kids=el.children;
+  var ownText='';
+  for(var i=0;i<el.childNodes.length;i++){
+    var n=el.childNodes[i];
+    if(n.nodeType===3){var t=n.nodeValue.replace(/\s+/g,' ').trim();if(t){ownText=t;break}}
+  }
+  var html='<details'+(depth<2?' open':'')+'><summary><span class="tag">&lt;'+escapeHtml(el.tagName.toLowerCase())+'&gt;</span>'+
+    (idcls(el)?'<span class="idcls">'+escapeHtml(idcls(el))+'</span>':'')+
+    '<span class="badge">'+(kids.length?'('+kids.length+')':'·')+'</span></summary>';
+  var maxD=depth;
+  if(ownText)html+='<div class="text">'+escapeHtml(ownText.length>120?ownText.slice(0,120)+'…':ownText)+'</div>';
+  if(kids.length){
+    html+='<div class="kids">';
+    for(i=0;i<kids.length;i++){
+      var r=renderEl(kids[i],depth+1);
+      html+=r[0];
+      if(r[1]>maxD)maxD=r[1];
+    }
+    html+='</div>';
+  }
+  html+='</details>';
+  return [html,maxD];
+}
+/** 统计：元素总数 / 最大深度 / 去重标签 Top5 */
+function stats(root){
+  var total=0,maxDepth=0,byTag={};
+  (function walk(el,d){
+    total++;
+    if(d>maxDepth)maxDepth=d;
+    var t=el.tagName?el.tagName.toLowerCase():'?';
+    byTag[t]=(byTag[t]||0)+1;
+    for(var i=0;i<el.children.length;i++)walk(el.children[i],d+1);
+  })(root,1);
+  var top=Object.keys(byTag).map(function(k){return [k,byTag[k]]});
+  top.sort(function(a,b){return b[1]-a[1]});
+  return {total:total,depth:maxDepth,top:top.slice(0,5)};
+}
+function showError(msg,raw){
+  var app=document.getElementById('app');
+  app.className='';
+  app.innerHTML='<div class="err">'+escapeHtml(msg)+'</div><pre class="raw">'+escapeHtml(raw)+'</pre>';
+}
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload;
+ var app=document.getElementById('app');
+ if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+ var content=p.content.replace(/^\uFEFF/,''); // 去 BOM
+ if(!content.trim()){app.textContent='文件内容为空';return}
+ // 按扩展名选解析器：svg 用 image/svg+xml，xml 用 application/xml，html 用 text/html
+ var mime=p.ext==='svg'?'image/svg+xml':p.ext==='html'?'text/html':'application/xml';
+ var doc=new DOMParser().parseFromString(content,mime);
+ var pe=doc.querySelector('parsererror');
+ if(pe){
+   // XML 解析失败（DOMParser 不抛异常，以 parsererror 节点表达）→ 错误 + 原文兜底
+   var msg=pe.textContent.replace(/\s+/g,' ').trim();
+   if(msg.length>200)msg=msg.slice(0,200)+'…';
+   showError('解析失败：'+(msg||'文档格式不正确'),content);
+   return;
+ }
+ var root=doc.documentElement;
+ if(!root){showError('解析失败：文档没有根元素',content);return}
+ nodes=0;overflow=false;
+ var rendered=renderEl(root,1);
+ var s=stats(root);
+ var topHtml=s.top.map(function(t){return '<b>'+escapeHtml(t[0])+'</b>×'+t[1]}).join(' · ');
+ var html='<div class="stats">'+escapeHtml(p.fileName||'')+' · 元素总数 '+s.total+' · 最大深度 '+s.depth+
+   ' · 标签 Top5：'+topHtml+'</div>';
+ html+='<div class="tree">'+rendered[0]+'</div>';
+ if(overflow)html+='<div class="stats" style="margin-top:6px">节点超过 '+MAX_NODES+'，树已截断（统计仍为全量）</div>';
+ app.className='';
+ app.innerHTML=html;
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script>
+</body>
+</html>

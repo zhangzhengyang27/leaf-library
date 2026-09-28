@@ -16,4 +16,3 @@ export {
   photoFolderRepository,
   type PhotoFolder
 } from './PhotoFolderRepository'
-export { AlbumRepository } from './AlbumRepository'

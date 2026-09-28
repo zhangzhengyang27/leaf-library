@@ -3,7 +3,6 @@ import { isAbsolute } from 'path'
 import { isAnnotationIdLike } from '@shared/annotations'
 import { extensionOf, IMAGE_EXTENSIONS, RASTER_EXTENSIONS } from '@shared/assetTypes'
 import type { PhotoRepository, Photo } from '../db/repos/PhotoRepository'
-import type { AlbumRepository } from '../db/repos/AlbumRepository'
 
 /** 代码审查 P1：单次 MCP 导入上限（防 token 泄漏后被拿去批量灌库） */
 const MAX_IMPORT_PATHS = 200
@@ -44,7 +43,7 @@ const IMAGE_MIME_BY_EXT: Record<string, string> = {
  *
  * 实现为纯 JSON-RPC 分发函数（不碰 http 对象），可脱离 Electron 单测。
  * 协议版本 2025-06-18；未支持的方法按规范回 -32601。
- * 可写能力（D-014 阶段 5.2）：create_album / add_tags / import_paths / add_bookmark，
+ * 可写能力（D-014 阶段 5.2）：add_tags / import_paths / add_bookmark，
  * 均通过注入的 McpContext 访问仓储与服务（与 AI 能力解耦，不依赖本地模型）。
  * 图片内容暴露（AI 看图工作流 M1）：get_image 返回 MCP image content，
  * 缩略图/原图的磁盘解析经 McpContext.resolveImage 注入（实现挂 ClipServer，
@@ -60,7 +59,6 @@ export interface McpRpcResult {
 /** 可写工具依赖注入（ClipServer 组装；测试可注入 mock） */
 export interface McpContext {
   photos: PhotoRepository
-  albums: Pick<AlbumRepository, 'create'>
   addBookmark: (url: string, title?: string) => Promise<Photo>
   enqueue: (photoId: string) => void
   /**
@@ -172,7 +170,7 @@ const TOOLS: ToolDef[] = [
     returnsContent: true,
     description:
       '按 id 返回素材图片内容（MCP image content，base64）。看图打标工作流：' +
-      '先 leaf_photos_search 检索 → 用本工具看图 → leaf_add_tags 写回标签 → leaf_create_album 归档。' +
+      '先 leaf_photos_search 检索 → 用本工具看图 → leaf_add_tags 写回标签。' +
       'size=thumb 返回缩略图（默认，快且小）；size=original 返回库内原文件（仅位图，≤8MB，超限请用 thumb）。',
     inputSchema: {
       type: 'object',
@@ -228,19 +226,6 @@ const TOOLS: ToolDef[] = [
     }
   },
   // —— 阶段 5.2 可写工具 ——
-  {
-    name: 'leaf_create_album',
-    description: '新建手动相册。返回相册 id 与名称。',
-    inputSchema: {
-      type: 'object',
-      properties: { name: { type: 'string', description: '相册名称' } },
-      required: ['name']
-    },
-    run: (args, ctx) => {
-      const album = ctx.albums.create(String(args.name ?? '').trim())
-      return { id: album.id, name: album.name }
-    }
-  },
   {
     name: 'leaf_add_tags',
     description: '给一个或多个素材添加标签（同名标签自动复用）。返回实际添加的条目数。',

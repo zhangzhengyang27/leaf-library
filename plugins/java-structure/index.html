@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8" /><title>Java 结构查看器</title><style>
+body{margin:0;padding:8px;font:12px/1.6 -apple-system,'PingFang SC',sans-serif;color:#4b5563;background:#fff}
+.empty{color:#9ca3af;text-align:center;padding:16px 0}
+.meta{margin-bottom:6px;color:#9ca3af;font-size:11px}
+.sec{margin-top:8px}
+.sec .t{font-size:11px;color:#9ca3af;margin-bottom:3px;display:flex;justify-content:space-between;align-items:baseline}
+.list{overflow:auto;max-height:150px;border:1px solid #f3f4f6;border-radius:6px}
+.row{display:flex;gap:6px;align-items:baseline;padding:2px 6px;border-bottom:1px dashed #f3f4f6;font-size:11px}
+.row:last-child{border-bottom:none}
+.row .ln{color:#cbd5e1;font-size:10px;font-family:ui-monospace,Menlo,monospace;flex-shrink:0;width:26px;text-align:right}
+.row .body{flex:1;min-width:0;font-family:ui-monospace,Menlo,monospace;color:#111827;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.badge{display:inline-block;padding:0 5px;border-radius:4px;font-size:9px;line-height:1.7;flex-shrink:0}
+.b-pub{background:#ecfdf5;color:#047857}.b-pri{background:#fef2f2;color:#b91c1c}
+.b-pro{background:#fffbeb;color:#b45309}.b-pkg{background:#f3f4f6;color:#6b7280}
+.b-ctor{background:#eff6ff;color:#1d4ed8}
+.bar{height:6px;border-radius:3px;background:#3b82f6;min-width:2px}
+.arow{display:flex;align-items:center;gap:6px;padding:1px 0;font-size:11px}
+.arow .an{font-family:ui-monospace,Menlo,monospace;color:#111827;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;user-select:text}
+.arow .ac{color:#9ca3af;flex-shrink:0}
+.err{color:#b91c1c;background:#fef2f2;border:1px solid #fecaca;border-radius:6px;padding:8px 10px;user-select:text;white-space:pre-wrap;word-break:break-all}
+pre{margin:8px 0 0;padding:8px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;overflow:auto;max-height:260px;font:11px/1.5 ui-monospace,Menlo,monospace;color:#111827;white-space:pre;user-select:text}
+</style></head>
+<body><div id="app" class="empty">等待文件内容…</div>
+<script>
+function escapeHtml(v){return String(v===null||v===undefined?'':v).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;')}
+
+/** 单行去注释：感知 "..." 与 '...' 字符串，截掉 // 与 /*（宽松，跨行块注释由外层状态承接） *\/ */
+function stripLine(line){
+  var out='',i=0
+  while(i<line.length){
+    var ch=line[i]
+    if(ch==='"'||ch==="'"){
+      var q=ch;out+=ch;i++
+      while(i<line.length){
+        if(line[i]==='\\'){out+=line.substr(i,2);i+=2;continue}
+        out+=line[i]
+        if(line[i]===q){i++;break}
+        i++
+      }
+      continue
+    }
+    if(ch==='/'&&(line[i+1]==='/'||line[i+1]==='*'))break
+    out+=ch;i++
+  }
+  return out
+}
+
+/** 逐行产出可分析文本：块注释整段跳过，其余行走 stripLine */
+function analyzeLines(lines){
+  var out=[],inBlock=false
+  for(var i=0;i<lines.length;i++){
+    var line=lines[i]
+    if(inBlock){
+      var end=line.indexOf('*/')
+      if(end<0){out.push('');continue}
+      line=line.slice(end+2);inBlock=false
+    }
+    // 行内出现块注释起点：截掉起点之后（宽松：一行只处理一次）
+    var bs=line.indexOf('/*')
+    if(bs>=0){
+      var be=line.indexOf('*/',bs+2)
+      if(be<0){inBlock=true;line=line.slice(0,bs)}
+      else line=line.slice(0,bs)+line.slice(be+2)
+    }
+    out.push(stripLine(line))
+  }
+  return out
+}
+
+var TYPE_RE=/\b(class|interface|enum|record)\s+(\w+)/g
+
+window.addEventListener('message',function(e){var m=e.data;if(!(m&&m.type==='leaf:data'))return;var p=m.payload
+ try{
+  var app=document.getElementById('app')
+  if(!p||typeof p.content!=='string'){app.textContent='未选中文件或文件内容为空';return}
+  var lines=p.content.replace(/\r\n/g,'\n').split('\n')
+  var code=analyzeLines(lines)
+  var pkg='',imports=[],types=[],methods=[],annos={}
+  for(var i=0;i<code.length;i++){
+    var line=code[i].trim()
+    if(!line)continue
+    if(!pkg){var pm=/^package\s+([\w.]+)\s*;?/.exec(line);if(pm)pkg=pm[1]}
+    var im=/^import\s+(?:(static)\s+)?([\w.*]+)\s*;?$/.exec(line)
+    if(im){imports.push({name:im[2],static:!!im[1],line:i+1});continue}
+    // 注解计数（块注释已剥离，javadoc 的 @see 不会混入）
+    var am,are=/@([A-Za-z_]\w*)/g
+    while((am=are.exec(line))!==null)annos[am[1]]=(annos[am[1]]||0)+1
+    // 类型声明（class/interface/enum/record）
+    var tm,tre=TYPE_RE,lineHasType=false
+    while((tm=tre.exec(line))!==null){
+      lineHasType=true
+      var extM=/\bextends\s+([\w.<>\s,?]+?)(?=\s+implements\b|\s*\{|$)/.exec(line)
+      var impM=/\bimplements\s+([\w.<>\s,?]+?)(?=\s*\{|$)/.exec(line)
+      types.push({kind:tm[1],name:tm[2],
+        ext:extM?extM[1].replace(/\s+/g,' ').trim():'',
+        imp:impM?impM[1].replace(/\s+/g,' ').trim():'',line:i+1})
+    }
+    if(lineHasType)continue // record 头带括号，不能算方法
+    // 方法/构造器签名：含可见性修饰符 + 圆括号；赋值语句（字段初始化）排除
+    var vis=/\b(public|private|protected)\b/.exec(line)
+    var par=line.indexOf('(')
+    if(vis&&par>0){
+      var head=line.slice(0,par)
+      if(head.indexOf('=')<0&&!/\bnew\s+\w+$/.test(head.replace(/\s+$/,''))){
+        var close=line.indexOf(')',par)
+        var paramSrc=close>par?line.slice(par+1,close):''
+        paramSrc=paramSrc.replace(/<[^<>]*>/g,'').trim() // 泛型里的逗号不算参数分隔
+        var paramCount=paramSrc?paramSrc.split(',').length:0
+        var toks=head.trim().split(/\s+/)
+        var name=toks[toks.length-1]||''
+        var ret=toks.length>=2?toks[toks.length-2]:''
+        var ctor=types.some(function(t){return t.name===name})&&toks.length===1
+        methods.push({vis:vis[1],ret:ret,name:name,params:paramCount,line:i+1,ctor:ctor})
+      }
+    }
+  }
+  // 导入分组：java.* / javax.* 为标准库，其余按第三方（宽松口径）
+  var std=[],third=[]
+  for(i=0;i<imports.length;i++){
+    var n=imports[i].name
+    ;(n.indexOf('java.')===0||n.indexOf('javax.')===0?std:third).push(imports[i])
+  }
+  // 注解 TopN
+  var annoList=[]
+  for(var k in annos)annoList.push({name:k,count:annos[k]})
+  annoList.sort(function(a,b){return b.count-a.count||a.name.localeCompare(b.name)})
+  var annoTop=annoList.slice(0,8),annoMax=annoTop.length?annoTop[0].count:1
+
+  var html='<div class="meta">'+escapeHtml(p.fileName||'')+' · '+(pkg?('package '+escapeHtml(pkg)):'未声明 package')+
+    ' · 导入 '+(std.length+third.length)+' · 类型 '+types.length+' · 方法 '+methods.length+'</div>'
+  html+='<div class="sec"><div class="t"><span>导入 · 标准库 java.*</span><span>'+std.length+'</span></div>'
+  if(std.length){
+    html+='<div class="list">'
+    for(i=0;i<std.length;i++)html+='<div class="row"><span class="ln">'+std[i].line+'</span><span class="body">'+escapeHtml(std[i].name)+'</span>'+(std[i].static?'<span class="badge b-pkg">static</span>':'')+'</div>'
+    html+='</div>'
+  }else html+='<div class="row"><span class="body" style="color:#9ca3af">无</span></div>'
+  html+='</div>'
+  html+='<div class="sec"><div class="t"><span>导入 · 第三方</span><span>'+third.length+'</span></div>'
+  if(third.length){
+    html+='<div class="list">'
+    for(i=0;i<third.length;i++)html+='<div class="row"><span class="ln">'+third[i].line+'</span><span class="body">'+escapeHtml(third[i].name)+'</span>'+(third[i].static?'<span class="badge b-pkg">static</span>':'')+'</div>'
+    html+='</div>'
+  }else html+='<div class="row"><span class="body" style="color:#9ca3af">无</span></div>'
+  html+='</div>'
+  html+='<div class="sec"><div class="t"><span>类型声明</span><span>'+types.length+'</span></div>'
+  if(types.length){
+    html+='<div class="list">'
+    for(i=0;i<types.length;i++){
+      var ty=types[i]
+      var chain=ty.name+(ty.ext?' extends '+ty.ext:'')+(ty.imp?' implements '+ty.imp:'')
+      html+='<div class="row"><span class="ln">'+ty.line+'</span><span class="badge b-pkg">'+ty.kind+'</span><span class="body">'+escapeHtml(chain)+'</span></div>'
+    }
+    html+='</div>'
+  }else html+='<div class="row"><span class="body" style="color:#9ca3af">未找到类型声明</span></div>'
+  html+='</div>'
+  html+='<div class="sec"><div class="t"><span>方法签名</span><span>'+methods.length+'</span></div>'
+  if(methods.length){
+    html+='<div class="list">'
+    for(i=0;i<methods.length;i++){
+      var mt=methods[i]
+      html+='<div class="row"><span class="ln">'+mt.line+'</span>'+
+        '<span class="badge '+(mt.vis==='public'?'b-pub':mt.vis==='private'?'b-pri':'b-pro')+'">'+mt.vis+'</span>'+
+        (mt.ctor?'<span class="badge b-ctor">ctor</span>':'')+
+        '<span class="body">'+escapeHtml(mt.ret?mt.ret+' ':'')+escapeHtml(mt.name)+'('+mt.params+' 参)</span></div>'
+    }
+    html+='</div>'
+  }else html+='<div class="row"><span class="body" style="color:#9ca3af">未找到带可见性修饰符的方法</span></div>'
+  html+='</div>'
+  html+='<div class="sec"><div class="t"><span>注解 Top'+annoTop.length+'</span><span>共 '+annoList.length+' 种</span></div>'
+  for(i=0;i<annoTop.length;i++){
+    var an=annoTop[i]
+    html+='<div class="arow"><span class="an">@'+escapeHtml(an.name)+'</span>'+
+      '<span class="bar" style="width:'+Math.max(6,Math.round(an.count*60/annoMax))+'px"></span>'+
+      '<span class="ac">×'+an.count+'</span></div>'
+  }
+  if(!annoTop.length)html+='<div class="row"><span class="body" style="color:#9ca3af">无注解</span></div>'
+  html+='</div>'
+  app.className=''
+  app.innerHTML=html
+ }catch(err){
+  // 兜底：原文展示 + 错误提示，不能白屏
+  var app2=document.getElementById('app');app2.className=''
+  app2.innerHTML='<div class="err">解析失败：'+escapeHtml(String((err&&err.message)||err))+'</div>'+
+   (p&&typeof p.content==='string'?'<pre>'+escapeHtml(p.content)+'</pre>':'')
+ }
+})
+parent.postMessage({type:'leaf:ready'},'*')
+</script></body></html>

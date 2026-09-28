@@ -147,27 +147,6 @@ describe('usePhotoFilters · 图库视图与快筛', () => {
     expect(filters.showFilters.value).toBe(false)
   })
 
-  it('相册视图使用相册内容池', () => {
-    const data = usePhotoData()
-    const filters = usePhotoFilters()
-    data.allPhotos.value = [makePhoto({ id: 'x' })]
-    data.albums.value = [
-      {
-        id: 'a1',
-        name: '旅行',
-        coverPhotoId: null,
-        sortOrder: 0,
-        photoCount: 1,
-        createdAt: 0,
-        updatedAt: 0
-      }
-    ]
-    data.albumPhotos.value = [makePhoto({ id: 'in-album' })]
-    filters.tab.value.view = 'album:a1'
-    expect(filters.activeAlbum.value?.name).toBe('旅行')
-    expect(filters.flatDisplayPhotos.value.map((p) => p.id)).toEqual(['in-album'])
-  })
-
   it('格式筛选项随视图池收敛', () => {
     const data = usePhotoData()
     const filters = usePhotoFilters()

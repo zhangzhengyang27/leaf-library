@@ -10,9 +10,12 @@ export function registerTagIpcHandlers(tagStore: TagDataStore): void {
     return tagStore.getTagById(id)
   })
 
-  ipcMain.handle('tag:addTag', (_event, name: string, opts?: { parentId?: string }) => {
-    return tagStore.addTag(name, opts)
-  })
+  ipcMain.handle(
+    'tag:addTag',
+    (_event, name: string, opts?: { parentId?: string; isGroup?: boolean }) => {
+      return tagStore.addTag(name, opts)
+    }
+  )
 
   ipcMain.handle('tag:updateTag', (_event, id: string, updates: any) => {
     return tagStore.updateTag(id, updates)
@@ -29,5 +32,20 @@ export function registerTagIpcHandlers(tagStore: TagDataStore): void {
 
   ipcMain.handle('tag:getTagsByIds', (_event, ids: string[]) => {
     return tagStore.getTagsByIds(ids)
+  })
+
+  // 028（Eagle 标签管理复刻）：常用标签 / 群组排序 / 解散群组
+  ipcMain.handle('tag:setTagsStarred', (_event, ids: string[], starred: boolean) => {
+    tagStore.setTagsStarred(ids, starred)
+    return true
+  })
+
+  ipcMain.handle('tag:setGroupsOrder', (_event, orderedIds: string[]) => {
+    tagStore.setGroupsOrder(orderedIds)
+    return true
+  })
+
+  ipcMain.handle('tag:dissolveGroup', (_event, groupId: string) => {
+    return tagStore.dissolveGroup(groupId)
   })
 }
