@@ -1,0 +1,76 @@
+name: Release
+
+# MelodyAir 同款发布链：打 v* tag → 三平台矩阵构建 → electron-builder
+# `--publish always` 把安装包 + latest*.yml 上传到 GitHub Releases，
+# electron-updater（设置页「检查更新」）直接吃这套产物做自动更新。
+#
+# 发布步骤：改 package.json version → commit → git tag v<版本> → git push origin <tag>
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Publish (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # macOS Apple Silicon（macos-latest 为 ARM64 runner）
+          - os: macos-latest
+            script: build:mac
+            args: --arm64
+            target: mac-arm64
+          # macOS Intel（macos-15-intel 为 Intel x64 runner）
+          - os: macos-15-intel
+            script: build:mac
+            args: --x64
+            target: mac-x64
+          # Windows x64
+          - os: windows-latest
+            script: build:win
+            args: --x64
+            target: win-x64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      # Windows：leaf-macos-share 是 darwin-only 原生模块（gypfile），默认
+      # postinstall（install-app-deps）在 win 上会尝试重建它而失败——
+      # 先 --ignore-scripts 安装，再只重建 better-sqlite3（electron ABI）；
+      # onnxruntime-node 等其余原生依赖均为 N-API/平台包，无需重建。
+      - name: Install dependencies (macOS)
+        if: matrix.target != 'win-x64'
+        run: pnpm install --frozen-lockfile
+
+      - name: Install dependencies (Windows)
+        if: matrix.target == 'win-x64'
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          npx electron-rebuild -f -w better-sqlite3
+
+      - name: Build & publish to GitHub Releases
+        env:
+          # electron-builder 读取 GH_TOKEN 上传产物到 GitHub Releases
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 跳过代码签名（本仓库未配置签名证书/公证凭据；
+          # electron-builder.yml 对完全缺席 Apple 凭据的场景只 warn 不 fail）
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: pnpm ${{ matrix.script }} --publish always ${{ matrix.args }}

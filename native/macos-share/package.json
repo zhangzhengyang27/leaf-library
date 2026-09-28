@@ -5,5 +5,7 @@
   "main": "index.js",
   "types": "index.d.ts",
   "private": true,
-  "gypfile": true
+  "gypfile": true,
+  "os": ["darwin"],
+  "cpu": ["arm64", "x64"]
 }

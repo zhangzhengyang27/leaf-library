@@ -95,10 +95,12 @@ linux:
 appImage:
   artifactName: ${name}-${version}.${ext}
 npmRebuild: false
+# GitHub Releases 作为发布源（MelodyAir 同款）：打 v* tag → release.yml 三平台
+# 构建并 `--publish always` 上传产物 + latest.yml 到 Release；electron-updater
+# 直接吃这份 publish 配置做自动更新检查。
 publish:
-  provider: generic
-  # 发布前必须替换为真实 HTTPS 更新源；AutoUpdateService 会检测占位符并短路
-  # 「检查更新」（提示更新源未配置），不会真的向 example.com 发请求
-  url: https://example.com/auto-updates
+  provider: github
+  owner: zhangzhengyang27
+  repo: leaf-library
 electronDownload:
   mirror: https://npmmirror.com/mirrors/electron/

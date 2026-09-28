@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+  <dict>
+    <!-- Electron hardened runtime 基线（签名/公证时生效；未签名构建不读取） -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+    <true/>
+    <!-- 屏幕录制（截图/录屏）、摄像头、麦克风：extendInfo 已声明用途说明 -->
+    <key>com.apple.security.device.camera</key>
+    <true/>
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- 文件访问（用户经对话框选择的目录） -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+    <!-- 网络客户端（AI 打标直连 api.deepseek.com / 更新检查） -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+    <!-- 剪藏服务监听本机端口 -->
+    <key>com.apple.security.network.server</key>
+    <true/>
+  </dict>
+</plist>
