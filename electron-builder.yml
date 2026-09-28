@@ -60,9 +60,9 @@ nsis:
   uninstallDisplayName: ${productName}
   createDesktopShortcut: always
 mac:
-  # zip 产物名钉 ASCII（GitHubPublisher 拼 API 路径不转义）；dmg 用自己的
-  # dmg.artifactName 覆盖
-  artifactName: ${name}-${version}-mac.${ext}
+  # 产物名必须带 ${arch}：arm64/x64 两个矩阵任务各自上传，无架构号会互相
+  # 覆盖（后收尾者留下）；ASCII 同因（GitHubPublisher 拼 API 路径不转义）
+  artifactName: ${name}-${version}-${arch}-mac.${ext}
   entitlementsInherit: build/entitlements.mac.plist
   extendInfo:
     NSCameraUsageDescription: Application requests access to the device's camera.
@@ -87,7 +87,7 @@ mac:
   # - 本地：electron-builder 默认走系统 keychain 查找
   #   "Developer ID Application: Your Name (TEAMID)"，故本地通常无需额外配置
 dmg:
-  artifactName: ${name}-${version}.${ext}
+  artifactName: ${name}-${version}-${arch}.${ext}
 # GitHubPublisher 把文件名拼进 API 路径不转义——含中文/空格的 artifact 名
 # （默认取 productName「Leaf 素材库」）会在上传时抛
 # 「Request path contains unescaped characters」，故全部钉成 ASCII。
