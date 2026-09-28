@@ -79,6 +79,8 @@ mac:
   notarize: true
   hardenedRuntime: true
   gatekeeperAssess: false
+  zip:
+    artifactName: ${name}-${version}-mac.${ext}
   # signing identity：
   # - CI：通过 CSC_LINK / CSC_KEY_PASSWORD 注入 .p12 证书
   # - 本地：electron-builder 默认走系统 keychain 查找
@@ -88,8 +90,6 @@ dmg:
 # GitHubPublisher 把文件名拼进 API 路径不转义——含中文/空格的 artifact 名
 # （默认取 productName「Leaf 素材库」）会在上传时抛
 # 「Request path contains unescaped characters」，故全部钉成 ASCII。
-zip:
-  artifactName: ${name}-${version}-mac.${ext}
 linux:
   target:
     - AppImage
